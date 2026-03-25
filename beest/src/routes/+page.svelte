@@ -174,7 +174,7 @@
         <p class="cta-line">LANCERING,</p>
         <p class="cta-line">KRIJG EEN</p>
         <p class="cta-line"><span bind:this={freeEl} class:rainbow={freeVisible} style="--i:0">G</span><span class:rainbow={freeVisible} style="--i:1">R</span><span class:rainbow={freeVisible} style="--i:2">A</span><span class:rainbow={freeVisible} style="--i:3">T</span><span class:rainbow={freeVisible} style="--i:4">I</span><span class:rainbow={freeVisible} style="--i:5">S</span></p>
-        <p class="cta-line">STICKER</p>
+        <p class="cta-line">STICKERS</p>
       {:else}
         <p class="cta-line">RSVP before</p>
         <p class="cta-line">launch,</p>
