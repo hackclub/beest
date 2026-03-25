@@ -16,6 +16,7 @@
   import { onMount } from 'svelte';
 
   let scrollY = $state(0);
+  let dutch = $state(false);
   let freeVisible = $state(false);
   let freeEl: HTMLElement;
   let diagramEl: HTMLElement;
@@ -50,17 +51,20 @@
   const showB = $derived(annotate > 0.4);
   const showC = $derived(annotate > 0.7);
 
-  const subtitleFull = 'Code a project, Fly to the Netherlands, Build a mechanical animal!';
+  const subtitleEN = 'Code a project, Fly to the Netherlands, Build a mechanical animal!';
+  const subtitleNL = 'Programmeer een project, kom naar Scheveningen, bouw een mechanisch dier!';
   let subtitleText = $state('');
 
-  onMount(() => {
+  $effect(() => {
+    const target = dutch ? subtitleNL : subtitleEN;
     let i = 0;
+    subtitleText = '';
     let timeout: ReturnType<typeof setTimeout>;
     const typeNext = () => {
       i++;
-      subtitleText = subtitleFull.slice(0, i);
-      if (i >= subtitleFull.length) return;
-      const delay = subtitleFull[i - 1] === ',' ? 350 + Math.random() * 100 : 35 + Math.random() * 25;
+      subtitleText = target.slice(0, i);
+      if (i >= target.length) return;
+      const delay = target[i - 1] === ',' ? 350 + Math.random() * 100 : 35 + Math.random() * 25;
       timeout = setTimeout(typeNext, delay);
     };
     timeout = setTimeout(typeNext, 60);
@@ -112,7 +116,8 @@
         body: JSON.stringify({ email: cleaned })
       });
       if (res.ok) {
-        window.location.href = '/tutorial';
+        const data = await res.json();
+        window.location.href = data.existing ? '/home' : '/tutorial';
       } else {
         setStatus('error');
       }
@@ -135,6 +140,7 @@
 
 <svelte:window bind:scrollY />
 
+<div class="saturate-wrap">
 <div class="page-wrap">
 
 <!-- decorative pipes -->
@@ -163,10 +169,18 @@
       <img src="/images/sticker.webp" alt="Beest sticker" loading="lazy" decoding="async" />
     </div>
     <div class="cta-content">
-      <p class="cta-line">RSVP before</p>
-      <p class="cta-line">launch,</p>
-      <p class="cta-line">get a <span bind:this={freeEl} class:rainbow={freeVisible} style="--i:0">f</span><span class:rainbow={freeVisible} style="--i:1">r</span><span class:rainbow={freeVisible} style="--i:2">e</span><span class:rainbow={freeVisible} style="--i:3">e</span></p>
-      <p class="cta-line">sticker</p>
+      {#if dutch}
+        <p class="cta-line">RSVP VÓÓR DE</p>
+        <p class="cta-line">LANCERING,</p>
+        <p class="cta-line">KRIJG EEN</p>
+        <p class="cta-line"><span bind:this={freeEl} class:rainbow={freeVisible} style="--i:0">G</span><span class:rainbow={freeVisible} style="--i:1">R</span><span class:rainbow={freeVisible} style="--i:2">A</span><span class:rainbow={freeVisible} style="--i:3">T</span><span class:rainbow={freeVisible} style="--i:4">I</span><span class:rainbow={freeVisible} style="--i:5">S</span></p>
+        <p class="cta-line">STICKER</p>
+      {:else}
+        <p class="cta-line">RSVP before</p>
+        <p class="cta-line">launch,</p>
+        <p class="cta-line">get a <span bind:this={freeEl} class:rainbow={freeVisible} style="--i:0">f</span><span class:rainbow={freeVisible} style="--i:1">r</span><span class:rainbow={freeVisible} style="--i:2">e</span><span class:rainbow={freeVisible} style="--i:3">e</span></p>
+        <p class="cta-line">sticker</p>
+      {/if}
     </div>
   </div>
   <aside class="rsvp-box" aria-label="RSVP">
@@ -430,6 +444,12 @@
   </svg>
 </footer>
 
+</div><!-- saturate-wrap -->
+
+<button class="translate-btn" onclick={() => dutch = !dutch} aria-label="Toggle Dutch translation">
+  {dutch ? '🇬🇧 EN' : '🇳🇱 NL'}
+</button>
+
 <style>
   @font-face {
     font-family: "Stone Breaker";
@@ -599,6 +619,9 @@
     margin: 0;
     padding: 0;
     background-color: #47453f;
+  }
+
+  .saturate-wrap {
     filter: saturate(1.5);
   }
 
@@ -1593,5 +1616,27 @@
       width: 100%;
       box-sizing: border-box;
     }
+  }
+
+  .translate-btn {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 9999;
+    background: #4b4840;
+    color: #cbc1ae;
+    border: 2px solid #7f796d;
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    transition: background 0.2s, transform 0.15s;
+  }
+  .translate-btn:hover {
+    background: #6c6659;
+    transform: scale(1.05);
   }
 </style>
