@@ -68,12 +68,12 @@
   });
 
   const eventPhotos = [
-    { src: '/images/frames/75 teens at Campfire Flagship.png', caption: '75 teens at Campfire Flagship' },
-    { src: '/images/frames/Teen hackers at Assemble.png', caption: 'Teen hackers at Assemble' },
-    { src: '/images/frames/Winners of Parthenon Hackathon.png', caption: 'Winners of Parthenon Hackathon' },
-    { src: '/images/frames/Teens at a local game Jam.png', caption: 'Teens at a local game Jam' },
-    { src: '/images/frames/Hackathon on an island.png', caption: 'Hackathon on an island' },
-    { src: '/images/frames/hackers debugging together.png', caption: 'Hackers debugging together' }
+    { src: '/images/frames/75 teens at Campfire Flagship.webp', caption: '75 teens at Campfire Flagship' },
+    { src: '/images/frames/Teen hackers at Assemble.webp', caption: 'Teen hackers at Assemble' },
+    { src: '/images/frames/Winners of Parthenon Hackathon.webp', caption: 'Winners of Parthenon Hackathon' },
+    { src: '/images/frames/Teens at a local game Jam.webp', caption: 'Teens at a local game Jam' },
+    { src: '/images/frames/Hackathon on an island.webp', caption: 'Hackathon on an island' },
+    { src: '/images/frames/hackers debugging together.webp', caption: 'Hackers debugging together' }
   ];
   let currentPhoto = $state(0);
 
@@ -84,13 +84,43 @@
     return () => clearInterval(photoInterval);
   });
 
+  let topEmail = $state('');
+  let bottomEmail = $state('');
+  let topUpdates = $state(true);
+  let bottomUpdates = $state(true);
+  let topStatus = $state<'idle' | 'sending' | 'done' | 'error'>('idle');
+  let bottomStatus = $state<'idle' | 'sending' | 'done' | 'error'>('idle');
+
+  async function submitRsvp(
+    email: string,
+    updates: boolean,
+    setStatus: (s: 'idle' | 'sending' | 'done' | 'error') => void
+  ) {
+    const cleaned = email.trim().replace(/[<>"'&\\]/g, '');
+    if (!cleaned || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned)) {
+      setStatus('error');
+      return;
+    }
+    setStatus('sending');
+    try {
+      const res = await fetch('/api/rsvp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleaned, updates })
+      });
+      setStatus(res.ok ? 'done' : 'error');
+    } catch {
+      setStatus('error');
+    }
+  }
+
   const shopItems = [
     { src: '/images/shop/blahaj.webp', caption: 'Blåhaj Plush' },
     { src: '/images/shop/flight-stipend.webp', caption: 'Flight Stipend' },
     { src: '/images/shop/framework.webp', caption: 'Framework Laptop' },
     { src: '/images/shop/headphones.webp', caption: 'Headphones' },
     { src: '/images/shop/polaroid.webp', caption: 'Polaroid Camera' },
-    { src: '/images/shop/poster.png', caption: 'Beest Poster' },
+    { src: '/images/shop/poster.webp', caption: 'Beest Poster' },
     { src: '/images/shop/printer.webp', caption: '3D Printer' },
     { src: '/images/shop/stickers.webp', caption: 'Sticker Pack' }
   ];
@@ -121,7 +151,7 @@
 <section class="sticker-cta">
   <div class="cta-group">
     <div class="cta-sticker">
-      <img src="/images/sticker.png" alt="Beest sticker" />
+      <img src="/images/sticker.webp" alt="Beest sticker" loading="lazy" decoding="async" />
     </div>
     <div class="cta-content">
       <p class="cta-line">RSVP before</p>
@@ -198,7 +228,7 @@
 <section class="sticker-row">
   <div class="diagram" bind:this={diagramEl} style="--r:{annotate}">
     <div class="sticker">
-      <img src="/images/beest.gif" alt="Strandbeest animation" />
+      <img src="/images/beest.gif" alt="Strandbeest animation" loading="lazy" decoding="async" />
     </div>
 
     <div class="callout c1" class:visible={showA}>
@@ -305,7 +335,7 @@
       <div class="photo-frame frame-back-2"></div>
       <div class="photo-frame frame-back-1"></div>
       <div class="photo-frame frame-front">
-        <img src={eventPhotos[currentPhoto].src} alt={eventPhotos[currentPhoto].caption} />
+        <img src={eventPhotos[currentPhoto].src} alt={eventPhotos[currentPhoto].caption} loading="lazy" decoding="async" />
       </div>
     </div>
     <p class="photo-caption">{eventPhotos[currentPhoto].caption}</p>
@@ -367,7 +397,7 @@
 <style>
   @font-face {
     font-family: "Stone Breaker";
-    src: url("/fonts/Stone Breaker.otf") format("opentype");
+    src: url("/fonts/Stone Breaker.woff2") format("woff2");
     font-weight: normal;
     font-style: normal;
     font-display: swap;
@@ -375,7 +405,7 @@
 
   @font-face {
     font-family: "Sunny Mood";
-    src: url("/fonts/SunnyMood.ttf") format("truetype");
+    src: url("/fonts/SunnyMood.woff2") format("woff2");
     font-weight: normal;
     font-style: normal;
     font-display: swap;

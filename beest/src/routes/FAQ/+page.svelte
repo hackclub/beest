@@ -18,7 +18,7 @@
 
 
 <div class="top-bg">
-<img src="../images/FAQ-Header.png" alt="Hero" class="hero-image" />
+<img src="/images/FAQ-Header.webp" alt="Hero" class="hero-image" loading="eager" decoding="async" />
 
 </div>
 <div>
