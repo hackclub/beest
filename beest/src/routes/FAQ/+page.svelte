@@ -14,49 +14,46 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
 
-  let scrollY = $state(0);
-  let openIndex = $state<number | null>(null);
+  let scrollY = 0;
+  let openIndex: number | null = null;
 
   function toggle(i: number) {
     openIndex = openIndex === i ? null : i;
   }
 
+
   const faqs = [
     {
       q: 'What is Beest?',
-      a: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.'
+      a: 'Beest is a Hack Club program where you can build your own Strandbeest and fly to the Netherlands to show it off to the creator of Strandbeests!'
     },
     {
       q: 'Who can participate?',
-      a: 'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident.'
+      a: 'Anyone from ages 13-19 can participate - no experience required.'
     },
     {
       q: 'How much does it cost?',
-      a: 'Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur.'
+      a: 'Beest is completely free to participate in!'
     },
     {
       q: 'Where and when does Beest take place?',
-      a: 'Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.'
+      a: '[TBD]'
     },
     {
       q: 'What should I bring?',
-      a: 'Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat.'
+      a: '[TBD]'
     },
     {
       q: 'Do I need prior engineering or building experience?',
-      a: 'At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores.'
+      a: 'No! Hack Club is all about learning by doing, so we welcome builders of all experience levels. We will provide resources and support to help you build your Strandbeest, and we can help you in the #beest channel on Slack!'
     },
     {
       q: 'What is a Strandbeest?',
-      a: 'Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint et molestiae non recusandae.'
-    },
-    {
-      q: 'How do I RSVP?',
-      a: 'Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat.'
+      a: 'A Strandbeest is a kinetic sculpture that walks using wind power. They are made from lightweight materials like PVC pipe and can range in size from small tabletop models to large structures that can walk on the beach.'
     },
     {
       q: 'I have more questions — how do I get in touch?',
-      a: 'Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil impedit quo minus id quod maxime placeat facere possimus, omnis voluptas assumenda est.'
+      a: 'Contact us in the #beest channel on Hack Club Slack or email euan@hackclub.com!'
     }
   ];
 </script>
@@ -93,7 +90,7 @@
       <button
         class="faq-item"
         class:open={openIndex === i}
-        onclick={() => toggle(i)}
+        on:click={() => toggle(i)}
         aria-expanded={openIndex === i}
       >
         <div class="faq-question">
