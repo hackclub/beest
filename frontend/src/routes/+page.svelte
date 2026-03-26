@@ -99,7 +99,7 @@
   const topValid = $derived(emailRe.test(topEmail.trim()));
   const bottomValid = $derived(emailRe.test(bottomEmail.trim()));
 
-  async function submitRsvp(
+  function submitRsvp(
     email: string,
     setStatus: (s: 'idle' | 'sending' | 'error') => void
   ) {
@@ -109,21 +109,9 @@
       return;
     }
     setStatus('sending');
-    try {
-      const res = await fetch('/api/rsvp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleaned })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        window.location.href = data.existing ? '/home' : '/tutorial';
-      } else {
-        setStatus('error');
-      }
-    } catch {
-      setStatus('error');
-    }
+
+    // Navigate to server endpoint — it handles state, cookies, and redirect
+    window.location.href = `/api/auth/login?email=${encodeURIComponent(cleaned)}`;
   }
 
   const shopItems = [
