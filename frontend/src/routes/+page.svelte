@@ -16,6 +16,10 @@
   import { onMount } from 'svelte';
 
   let scrollY = $state(0);
+  const PARALLAX_TRAVEL = 500;
+  const pxRemaining = $derived(PARALLAX_TRAVEL - Math.min(scrollY, PARALLAX_TRAVEL));
+  const postScroll = $derived(Math.max(scrollY - PARALLAX_TRAVEL, 0));
+  let heroHeight = $state(0);
   let dutch = $state(false);
   let freeVisible = $state(false);
   let freeEl: HTMLElement;
@@ -143,17 +147,32 @@
 <div class="pipe pipe-r2" title="strandbeest fossil"></div>
 
 <div class="top-bg">
+<div class="hero-scroll-space">
 <div class="hero-wrap">
-  <div class="hero-img-wrap">
-    <img
-      srcset="/images/hero-640w.webp 640w, /images/hero-1024w.webp 1024w, /images/hero-1440w.webp 1440w, /images/hero.webp 4800w"
-      sizes="100vw"
-      src="/images/hero-1440w.webp"
-      alt="Hero"
-      class="hero-image"
-      fetchpriority="high"
-      decoding="async"
-    />
+  <div class="hero-parallax" bind:clientHeight={heroHeight}>
+    {#each [
+      { src: '/images/beest/1.webp', x: 0, rot: 0, scale: 0, drift: 0 },
+      { src: '/images/beest/2.webp', x: 0, rot: 0.006, scale: 0.0003, drift: 0.02, offsetY: -60 },
+      { src: '/images/beest/3.webp', x: 0, rot: 0, scale: 0, drift: 0.04 },
+      { src: '/images/beest/4.webp', x: 0, rot: 0, scale: 0, drift: 0.06 },
+      { src: '/images/beest/5.webp', x: 0, rot: 0, scale: 0, drift: 0.08 },
+      { src: '/images/beest/6.webp', x: 0.06, rot: 0, scale: 0, drift: 0.10 },
+      { src: '/images/beest/7.webp', x: 0.06, rot: 0, scale: 0, drift: 0.04, stretchX: 0.00015 },
+      { src: '/images/beest/8.webp', x: 0, rot: 0, scale: 0, drift: 0.08 },
+      { src: '/images/beest/9.webp', x: 0, rot: 0, scale: 0, drift: 0.08 },
+      { src: '/images/beest/10.webp', x: 0, rot: 0, scale: 0, drift: 0.16 },
+      { src: '/images/beest/11.webp', x: 0, rot: 0, scale: 0, drift: 0.20 },
+    ] as layer, i}
+      <img
+        src={layer.src}
+        alt=""
+        class="hero-layer"
+        style="z-index: {i}; transform-origin: top center; transform: translateX({pxRemaining * layer.x}px) translateY({(layer.offsetY ?? 0) - postScroll * layer.drift}px) rotate({pxRemaining * layer.rot}deg) scale({1 + pxRemaining * layer.scale}) scaleX({1 + pxRemaining * (layer.stretchX ?? 0)}) scaleY({heroHeight ? (heroHeight + postScroll * layer.drift) / heroHeight : 1});"
+        fetchpriority={i === 0 ? 'high' : 'auto'}
+        loading={i <= 2 ? 'eager' : 'lazy'}
+        decoding="async"
+      />
+    {/each}
     <svg class="hero-strata" viewBox="0 0 1440 80" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <polygon points="0,38 60,35 120,40 180,32 240,28 300,25 340,30 380,26 440,22 500,26 560,30 620,24 680,28 720,35 780,40 840,44 880,40 940,46 1000,50 1060,46 1100,42 1140,48 1200,52 1260,48 1300,44 1340,50 1400,46 1440,42 1440,80 0,80" fill="#4b4840" />
     </svg>
@@ -162,6 +181,7 @@
     <h1 class="hero-title">#BEEST</h1>
     <p class="hero-subtitle">{subtitleText}<span class="cursor">|</span></p>
   </div>
+</div>
 </div>
 
 <section class="sticker-cta">
@@ -185,6 +205,7 @@
     </div>
   </div>
   <aside class="rsvp-box" aria-label="RSVP">
+    <svg class="rsvp-border" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="calc(100% - 3px)" height="calc(100% - 3px)" rx="0" ry="0" /></svg>
     <h2>RSVP</h2>
     <input type="email" placeholder="you@example.com" aria-label="Email" bind:value={topEmail} />
     <button
@@ -383,6 +404,7 @@
 <section class="bottom-rsvp">
   <div class="bottom-rsvp-inner">
     <aside class="rsvp-box" aria-label="RSVP">
+      <svg class="rsvp-border" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="calc(100% - 3px)" height="calc(100% - 3px)" rx="0" ry="0" /></svg>
       <h2>RSVP</h2>
       <input type="email" placeholder="you@example.com" aria-label="Email" bind:value={bottomEmail} />
       <button
@@ -545,16 +567,33 @@
     border-radius: 4px;
   }
 
-  .hero-wrap {
+  .hero-scroll-space {
+    height: calc(100vh + 500px);
     position: relative;
-    line-height: 0;
   }
 
-  .hero-image {
-    display: block;
+  .hero-wrap {
+    position: sticky;
+    top: 0;
+    line-height: 0;
+    z-index: 1;
+  }
+
+  .hero-parallax {
+    position: relative;
     width: 100%;
-    height: auto;
-    border: none;
+    aspect-ratio: 4800 / 2700;
+    overflow: hidden;
+  }
+
+  .hero-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    will-change: transform;
+    pointer-events: none;
   }
 
   .hero-overlay {
@@ -610,6 +649,7 @@
     width: 100%;
     height: 80px;
     display: block;
+    z-index: 12;
   }
 
   :global(html) {
@@ -623,7 +663,6 @@
   }
 
   .saturate-wrap {
-    filter: saturate(1.5);
   }
 
   .top-bg,
@@ -886,14 +925,37 @@
   }
 
   .rsvp-box {
+    position: relative;
     flex: 0 0 380px;
     align-self: flex-start;
     box-sizing: border-box;
     padding: 24px;
     background: #7f796d;
-    border: 1px solid #7f796d;
+    border: none;
     color: #4b4840;
     font-family: "Courier New", monospace;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  }
+
+  .rsvp-border {
+    position: absolute;
+    inset: -3px;
+    width: calc(100% + 6px);
+    height: calc(100% + 6px);
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  .rsvp-border rect {
+    fill: none;
+    stroke: #000000;
+    stroke-width: 3;
+    stroke-dasharray: 20 12;
+    animation: march 30s linear infinite;
+  }
+
+  @keyframes march {
+    to { stroke-dashoffset: -1000; }
   }
 
   .rsvp-box h2 {
@@ -1173,7 +1235,7 @@
     border: 1px solid #4b4840;
     box-shadow: 6px 6px 0 #4b4840;
     padding: 12px 12px 10px;
-    filter: saturate(0.667);
+    filter: none;
   }
 
   .bg-card {
@@ -1218,7 +1280,7 @@
     to { transform: translateX(0); }
   }
 
-  @media (max-width: 900px) {
+  @media (max-width: 1400px) {
     .pipe { display: none; }
 
     .sticker-cta {
