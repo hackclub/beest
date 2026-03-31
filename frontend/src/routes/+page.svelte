@@ -21,8 +21,11 @@
   let scrollY = $state(0);
   let showScrollHint = $state(false);
   const scrollHintVisible = $derived(showScrollHint && scrollY < 10);
-  const PARALLAX_TRAVEL = 500;
-  const pxRemaining = $derived(PARALLAX_TRAVEL - Math.min(scrollY, PARALLAX_TRAVEL));
+  const PARALLAX_TRAVEL = 700;
+  // ease-out: parallax decelerates near the end for a smoother hero→content transition
+  const rawProgress = $derived(Math.min(scrollY / PARALLAX_TRAVEL, 1));
+  const easedProgress = $derived(rawProgress * (2 - rawProgress));
+  const pxRemaining = $derived(PARALLAX_TRAVEL * (1 - easedProgress));
   const postScroll = $derived(Math.max(scrollY - PARALLAX_TRAVEL, 0));
   let heroHeight = $state(0);
   let dutch = $state(false);
@@ -159,7 +162,7 @@
 
 <svelte:window bind:scrollY />
 
-<div class="saturate-wrap">
+<div class="saturate-wrap" style="--sy:{scrollY}">
 <div class="page-wrap">
 
 <!-- decorative pipes -->
@@ -285,16 +288,16 @@
     <polygon points="0,45 160,28 320,55 480,22 640,50 800,18 960,48 1120,30 1280,52 1440,35 1440,100 0,100" fill="#786e5c" />
     <polygon points="0,62 200,50 380,72 540,44 700,68 860,40 1020,66 1180,46 1340,64 1440,55 1440,100 0,100" fill="#786e5c" />
   </svg>
-  <svg class="strata-gear" style="left:4%; bottom:0; transform:translateY(20%) rotate({scrollY * 0.1}deg); opacity:1" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <svg class="strata-gear gear-cw" style="left:4%" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
     <g fill="#7f796d"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#4b4840"/>
   </svg>
-  <svg class="strata-gear strata-gear--lg" style="left:28%; bottom:0; transform:translateY(20%) rotate({-scrollY * 0.1 + 22.5}deg); opacity:1" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <svg class="strata-gear strata-gear--lg gear-ccw" style="left:28%" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
     <g fill="#6c6659"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#4b4840"/>
   </svg>
-  <svg class="strata-gear" style="right:20%; bottom:0; transform:translateY(20%) rotate({scrollY * 0.1}deg); opacity:1" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <svg class="strata-gear gear-cw" style="right:20%" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
     <g fill="#7f796d"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#4b4840"/>
   </svg>
-  <svg class="strata-gear strata-gear--lg" style="right:2%; bottom:0; transform:translateY(20%) rotate({-scrollY * 0.1 + 22.5}deg); opacity:1" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <svg class="strata-gear strata-gear--lg gear-ccw" style="right:2%" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
     <g fill="#6c6659"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#4b4840"/>
   </svg>
 </div>
@@ -347,13 +350,13 @@
     <polygon points="0,35 180,55 340,20 500,48 660,12 820,42 980,18 1140,52 1300,25 1440,40 1440,100 0,100" fill="#635a4e" />
     <polygon points="0,58 140,72 300,50 460,78 620,46 780,68 940,44 1100,74 1260,48 1440,62 1440,100 0,100" fill="#635a4e" />
   </svg>
-  <svg class="strata-gear strata-gear--lg" style="left:10%; bottom:0; transform:translateY(20%) rotate({-scrollY * 0.1 + 22.5}deg); opacity:1" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <svg class="strata-gear strata-gear--lg gear-ccw" style="left:10%" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
     <g fill="#6c6659"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#56494a"/>
   </svg>
-  <svg class="strata-gear" style="left:42%; bottom:0; transform:translateY(20%) rotate({scrollY * 0.1}deg); opacity:1" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <svg class="strata-gear gear-cw" style="left:42%" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
     <g fill="#7f796d"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#56494a"/>
   </svg>
-  <svg class="strata-gear" style="right:8%; bottom:0; transform:translateY(20%) rotate({-scrollY * 0.1 + 22.5}deg); opacity:1" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <svg class="strata-gear gear-ccw" style="right:8%" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
     <g fill="#6c6659"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#56494a"/>
   </svg>
 </div>
@@ -519,7 +522,7 @@
     </div>
   </div>
   <p class="footer-love">made with &lt;3 by teens for teens</p>
-  <svg class="footer-cog" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="transform: rotate({scrollY * 0.1}deg)">
+  <svg class="footer-cog gear-cw" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <g fill="#7f796d"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#000"/>
   </svg>
 </footer>
@@ -625,7 +628,7 @@
   }
 
   .hero-scroll-space {
-    height: calc(100vh + 500px);
+    height: calc(100vh + 700px);
     position: relative;
   }
 
@@ -753,6 +756,16 @@
   }
 
   .saturate-wrap {
+    --sy: 0;
+  }
+
+  .what-is-this,
+  .sticker-bg,
+  .info-bg,
+  .hackclub-section,
+  .bottom-rsvp {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 500px;
   }
 
   .top-bg,
@@ -822,7 +835,7 @@
   .rock-strata svg:not(.strata-gear) {
     display: block;
     width: 100%;
-    height: 80px;
+    height: 100px;
   }
 
   /* ── sign-up CTA ─────────────────────────────────── */
@@ -931,6 +944,7 @@
 
   .strata-gear {
     position: absolute;
+    bottom: 0;
     width: 150px;
     height: 150px;
     will-change: transform;
@@ -943,9 +957,21 @@
     height: 200px;
   }
 
+  .gear-cw {
+    transform: translateY(20%) rotate(calc(var(--sy) * 0.1deg));
+  }
+
+  .gear-ccw {
+    transform: translateY(20%) rotate(calc(var(--sy) * -0.1deg + 22.5deg));
+  }
+
+  .footer-cog.gear-cw {
+    transform: rotate(calc(var(--sy) * 0.1deg));
+  }
+
   /* ── what-is-this ───────────────────────────────── */
   .what-is-this {
-    padding: 56px 48px 48px;
+    padding: 80px 48px 72px;
     color: #e6f4fe;
     font-family: "Courier New", monospace;
     background: #786e5c;
@@ -987,7 +1013,7 @@
   .info-section {
     max-width: 1196px;
     margin: 0 auto;
-    padding: 24px 48px 56px;
+    padding: 48px 48px 72px;
     display: flex;
     gap: 48px;
   }
@@ -1030,7 +1056,7 @@
     gap: 40px;
     max-width: 1100px;
     margin: 0 auto;
-    padding: 40px 48px 64px;
+    padding: 64px 48px 80px;
   }
 
   .diagram {
@@ -1283,7 +1309,7 @@
     position: relative;
     overflow-x: clip;
     overflow-y: visible;
-    padding: 80px 0 80px;
+    padding: 100px 0 100px;
     display: grid;
     grid-template: 1fr / 1fr;
     background: #47453f;
@@ -1578,6 +1604,7 @@
     right: -60px;
     width: 200px;
     height: 200px;
+    will-change: transform;
   }
 
   /* ── bottom RSVP ─────────────────────────────────── */

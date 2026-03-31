@@ -1,463 +1,630 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import { beforeNavigate } from '$app/navigation';
 
-  let { data } = $props();
-  let pageEl: HTMLDivElement;
-  let cardEls: HTMLDivElement[] = [];
-  let currentCard = $state(0); // index of the card the user is currently on
+  let scrollY = $state(0);
+  let innerHeight = $state(800);
 
-  const cards = [
-    { n: 1, label: 'Start a Project',      x: 55, y: 4200, rot: 2.5 },
-    { n: 2, label: 'Add Details',           x: 18, y: 3400, rot: -1.5 },
-    { n: 3, label: 'Set Up Hackatime',      x: 60, y: 2850, rot: 1 },
-    { n: 4, label: 'Join the Community',    x: 22, y: 2050, rot: -2.5 },
-    { n: 5, label: 'Welcome',               x: 50, y: 1500, rot: 2 },
+  // Scrollymation plays in reverse scroll direction — scroll UP to progress
+  const scrollLength = $derived(innerHeight * 10);
+  const maxScroll = $derived(innerHeight * 13);
+  const progress = $derived(Math.min(Math.max((maxScroll - scrollY) / scrollLength, 0), 1));
+
+  // SVG text draw progress — starts after clouds are off screen, finishes by end
+  const drawProgress = $derived(Math.min(Math.max((progress - 0.4) / 0.5, 0), 1));
+
+  // Beest rises from bottom after text finishes drawing
+  const beestProgress = $derived(Math.min(Math.max((progress - 0.7) / 0.15, 0), 1));
+  const beestY = $derived((1 - beestProgress) * 100);
+
+  // Clouds start overlapped, then split apart, drift up, and scale up
+  const translateX = $derived(progress * 110);
+  const translateY = $derived(progress * -15);
+  const scale = $derived(1 + progress * 0.3);
+
+  // Show enter button once all scroll animations are done
+  let transitioned = $state(false);
+  let skyEl: HTMLElement;
+  let locked = $state(false);
+  const showEnter = $derived(progress >= 1 && !transitioned);
+
+  async function enterSky() {
+    transitioned = true;
+    await tick();
+    // Start one section below landing, animate scroll up to landing
+    const landingPos = skyEl.offsetTop + skyEl.offsetHeight - innerHeight * 2;
+    const startPos = landingPos + innerHeight;
+    window.scrollTo(0, startPos);
+    await tick();
+    const duration = 2400;
+    const startTime = performance.now();
+    function animateScroll(now: number) {
+      const t = Math.min((now - startTime) / duration, 1);
+      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      window.scrollTo(0, startPos + (landingPos - startPos) * ease);
+      if (t < 1) {
+        requestAnimationFrame(animateScroll);
+      } else {
+        locked = true;
+        tick().then(() => {
+          if (skyEl) {
+            window.scrollTo(0, skyEl.offsetTop + skyEl.offsetHeight - innerHeight * 2);
+          }
+        });
+      }
+    }
+    requestAnimationFrame(animateScroll);
+  }
+
+  // Prevent scrolling past the bottom back into the scrollymation
+  $effect(() => {
+    if (locked && skyEl) {
+      const bottom = skyEl.offsetTop + skyEl.offsetHeight - innerHeight;
+      if (scrollY > bottom) {
+        window.scrollTo(0, bottom);
+      }
+    }
+  });
+
+  // 4 content sections + 1 landing = 5 sky colors, bottom matches sky.png
+  const skyColors = [
+    '#1e3a5f', '#3d6e99', '#5b72a0', '#7b6fa8', '#2e3563',
   ];
 
-  type Segment = { d: string; index: number };
-  let segments: Segment[] = $state([]);
+  // Evenly spaced gradient stops
+  const gradientStops = skyColors
+    .map((c, i) => `${c} ${(i / (skyColors.length - 1)) * 100}%`)
+    .join(', ');
 
-  function computeSegments() {
-    if (!pageEl || cardEls.length === 0) return;
-    const pageRect = pageEl.getBoundingClientRect();
-    const PAD = 24; // gap between arrow tip and card edge
+  // Cloud rows at section boundaries — alternate left/right, embedded in page edge
+  const numSections = skyColors.length;
+  const clouds: { top: number; left: number; opacity: number }[] = [];
+  for (let i = 1; i < numSections - 1; i++) {
+    const top = (i / numSections) * 100;
+    const fromLeft = i % 2 === 1;
+    clouds.push({ top, left: fromLeft ? -15 : 60, opacity: 0.6 });
+  }
 
-    const rects = cardEls.map(el => {
-      const r = el.getBoundingClientRect();
-      return {
-        cx: r.left - pageRect.left + r.width / 2,
-        cy: r.top - pageRect.top + r.height / 2,
-        top: r.top - pageRect.top,
-        bottom: r.top - pageRect.top + r.height,
-        left: r.left - pageRect.left,
-        right: r.left - pageRect.left + r.width
-      };
-    });
+  // Cloud filter: gets warmer/brighter further down
+  function cloudFilter(topPct: number): string {
+    const t = topPct / 100;
+    return `hue-rotate(${t * 25}deg) brightness(${1 + t * 0.5}) saturate(${1 + t * 0.3})`;
+  }
 
-    const segs: Segment[] = [];
-    for (let i = 0; i < rects.length - 1; i++) {
-      const src = rects[i];
-      const dst = rects[i + 1];
+  // Section navigation
+  const sections = ['Go!', 'Create a Project', 'Connect Hackatime', 'Join Slack', 'Beach'];
+  const sectionMultipliers = [1, 2, 3, 4, 5]; // innerHeight multipliers within sky-scroll
 
-      // Cards scroll bottom-to-top, so src is below dst
-      // Arrow starts from top edge of source card, ends near bottom edge of target card
-      const startX = src.cx;
-      const startY = src.top - PAD;
-      const endX = dst.cx;
-      const endY = dst.bottom + PAD + 30; // +30 to account for arrowhead extending beyond line end
-
-      const cpY = (startY + endY) / 2;
-      segs.push({
-        d: `M ${startX} ${startY} C ${startX} ${cpY}, ${endX} ${cpY}, ${endX} ${endY}`,
-        index: i
-      });
+  const activeSection = $derived.by(() => {
+    if (!skyEl || !locked) return -1;
+    const offset = scrollY - skyEl.offsetTop;
+    for (let i = sectionMultipliers.length - 1; i >= 0; i--) {
+      if (offset >= (sectionMultipliers[i] - 0.5) * innerHeight) return i;
     }
-    segments = segs;
+    return 0;
+  });
+
+  let navigating = $state(false);
+
+  function goToSection(index: number) {
+    if (!skyEl || navigating) return;
+    navigating = true;
+    const target = skyEl.offsetTop + sectionMultipliers[index] * innerHeight;
+    window.scrollTo({ top: target, behavior: 'smooth' });
+    // Safety timeout — always unlock after 2s max
+    const timeout = setTimeout(() => { navigating = false; }, 2000);
+    const check = () => {
+      if (Math.abs(scrollY - target) < 2) {
+        clearTimeout(timeout);
+        navigating = false;
+      } else {
+        requestAnimationFrame(check);
+      }
+    };
+    requestAnimationFrame(check);
   }
 
-  let offsetY = $state(0);
-  let heroEl: HTMLDivElement;
-
-  function scrollToCard(index: number) {
-    currentCard = index;
-    const el = cardEls[index];
-    if (!el) return;
-    const cardTop = el.offsetTop;
-    const cardHeight = el.offsetHeight;
-    const viewH = window.innerHeight;
-    offsetY = -(cardTop + cardHeight / 2 - viewH / 2);
+  // Block manual scrolling once in sky sections
+  function blockScroll(e: Event) {
+    if (locked || showEnter) e.preventDefault();
   }
 
-  function scrollToHero() {
-    currentCard = cards.length;
-    offsetY = 0;
+  const scrollKeys = new Set(['ArrowUp', 'ArrowDown', 'Space', 'PageUp', 'PageDown', 'Home', 'End']);
+  function blockKeys(e: KeyboardEvent) {
+    if ((locked || showEnter) && scrollKeys.has(e.code)) e.preventDefault();
   }
+
+  function cleanupListeners() {
+    window.removeEventListener('wheel', blockScroll);
+    window.removeEventListener('touchmove', blockScroll);
+    window.removeEventListener('keydown', blockKeys);
+  }
+
+  beforeNavigate(cleanupListeners);
+
+  // Measure total path length of all letter paths once mounted
+  let pathEls: SVGPathElement[] = [];
+  let totalLength = $state(0);
 
   onMount(() => {
-    (async () => {
-      await tick();
-      computeSegments();
-      scrollToCard(0);
-    })();
-    const resizeHandler = () => {
-      computeSegments();
-      scrollToCard(currentCard);
-    };
-    window.addEventListener('resize', resizeHandler);
-    return () => window.removeEventListener('resize', resizeHandler);
+    window.addEventListener('wheel', blockScroll, { passive: false });
+    window.addEventListener('touchmove', blockScroll, { passive: false });
+    window.addEventListener('keydown', blockKeys);
+
+    // Start at the bottom so user scrolls UP to play the scrollymation
+    window.scrollTo(0, innerHeight * 13);
+
+    totalLength = pathEls.reduce((sum, p) => sum + p.getTotalLength(), 0);
+    let cumulative = 0;
+    for (const p of pathEls) {
+      const len = p.getTotalLength();
+      p.style.strokeDasharray = `${len}`;
+      p.style.strokeDashoffset = `${len}`;
+      p.dataset.length = `${len}`;
+      p.dataset.start = `${cumulative}`;
+      cumulative += len;
+    }
+
+    return cleanupListeners;
+  });
+
+  // Update each path's offset based on scroll progress
+  $effect(() => {
+    if (!totalLength) return;
+    const drawn = drawProgress * totalLength;
+    for (const p of pathEls) {
+      const len = Number(p.dataset.length);
+      const start = Number(p.dataset.start);
+      const pathDrawn = Math.min(Math.max(drawn - start, 0), len);
+      p.style.strokeDashoffset = `${len - pathDrawn}`;
+    }
   });
 </script>
 
-<div class="viewport">
-<div class="page" bind:this={pageEl} style="transform: translateY({offsetY}px);">
-  <div class="hero-top" bind:this={heroEl}>
-    <img src="/images/tutorial-top.webp" alt="" class="hero-img" />
-  </div>
+<svelte:window bind:scrollY bind:innerHeight />
 
-  <!-- Decorative pipes -->
-  <div class="pipe pipe-l1" aria-hidden="true"></div>
-  <div class="pipe pipe-r1" aria-hidden="true"></div>
-  <div class="pipe pipe-l2" aria-hidden="true"></div>
-  <div class="pipe pipe-r2" aria-hidden="true"></div>
-  <div class="pipe pipe-l3" aria-hidden="true"></div>
-  <div class="pipe pipe-r3" aria-hidden="true"></div>
-
-  <!-- Decorative gears -->
-  <svg class="gear gear-l1" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <g fill="#b8956e"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#deb49d"/>
-  </svg>
-  <svg class="gear gear-r1" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <g fill="#a8845e"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45 + 22.5} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#c49a7a"/>
-  </svg>
-  <svg class="gear gear-l2" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <g fill="#917053"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#a8845e"/>
-  </svg>
-  <svg class="gear gear-r2" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <g fill="#7a6348"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45 + 22.5} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#917053"/>
-  </svg>
-  <svg class="gear gear-l3" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <g fill="#634e38"><circle cx="50" cy="50" r="30"/>{#each Array(8) as _, t}<rect x="43" y="4" width="14" height="22" rx="3" transform="rotate({t*45} 50 50)"/>{/each}</g><circle cx="50" cy="50" r="12" fill="#7a6348"/>
-  </svg>
-
-  <!-- Strata: hero → card 5 section -->
-  <div class="rock-strata" style="position:absolute;top:1300px;left:0;right:0;background:#d8ac96" aria-hidden="true">
-    <svg viewBox="0 0 1440 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-      <polygon points="0,40 140,25 300,55 440,20 580,50 720,15 860,48 1000,28 1140,58 1280,22 1440,45 1440,120 0,120" fill="#c8a488" />
-      <polygon points="0,65 160,50 320,78 460,45 600,72 760,48 900,80 1040,52 1180,82 1320,55 1440,70 1440,120 0,120" fill="#deb49d" />
+<div class="scroll-container" class:hidden={locked} class:collapsed={transitioned}>
+  <div class="tile-bg" class:hidden={locked || transitioned}></div>
+  <div class="sticky-frame">
+    <svg class="draw-text" viewBox="0 0 1000 130" xmlns="http://www.w3.org/2000/svg">
+      <path bind:this={pathEls[0]} d="M20,20 Q28,65 35,100 Q40,70 48,45 Q52,60 58,100 Q65,65 72,20" />
+      <path bind:this={pathEls[1]} d="M88,60 Q90,40 108,40 Q125,42 122,60 L88,62 Q86,88 108,90 Q120,88 125,78" />
+      <path bind:this={pathEls[2]} d="M138,18 Q136,58 140,98" />
+      <path bind:this={pathEls[3]} d="M172,42 Q155,42 155,65 Q158,92 175,90" />
+      <path bind:this={pathEls[4]} d="M192,65 Q192,40 210,40 Q228,42 228,65 Q228,90 210,92 Q192,90 192,65" />
+      <path bind:this={pathEls[5]} d="M248,92 Q246,58 248,45 Q252,38 265,38 Q278,40 278,52 L278,92 M278,52 Q282,38 295,38 Q308,40 308,52 L308,92" />
+      <path bind:this={pathEls[6]} d="M325,60 Q328,40 345,40 Q362,42 360,60 L325,62 Q322,88 345,90 Q358,88 362,78" />
+      <path bind:this={pathEls[7]} d="M405,25 Q402,58 405,92 Q408,100 418,98 M392,45 L422,45" />
+      <path bind:this={pathEls[8]} d="M438,65 Q438,40 455,40 Q472,42 472,65 Q472,90 455,92 Q438,90 438,65" />
+      <path bind:this={pathEls[9]} d="M512,105 Q510,62 512,18 Q514,15 535,15 L548,15 Q568,18 568,35 Q566,52 548,52 L512,50" />
+      <path bind:this={pathEls[10]} d="M512,50 L550,52 Q575,55 572,75 Q570,92 550,90 L530,88 Q512,85 512,105" />
+      <path bind:this={pathEls[11]} d="M592,60 Q595,40 612,40 Q630,42 628,60 L592,62 Q590,88 612,90 Q625,88 630,78" />
+      <path bind:this={pathEls[12]} d="M648,60 Q650,40 668,40 Q685,42 682,60 L648,62 Q645,88 668,90 Q680,88 685,78" />
+      <path bind:this={pathEls[13]} d="M712,50 Q705,38 702,50 Q698,60 714,65 Q730,72 726,85 Q722,98 710,92" />
+      <path bind:this={pathEls[14]} d="M745,25 Q742,58 745,92 Q748,100 758,98 M732,45 L762,45" />
     </svg>
-  </div>
-
-  <!-- Section bg: card 5 -->
-  <div class="section-bg" style="top:1350px;height:550px;background:#deb49d"></div>
-
-  <!-- Strata: #deb49d → #c49a7a -->
-  <div class="rock-strata" style="position:absolute;top:1900px;left:0;right:0;background:#deb49d" aria-hidden="true">
-    <svg viewBox="0 0 1440 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-      <polygon points="0,38 180,52 340,28 500,55 660,20 820,50 980,35 1140,58 1300,22 1440,45 1440,120 0,120" fill="#d0a585" />
-      <polygon points="0,62 200,75 360,50 520,78 680,45 840,72 1000,52 1160,80 1320,55 1440,68 1440,120 0,120" fill="#c49a7a" />
-    </svg>
-  </div>
-
-  <!-- Section bg: card 4 -->
-  <div class="section-bg" style="top:1950px;height:550px;background:#c49a7a"></div>
-
-  <!-- Strata: #c49a7a → #a8845e -->
-  <div class="rock-strata" style="position:absolute;top:2500px;left:0;right:0;background:#c49a7a" aria-hidden="true">
-    <svg viewBox="0 0 1440 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-      <polygon points="0,35 180,52 340,28 500,58 660,22 820,55 980,32 1140,60 1300,25 1440,48 1440,120 0,120" fill="#b68e6c" />
-      <polygon points="0,60 200,75 380,48 540,78 700,42 860,72 1020,50 1180,76 1340,54 1440,68 1440,120 0,120" fill="#a8845e" />
-    </svg>
-  </div>
-
-  <!-- Section bg: card 3 -->
-  <div class="section-bg" style="top:2550px;height:650px;background:#a8845e"></div>
-
-  <!-- Strata: #a8845e → #7a6348 -->
-  <div class="rock-strata" style="position:absolute;top:3200px;left:0;right:0;background:#a8845e" aria-hidden="true">
-    <svg viewBox="0 0 1440 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-      <polygon points="0,38 160,55 320,30 480,60 640,25 800,52 960,35 1120,58 1280,28 1440,50 1440,120 0,120" fill="#917053" />
-      <polygon points="0,62 200,78 360,52 520,80 680,48 840,75 1000,55 1160,82 1320,58 1440,72 1440,120 0,120" fill="#7a6348" />
-    </svg>
-  </div>
-
-  <!-- Section bg: card 2 -->
-  <div class="section-bg" style="top:3250px;height:700px;background:#7a6348"></div>
-
-  <!-- Strata: #7a6348 → #4b3a2a -->
-  <div class="rock-strata" style="position:absolute;top:3950px;left:0;right:0;background:#7a6348" aria-hidden="true">
-    <svg viewBox="0 0 1440 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-      <polygon points="0,42 140,28 300,58 440,22 580,52 720,18 860,50 1000,30 1140,55 1280,25 1440,48 1440,120 0,120" fill="#634e38" />
-      <polygon points="0,68 180,80 340,55 500,82 660,50 820,78 980,58 1140,84 1300,60 1440,75 1440,120 0,120" fill="#4b3a2a" />
-    </svg>
-  </div>
-
-  <!-- Section bg: card 1 -->
-  <div class="section-bg" style="top:4000px;height:1000px;background:#4b3a2a"></div>
-
-  {#if segments.length > 0}
-    <svg class="path-line" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <marker id="arrowhead" viewBox="0 0 10 10" refX="0" refY="5"
-          markerWidth="50" markerHeight="50" orient="auto" markerUnits="userSpaceOnUse">
-          <polyline points="0,0 10,5 0,10" fill="none" stroke="#000000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-        <marker id="arrowhead-active" viewBox="0 0 10 10" refX="0" refY="5"
-          markerWidth="50" markerHeight="50" orient="auto" markerUnits="userSpaceOnUse">
-          <polyline points="0,0 10,5 0,10" fill="none" stroke="#c43b3b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-        </marker>
-      </defs>
-      {#each segments as seg}
-        {@const active = seg.index < currentCard}
-        <path
-          d={seg.d}
-          fill="none"
-          stroke={active ? '#c43b3b' : '#000000'}
-          stroke-width="10"
-          stroke-linecap="round"
-          marker-end={active ? 'url(#arrowhead-active)' : 'url(#arrowhead)'}
-          class="segment-arrow"
-        />
-      {/each}
-    </svg>
-  {/if}
-
-  <div class="content">
-    {#each cards as card, i}
-      <div
-        class="card"
-        bind:this={cardEls[i]}
-        style="top: {card.y}px; left: {card.x}%; transform: rotate({card.rot}deg);"
-      >
-        <h2>{card.n}. {card.label}</h2>
-        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam.</p>
-        {#if i < cards.length - 1}
-          <button class="next-btn" onclick={() => scrollToCard(i + 1)}>Next &uarr;</button>
-        {:else}
-          <button class="next-btn" onclick={scrollToHero}>Finish &uarr;</button>
-        {/if}
-      </div>
-    {/each}
+    {#if showEnter}
+      <button class="enter-btn" onclick={enterSky}>Enter</button>
+    {/if}
+    <img
+      src="/images/beest2.webp"
+      alt=""
+      class="beest"
+      style="transform: translateY({beestY}%); opacity: {beestProgress};"
+    />
+    <img src="/images/Beach.webp" alt="" class="layer beach" />
+    <img src="/images/Water%20swooosh.webp" alt="" class="layer water" />
+    <img
+      src="/images/cloud-left.webp"
+      alt=""
+      class="cloud cloud-left"
+      style="transform: translate({-translateX}vw, {translateY}vh) scale({scale});"
+    />
+    <img
+      src="/images/cloud-right.webp"
+      alt=""
+      class="cloud cloud-right"
+      style="transform: translate({translateX}vw, {translateY}vh) scale({scale});"
+    />
   </div>
 </div>
+
+{#if transitioned}
+<div class="sky-scroll" style="height: {innerHeight * 6}px;" bind:this={skyEl}>
+  <div class="sky-tile"></div>
+  <div class="sky-tint" style="background: linear-gradient(to bottom, {gradientStops});"></div>
+  {#each clouds as cloud}
+    <img
+      src="/images/cloud.webp"
+      alt=""
+      class="scattered-cloud"
+      style="
+        top: {cloud.top}%;
+        left: {cloud.left}%;
+        opacity: {cloud.opacity};
+        filter: {cloudFilter(cloud.top)};
+      "
+    />
+  {/each}
+  <!-- Section 0: Go! (top — last seen) -->
+  <div class="section-content" style="top: {innerHeight}px;">
+    <h2 class="section-title">Go!</h2>
+    <p class="section-paragraph">You're all set to build — community and prizes await you, but if you ever get stuck you can always replay this tutorial, read the <a href="/faq" class="section-link">FAQ</a> or ask in <a href="https://hackclub.enterprise.slack.com/archives/C0AQ4T1CWH2" target="_blank" rel="noopener" class="section-link">#beest-help</a> on Slack.</p>
+  </div>
+
+  <!-- Section 1: Create a Project -->
+  <div class="section-content" style="top: {innerHeight * 2}px;">
+    <h2 class="section-title">Create a Project</h2>
+    <div class="projects-row">
+      <button class="project-card create-card">
+        <span class="create-icon">+</span>
+        <span class="create-label">Create Project</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Section 2: Connect Hackatime -->
+  <div class="section-content" style="top: {innerHeight * 3}px;">
+    <h2 class="section-title">Connect Hackatime</h2>
+    <p class="section-paragraph">Track your build time and unlock rewards by connecting Hackatime to your project.</p>
+    <button class="action-btn">Connect Hackatime</button>
+  </div>
+
+  <img
+    src="/images/cloud.webp"
+    alt=""
+    class="projects-cloud"
+    style="top: {innerHeight * 4}px;"
+  />
+  <!-- Section 3: Join Slack (bottom — first seen after landing) -->
+  <div class="section-content" style="top: {innerHeight * 4}px;">
+    <h2 class="section-title">Join Slack</h2>
+    <p class="section-paragraph">Join the Hack Club Slack to meet other builders, get help, and share your progress.</p>
+    <button class="action-btn">Join Slack</button>
+  </div>
+  <div class="sky-hero">
+    <img src="/images/beest2.webp" alt="" class="hero-beest" />
+    <img src="/images/Beach.webp" alt="" class="hero-beach" />
+    <img src="/images/Water%20swooosh.webp" alt="" class="hero-water" />
+  </div>
 </div>
+{#if locked}
+<nav class="section-tabs" class:nav-locked={navigating}>
+  {#each sections as name, i}
+    <button class="section-tab" class:active={activeSection === i} onclick={() => goToSection(i)}>{name}</button>
+  {/each}
+</nav>
+{/if}
+{/if}
 
 <style>
-  .viewport {
+  .scroll-container {
+    height: 1400vh;
+    background: #2e3563;
+  }
+
+  .scroll-container.collapsed {
+    height: 200vh;
+  }
+
+  .sticky-frame {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    width: 100%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: url('/images/sky.webp') center / cover no-repeat;
+    transition: transform 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1;
+  }
+
+  .enter-btn {
+    position: absolute;
+    top: 22%;
+    left: 5%;
+    z-index: 5;
+    background: rgba(255, 255, 255, 0.15);
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    color: white;
+    font-size: 1.2rem;
+    padding: 0.8rem 2.5rem;
+    border-radius: 2rem;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    animation: fade-in 0.6s ease;
+  }
+
+  .enter-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .draw-text {
+    position: absolute;
+    top: 5%;
+    left: 5%;
+    width: 50vw;
+    z-index: 0;
+  }
+
+  .draw-text path {
+    fill: none;
+    stroke: white;
+    stroke-width: 5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .beest {
+    position: absolute;
+    bottom: 0;
+    right: 5%;
+    height: 70vh;
+    object-fit: contain;
+    will-change: transform;
+    z-index: 10;
+  }
+
+  .layer {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    object-fit: cover;
+    object-position: bottom;
+  }
+
+  .beach {
+    width: 120%;
+    left: -10%;
+    bottom: -5vh;
+    transform: scale(1.3);
+    transform-origin: bottom center;
+  }
+
+  .cloud {
+    position: absolute;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
+    will-change: transform;
+    margin-top: -30vh;
+  }
+
+  .tile-bg {
     position: fixed;
     inset: 0;
+    background: url('/images/bg-tile.webp') repeat;
+    z-index: -1;
+  }
+
+
+  .hidden {
+    display: none !important;
+  }
+
+  /* ── Sky scroll area ── */
+  .sky-scroll {
+    position: relative;
     overflow: hidden;
   }
 
-  .page {
-    position: relative;
-    min-height: 5000px;
-    background: #dfb59e;
-    transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-  }
 
-  .section-bg {
-    position: absolute;
-    left: 0;
-    right: 0;
-    z-index: 0;
-  }
-
-  .rock-strata {
-    display: block;
-    width: 100%;
-    line-height: 0;
-    z-index: 0;
-  }
-
-  .rock-strata svg {
-    display: block;
-    width: 100%;
-    height: 80px;
-  }
-
-  .path-line {
+  .sky-tile {
     position: absolute;
     inset: 0;
-    width: 100%;
-    min-height: 5000px;
-    overflow: visible;
-    pointer-events: none;
-    z-index: 2;
+    background: url('/images/bg-tile.webp') repeat;
   }
 
-  .segment-arrow {
-    transition: opacity 0.4s ease;
-  }
-
-  .hero-top {
+  .sky-tint {
     position: absolute;
-    top: 0;
+    inset: 0;
+    mix-blend-mode: color;
+  }
+
+  .projects-cloud {
+    position: absolute;
+    right: -10%;
+    width: 40vw;
+    height: auto;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  .sky-hero {
+    position: absolute;
+    bottom: 0;
     left: 0;
-    right: 0;
-    height: 1350px;
+    width: 100%;
+    height: 100vh;
+    background: url('/images/sky.webp') center / cover no-repeat;
     z-index: 1;
     overflow: hidden;
-    background: #d8ac96;
   }
 
-  .hero-img {
-    width: 100%;
-    object-fit: contain;
-    object-position: center top;
-    display: block;
-    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
-  }
-
-  .content {
+  .hero-beest {
     position: absolute;
-    inset: 0;
+    bottom: 0;
+    right: 5%;
+    height: 70vh;
+    object-fit: contain;
     z-index: 3;
   }
 
-  .card {
+  .hero-beach {
     position: absolute;
-    width: 520px;
-    min-height: 220px;
-    background: #f5f0e8;
-    color: #2a2220;
-    padding: 3rem 3rem;
-    border-radius: 8px;
-    box-shadow: 0 6px 30px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
-    font-family: "Courier New", monospace;
+    bottom: -5vh;
+    left: -10%;
+    width: 120%;
+    object-fit: cover;
+    object-position: bottom;
+    transform: scale(1.3);
+    transform-origin: bottom center;
+    z-index: 2;
   }
 
-  .card h2 {
-    margin: 0 0 1.25rem;
-    font-size: 1.6rem;
-    font-family: "Stone Breaker", "Courier New", monospace;
-    letter-spacing: 0.03em;
-    color: #3b3029;
-    border-bottom: 2px solid #d4cabb;
-    padding-bottom: 0.75rem;
+  .hero-water {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    object-fit: cover;
+    object-position: bottom;
+    z-index: 2;
   }
 
-  .card p {
-    margin: 0;
-    font-size: 1.05rem;
-    line-height: 1.7;
-    color: #4a4240;
+  .scattered-cloud {
+    position: absolute;
+    width: 55vw;
+    height: auto;
+    pointer-events: none;
   }
 
-  .next-btn {
-    display: block;
-    margin: 1.5rem auto 0;
-    padding: 0.6rem 1.6rem;
-    background: #3b3029;
-    color: #e8e0d4;
+  .section-content {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 8vw;
+    box-sizing: border-box;
+  }
+
+  .section-title {
+    color: white;
+    font-size: 2.5rem;
+    margin-bottom: 2rem;
+    text-align: center;
+  }
+
+  /* ── Your Projects ── */
+  .projects-row {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+  }
+
+  .project-card {
+    background: white;
+    border: 2px dashed #ccc;
+    border-radius: 1rem;
+    padding: 2rem;
+    width: 260px;
+    height: 340px;
+    color: #222;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .project-card:hover {
+    border-color: #999;
+    background: #f8f8f8;
+  }
+
+  .create-icon {
+    font-size: 4rem;
+    font-weight: 300;
+    line-height: 1;
+    color: #999;
+    margin-bottom: 1rem;
+  }
+
+  .create-label {
+    font-size: 1.1rem;
+    color: #666;
+  }
+
+
+  .section-paragraph {
+    color: white;
+    font-size: 1.15rem;
+    line-height: 1.8;
+    max-width: 550px;
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+
+  .section-link {
+    color: white;
+    text-decoration: underline;
+  }
+
+  .section-link:hover {
+    opacity: 0.8;
+  }
+
+  .action-btn {
+    background: white;
+    color: #222;
     border: none;
-    border-radius: 4px;
-    font-family: "Courier New", monospace;
-    font-size: 0.95rem;
+    font-size: 1.1rem;
+    padding: 0.8rem 2.5rem;
+    border-radius: 0.5rem;
     cursor: pointer;
     transition: background 0.2s;
   }
 
-  .next-btn:hover {
-    background: #c9a84c;
-    color: #2a2220;
+  .action-btn:hover {
+    background: #eee;
   }
 
-  /* ── decorative pipes ───────────────────────────── */
-  .pipe {
-    position: absolute;
-    background: #8a8279;
-    border-radius: 6px;
-    z-index: 4;
+  .section-tabs {
+    position: fixed;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .nav-locked {
     pointer-events: none;
   }
-  .pipe::after {
-    content: '';
-    position: absolute;
-    background: #9e958a;
-    border-radius: 4px;
+
+  .section-tab {
+    background: white;
+    border: none;
+    border-bottom: 1px solid #eee;
+    color: #333;
+    font-size: 0.85rem;
+    padding: 0.7rem 1rem 0.7rem 1.2rem;
+    cursor: pointer;
+    text-align: right;
+    white-space: nowrap;
+    transition: background 0.2s, color 0.2s;
   }
 
-  .pipe-l1 {
-    width: 180px; height: 22px;
-    top: 1650px; left: -40px;
-    transform: rotate(-5deg);
-    opacity: 0.6;
-  }
-  .pipe-l1::after {
-    width: 14px; height: 34px;
-    right: -2px; top: -6px;
+  .section-tab:first-child {
+    border-radius: 0.4rem 0 0 0;
   }
 
-  .pipe-r1 {
-    width: 160px; height: 20px;
-    top: 2150px; right: -30px;
-    transform: rotate(-8deg);
-    opacity: 0.55;
-  }
-  .pipe-r1::after {
-    width: 14px; height: 32px;
-    left: -2px; top: -6px;
+  .section-tab:last-child {
+    border-radius: 0 0 0 0.4rem;
+    border-bottom: none;
   }
 
-  .pipe-l2 {
-    width: 150px; height: 18px;
-    top: 2750px; left: -30px;
-    transform: rotate(4deg);
-    opacity: 0.5;
-  }
-  .pipe-l2::after {
-    width: 12px; height: 28px;
-    right: -2px; top: -5px;
+  .section-tab.active {
+    background: #222;
+    color: white;
   }
 
-  .pipe-r2 {
-    width: 170px; height: 20px;
-    top: 3400px; right: -40px;
-    transform: rotate(6deg);
-    opacity: 0.45;
-  }
-  .pipe-r2::after {
-    width: 14px; height: 30px;
-    left: -2px; top: -5px;
-  }
-
-  .pipe-l3 {
-    width: 140px; height: 16px;
-    top: 4000px; left: -20px;
-    transform: rotate(-3deg);
-    opacity: 0.4;
-  }
-  .pipe-l3::after {
-    width: 12px; height: 26px;
-    right: -2px; top: -5px;
-  }
-
-  .pipe-r3 {
-    width: 160px; height: 18px;
-    top: 4400px; right: -30px;
-    transform: rotate(-10deg);
-    opacity: 0.4;
-  }
-  .pipe-r3::after {
-    width: 14px; height: 28px;
-    left: -2px; top: -5px;
-  }
-
-  /* ── decorative gears ───────────────────────────── */
-  .gear {
-    position: absolute;
-    pointer-events: none;
-    z-index: 4;
-  }
-
-  .gear-l1 {
-    width: 90px; height: 90px;
-    top: 1850px; left: -20px;
-    opacity: 0.55;
-  }
-
-  .gear-r1 {
-    width: 120px; height: 120px;
-    top: 2450px; right: -30px;
-    opacity: 0.5;
-  }
-
-  .gear-l2 {
-    width: 100px; height: 100px;
-    top: 3100px; left: -25px;
-    opacity: 0.45;
-  }
-
-  .gear-r2 {
-    width: 80px; height: 80px;
-    top: 3700px; right: -15px;
-    opacity: 0.4;
-  }
-
-  .gear-l3 {
-    width: 110px; height: 110px;
-    top: 4300px; left: -30px;
-    opacity: 0.35;
+  .section-tab:hover:not(.active) {
+    background: #f0f0f0;
   }
 </style>

@@ -12,10 +12,14 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { RsvpService } from '../rsvp/rsvp.service';
 
 @Controller('api/auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly rsvpService: RsvpService,
+  ) {}
 
   /**
    * Generates OAuth state and authorization URL.
@@ -66,6 +70,19 @@ export class AuthController {
   @Get('me')
   me(@Req() req: Request) {
     return (req as any).user;
+  }
+
+  /**
+   * RSVP using the authenticated user's email from their JWT.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post('rsvp')
+  async rsvpFromSession(@Req() req: Request) {
+    const email = (req as any).user?.email;
+    if (!email) {
+      throw new BadRequestException('No email in token');
+    }
+    return this.rsvpService.createRsvp(email);
   }
 
   /**
