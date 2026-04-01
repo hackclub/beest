@@ -7,8 +7,10 @@ import { HackatimeModule } from './hackatime/hackatime.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { User } from './entities/user.entity';
 import { Session } from './entities/session.entity';
+import { HealthController } from './health.controller';
 
 @Module({
+  controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     TypeOrmModule.forRootAsync({
