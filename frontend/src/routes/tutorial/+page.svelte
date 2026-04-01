@@ -295,6 +295,7 @@
   <div class="section-content go-section" style="top: {innerHeight}px;">
     <h2 class="section-title">Go!</h2>
     <p class="section-paragraph">You're all set to build — community and prizes await you, but if you ever get stuck you can always replay this tutorial, read the <a href="/faq" class="section-link">FAQ</a> or ask in <a href="https://hackclub.enterprise.slack.com/archives/C0AQ4T1CWH2" target="_blank" rel="noopener" class="section-link">#beest-help</a> on Slack.</p>
+    <a href="/home" class="action-btn go-home-btn">Go to Home</a>
   </div>
 
   <!-- Section 1: Create a Project -->
@@ -555,7 +556,7 @@
   .go-cloud {
     position: absolute;
     left: 55%;
-    transform: translateX(-50%) translateY(-15%);
+    transform: translateX(calc(-50% + 40px)) translateY(-15%);
     width: 80vw;
     height: auto;
     z-index: 1;
@@ -640,9 +641,20 @@
     font-weight: bold;
   }
 
+  .go-home-btn {
+    text-decoration: none;
+    background: #47453f;
+    color: white;
+    font-weight: bold;
+  }
+
+  .go-home-btn:hover {
+    background: #5a574f;
+  }
+
   .go-section .section-title,
   .go-section .section-paragraph {
-    text-shadow: 0 2px 8px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.5);
+    text-shadow: 2px 2px 0 rgba(71, 69, 63, 0.35);
   }
 
   /* ── Your Projects ── */

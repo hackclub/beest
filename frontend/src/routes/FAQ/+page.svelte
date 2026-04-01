@@ -110,7 +110,7 @@
     {/each}
   </div>
 
-  <a href={resolve('/')} class="back-btn">Back to main site</a>
+  <a href={resolve('/home')} class="back-btn">Back to main site</a>
 </div>
 
 <style>

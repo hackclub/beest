@@ -1,6 +1,9 @@
 node_modules
 dist
 
+# Local dev database
+docker-compose.dev.yml
+
 # Env
 .env
 .env.*
