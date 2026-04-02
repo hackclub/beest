@@ -84,6 +84,7 @@
   function navigate(id: string) {
     if (id === 'faq') { window.location.href = '/FAQ'; return; }
     if (id === 'tutorial') { window.location.href = '/tutorial'; return; }
+    if (creatingProject) cancelCreateProject();
     activeSection = id;
   }
 
