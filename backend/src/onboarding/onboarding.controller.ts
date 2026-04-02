@@ -1,10 +1,12 @@
 import { Controller, Get, Req, UseGuards, Logger } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { HackatimeService } from '../hackatime/hackatime.service';
 import { SlackService } from '../slack/slack.service';
+import { ProjectsService } from '../projects/projects.service';
 import { User } from '../entities/user.entity';
 
 @Controller('api/onboarding')
@@ -14,6 +16,7 @@ export class OnboardingController {
   constructor(
     private readonly hackatimeService: HackatimeService,
     private readonly slackService: SlackService,
+    private readonly projectsService: ProjectsService,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
   ) {}
@@ -22,6 +25,7 @@ export class OnboardingController {
    * Returns completion status for each onboarding step.
    * The frontend uses this to show "Complete! Move on?" vs action buttons.
    */
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
   @UseGuards(JwtAuthGuard)
   @Get('status')
   async getStatus(@Req() req: Request) {
@@ -45,7 +49,7 @@ export class OnboardingController {
     return {
       hackatime: await this.hackatimeService.isConnected(user.sub),
       slack,
-      project: false, // TODO: implement project creation tracking
+      project: await this.projectsService.userHasProjects(user.uid),
     };
   }
 }

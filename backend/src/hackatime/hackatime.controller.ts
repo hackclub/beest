@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
   Req,
   UseGuards,
@@ -65,5 +66,20 @@ export class HackatimeController {
     } catch {
       throw new UnauthorizedException('Hackatime authentication failed');
     }
+  }
+
+  /**
+   * Returns the authenticated user's Hackatime project names.
+   * Only project name strings are returned — no other Hackatime data.
+   */
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @Get('projects')
+  async getProjects(@Req() req: Request) {
+    const userId = (req as any).user?.sub;
+    if (!userId) throw new UnauthorizedException('No user identity');
+
+    const names = await this.hackatimeService.getProjectNames(userId);
+    return { projects: names };
   }
 }

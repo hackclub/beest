@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { fetchWithTimeout } from '../fetch.util';
 
 export type SlackMembershipStatus = 'full_member' | 'guest' | 'not_found';
 
@@ -22,7 +23,7 @@ export class SlackService {
       throw new Error('Slack integration is not configured');
     }
 
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(email)}`,
       { headers: { Authorization: `Bearer ${this.botToken}` } },
     );

@@ -5,6 +5,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { fetchWithTimeout } from '../fetch.util';
 
 const EMAIL_RE =
   /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
@@ -26,6 +27,15 @@ export class RsvpService {
 
   private sanitizeEmail(raw: string): string {
     return raw.trim().slice(0, 254).replace(/[<>"'&\\]/g, '');
+  }
+
+  /**
+   * Escapes a string for safe use inside an Airtable filterByFormula value.
+   * Doubles any backslashes first, then escapes double-quotes.
+   * The value is wrapped in double-quotes by the caller.
+   */
+  private escapeAirtableValue(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
 
   private get baseUrl(): string {
@@ -59,11 +69,11 @@ export class RsvpService {
 
   private async checkExisting(email: string): Promise<boolean> {
     const searchParams = new URLSearchParams({
-      filterByFormula: `{Email} = '${email.replace(/'/g, "\\'")}'`,
+      filterByFormula: `{Email} = "${this.escapeAirtableValue(email)}"`,
       maxRecords: '1',
     });
 
-    const res = await fetch(`${this.baseUrl}?${searchParams}`, {
+    const res = await fetchWithTimeout(`${this.baseUrl}?${searchParams}`, {
       headers: { Authorization: `Bearer ${this.airtableApiKey}` },
     });
 
@@ -78,7 +88,7 @@ export class RsvpService {
   }
 
   private async createRecord(email: string): Promise<void> {
-    const res = await fetch(this.baseUrl, {
+    const res = await fetchWithTimeout(this.baseUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.airtableApiKey}`,

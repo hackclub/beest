@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { fetchWithTimeout } from '../fetch.util';
 import { User } from '../entities/user.entity';
 
 @Injectable()
@@ -108,7 +109,7 @@ export class HackatimeService {
     }
 
     // 2. Exchange code for tokens
-    const tokenResponse = await fetch(`${this.baseUrl}/oauth/token`, {
+    const tokenResponse = await fetchWithTimeout(`${this.baseUrl}/oauth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -127,10 +128,10 @@ export class HackatimeService {
       throw new Error('Hackatime token exchange failed');
     }
 
-    const tokens = await tokenResponse.json();
+    const tokens = await tokenResponse.json().catch(() => null);
 
-    if (!tokens.access_token) {
-      this.logger.error('Hackatime token response missing access_token');
+    if (!tokens?.access_token) {
+      this.logger.error('Hackatime token response missing or malformed');
       throw new Error('Invalid token response from Hackatime');
     }
 
@@ -153,5 +154,107 @@ export class HackatimeService {
       select: ['hackatimeToken'],
     });
     return !!user?.hackatimeToken;
+  }
+
+  /**
+   * Fetches the authenticated user's Hackatime project names.
+   * Returns only the project name strings — no other data is exposed.
+   */
+  async getProjectNames(userId: string): Promise<string[]> {
+    const user = await this.userRepo.findOne({
+      where: { hcaSub: userId },
+      select: ['hackatimeToken'],
+    });
+
+    if (!user?.hackatimeToken) {
+      return [];
+    }
+
+    try {
+      const res = await fetchWithTimeout(
+        `${this.baseUrl}/api/v1/users/current/projects`,
+        {
+          headers: { Authorization: `Bearer ${user.hackatimeToken}` },
+        },
+      );
+
+      if (!res.ok) {
+        this.logger.warn(
+          `Hackatime projects fetch failed (${res.status}) for user ${userId}`,
+        );
+        return [];
+      }
+
+      const data = await res.json();
+      const projects: { name: string }[] = data?.data ?? data ?? [];
+
+      if (!Array.isArray(projects)) return [];
+
+      return projects
+        .map((p) => (typeof p === 'string' ? p : p?.name))
+        .filter((n): n is string => typeof n === 'string' && n.length > 0);
+    } catch (err) {
+      this.logger.error(`Hackatime projects fetch error for ${userId}: ${err}`);
+      return [];
+    }
+  }
+
+  /**
+   * Fetches all-time stats from Hackatime and returns total seconds
+   * for only the specified project names.
+   */
+  async getHoursForProjects(
+    userId: string,
+    projectNames: string[],
+  ): Promise<{ totalSeconds: number; hours: number }> {
+    if (projectNames.length === 0) {
+      return { totalSeconds: 0, hours: 0 };
+    }
+
+    const user = await this.userRepo.findOne({
+      where: { hcaSub: userId },
+      select: ['hackatimeToken'],
+    });
+
+    if (!user?.hackatimeToken) {
+      return { totalSeconds: 0, hours: 0 };
+    }
+
+    try {
+      const res = await fetchWithTimeout(
+        `${this.baseUrl}/api/v1/users/current/stats/all_time`,
+        {
+          headers: { Authorization: `Bearer ${user.hackatimeToken}` },
+        },
+      );
+
+      if (!res.ok) {
+        this.logger.warn(
+          `Hackatime stats fetch failed (${res.status}) for user ${userId}`,
+        );
+        return { totalSeconds: 0, hours: 0 };
+      }
+
+      const body = await res.json().catch(() => null);
+      const projects: { name: string; total_seconds: number }[] =
+        body?.data?.projects ?? [];
+
+      if (!Array.isArray(projects)) {
+        return { totalSeconds: 0, hours: 0 };
+      }
+
+      const nameSet = new Set(projectNames);
+      const totalSeconds = projects
+        .filter((p) => nameSet.has(p.name))
+        .reduce((sum, p) => sum + (p.total_seconds ?? 0), 0);
+
+      return {
+        totalSeconds,
+        hours: Math.round((totalSeconds / 3600) * 10) / 10,
+      };
+    } catch (err) {
+      this.logger.error(`Hackatime stats fetch error for ${userId}: ${err}`);
+      return { totalSeconds: 0, hours: 0 };
+    }
   }
 }

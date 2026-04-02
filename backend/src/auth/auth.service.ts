@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { fetchWithTimeout } from '../fetch.util';
 import { RsvpService } from '../rsvp/rsvp.service';
 import { User } from '../entities/user.entity';
 import { Session } from '../entities/session.entity';
@@ -124,7 +125,7 @@ export class AuthService {
     }
 
     // 2. Exchange code for tokens
-    const tokenResponse = await fetch(this.tokenUrl, {
+    const tokenResponse = await fetchWithTimeout(this.tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -141,10 +142,13 @@ export class AuthService {
       throw new Error('Token exchange failed');
     }
 
-    const tokens = await tokenResponse.json();
+    const tokens = await tokenResponse.json().catch(() => null);
+    if (!tokens?.access_token) {
+      throw new Error('Invalid token response');
+    }
 
     // 3. Fetch user info
-    const userinfoResponse = await fetch(this.userinfoUrl, {
+    const userinfoResponse = await fetchWithTimeout(this.userinfoUrl, {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
 
@@ -153,7 +157,10 @@ export class AuthService {
       throw new Error('Failed to fetch user info');
     }
 
-    const userinfo = await userinfoResponse.json();
+    const userinfo = await userinfoResponse.json().catch(() => null);
+    if (!userinfo?.sub) {
+      throw new Error('Invalid userinfo response');
+    }
 
     // 4. Upsert user in DB
     const user = await this.upsertUser(userinfo);
@@ -246,7 +253,12 @@ export class AuthService {
       user.name = userinfo.name;
       user.nickname = userinfo.nickname;
       user.slackId = userinfo.slack_id;
-    } else {
+      return this.userRepo.save(user);
+    }
+
+    // New user — attempt insert. If a concurrent request already inserted
+    // this hca_sub, catch the unique constraint violation and update instead.
+    try {
       user = this.userRepo.create({
         hcaSub: userinfo.sub,
         email: userinfo.email,
@@ -254,9 +266,22 @@ export class AuthService {
         nickname: userinfo.nickname,
         slackId: userinfo.slack_id,
       });
+      return await this.userRepo.save(user);
+    } catch (err: any) {
+      if (err?.code === '23505') {
+        // Unique violation — the other request won the insert race
+        user = await this.userRepo.findOne({
+          where: { hcaSub: userinfo.sub },
+        });
+        if (!user) throw err; // shouldn't happen, but safety net
+        user.email = userinfo.email;
+        user.name = userinfo.name;
+        user.nickname = userinfo.nickname;
+        user.slackId = userinfo.slack_id;
+        return this.userRepo.save(user);
+      }
+      throw err;
     }
-
-    return this.userRepo.save(user);
   }
 
   private async createSession(userId: string): Promise<string> {

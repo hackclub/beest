@@ -5,8 +5,12 @@ import { RsvpModule } from './rsvp/rsvp.module';
 import { AuthModule } from './auth/auth.module';
 import { HackatimeModule } from './hackatime/hackatime.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { ProjectsModule } from './projects/projects.module';
+import { AuditLogModule } from './audit-log/audit-log.module';
 import { User } from './entities/user.entity';
 import { Session } from './entities/session.entity';
+import { Project } from './entities/project.entity';
+import { AuditLog } from './entities/audit-log.entity';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -19,14 +23,18 @@ import { HealthController } from './health.controller';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.getOrThrow('DATABASE_URL'),
-        entities: [User, Session],
-        synchronize: config.get('NODE_ENV') !== 'production',
+        entities: [User, Session, Project, AuditLog],
+        migrations: [__dirname + '/migrations/*{.ts,.js}'],
+        migrationsRun: true,
+        synchronize: false,
       }),
     }),
     RsvpModule,
     AuthModule,
     HackatimeModule,
     OnboardingModule,
+    ProjectsModule,
+    AuditLogModule,
   ],
 })
 export class AppModule {}
