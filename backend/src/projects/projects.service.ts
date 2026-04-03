@@ -146,6 +146,58 @@ export class ProjectsService {
     return count > 0;
   }
 
+  /**
+   * Returns approved projects grouped by user, including user name info.
+   * Only includes users who have a hackatime token (needed to fetch hours).
+   */
+  async findApprovedProjectsGroupedByUser(): Promise<
+    Map<string, { hcaSub: string; name: string | null; nickname: string | null; projectNames: string[] }>
+  > {
+    const projects = await this.projectRepo
+      .createQueryBuilder('project')
+      .innerJoinAndSelect('project.user', 'user')
+      .where('project.status = :status', { status: 'approved' })
+      .andWhere('user.hackatime_token IS NOT NULL')
+      .andWhere('project.hackatime_project_name IS NOT NULL')
+      .select([
+        'project.id',
+        'project.hackatimeProjectName',
+        'user.id',
+        'user.hcaSub',
+        'user.name',
+        'user.nickname',
+      ])
+      .getMany();
+
+    const grouped = new Map<
+      string,
+      { hcaSub: string; name: string | null; nickname: string | null; projectNames: string[] }
+    >();
+
+    for (const p of projects) {
+      const userId = p.user.id;
+      const names = (p.hackatimeProjectName ?? []).filter((n) => !!n);
+      if (names.length === 0) continue;
+
+      if (!grouped.has(userId)) {
+        grouped.set(userId, {
+          hcaSub: p.user.hcaSub,
+          name: p.user.name,
+          nickname: p.user.nickname,
+          projectNames: [],
+        });
+      }
+      grouped.get(userId)!.projectNames.push(...names);
+    }
+
+    // Deduplicate project names per user
+    for (const entry of grouped.values()) {
+      entry.projectNames = [...new Set(entry.projectNames)];
+    }
+
+    return grouped;
+  }
+
   async update(
     projectId: string,
     dto: UpdateProjectDto,

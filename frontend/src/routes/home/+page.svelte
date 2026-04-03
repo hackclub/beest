@@ -43,6 +43,9 @@
   let submitting = $state(false);
   let formError = $state('');
   let auditLog = $state<{ action: string; label: string; createdAt: string }[]>([]);
+  let leaderboard = $state<{ name: string; hours: number }[]>([]);
+  let leaderboardLoading = $state(true);
+  let totalBuilders = $state(0);
   let totalHours = $state(0);
   let hoursByStatus = $state<Record<string, number>>({});
   let displayHours = $state(0);
@@ -193,6 +196,19 @@
         animateProgress(totalHours, hoursByStatus);
       }
     } catch { /* silent */ }
+  }
+
+  async function fetchLeaderboard() {
+    leaderboardLoading = true;
+    try {
+      const res = await fetch('/api/leaderboard');
+      if (res.ok) {
+        const data = await res.json();
+        leaderboard = Array.isArray(data.leaderboard) ? data.leaderboard : [];
+        totalBuilders = data.totalUsers ?? 0;
+      }
+    } catch { /* silent */ }
+    leaderboardLoading = false;
   }
 
   async function fetchAuditLog() {
@@ -416,6 +432,7 @@
     fetchHackatimeProjects();
     fetchAuditLog();
     fetchProjectHours();
+    fetchLeaderboard();
   });
 </script>
 
@@ -771,7 +788,8 @@
             <button class="action-btn" onclick={openCreateProject}>Create a Project</button>
           {:else}
             {#each projects as project}
-              <div class="project-card" role="button" tabindex="0" onclick={() => openEditProject(project)} onkeydown={(e) => { if (e.key === 'Enter') openEditProject(project); }}>
+              {@const isMobile = project.projectType === 'android' || project.projectType === 'ios'}
+              <div class="project-card" class:landscape={!isMobile} role="button" tabindex="0" onclick={() => openEditProject(project)} onkeydown={(e) => { if (e.key === 'Enter') openEditProject(project); }}>
                 {#if project.screenshot1Url}
                   <img class="project-thumb" src={project.screenshot1Url} alt="{project.name} screenshot" />
                 {/if}
@@ -895,11 +913,11 @@
         <div class="leaderboard-head">
           <div>
             <h2 class="section-title">Leaderboard</h2>
-            <p class="section-subtitle">Top builders by hours logged.</p>
+            <p class="section-subtitle">Top builders by approved hours.</p>
           </div>
           <div class="lb-total-users">
-            <span class="lb-total-label">Total Users</span>
-            <span class="lb-total-value">0</span>
+            <span class="lb-total-label">Builders</span>
+            <span class="lb-total-value">{leaderboardLoading ? '—' : totalBuilders}</span>
           </div>
         </div>
         <div class="leaderboard-table">
@@ -908,15 +926,24 @@
             <span class="lb-name">Builder</span>
             <span class="lb-hours">Hours</span>
           </div>
-          {#each Array(10) as _, i}
-            <div class="leaderboard-row" class:top-three={i < 3}>
-              <span class="lb-rank">{i + 1}</span>
-              <span class="lb-name skeleton-text"></span>
-              <span class="lb-hours skeleton-text short"></span>
-            </div>
-          {/each}
+          {#if leaderboardLoading}
+            {#each Array(10) as _, i}
+              <div class="leaderboard-row">
+                <span class="lb-rank">{i + 1}</span>
+                <span class="lb-name skeleton-text"></span>
+                <span class="lb-hours skeleton-text short"></span>
+              </div>
+            {/each}
+          {:else if leaderboard.length > 0}
+            {#each leaderboard as entry, i}
+              <div class="leaderboard-row" class:top-three={i < 3}>
+                <span class="lb-rank">{i + 1}</span>
+                <span class="lb-name">{entry.name}</span>
+                <span class="lb-hours">{entry.hours}h</span>
+              </div>
+            {/each}
+          {/if}
         </div>
-        <p class="coming-soon">Awaiting the first projects...</p>
       </div>
     </section>
     {/if}
@@ -2531,12 +2558,26 @@
     background: rgba(0, 0, 0, 0.3);
   }
 
+
   .project-thumb {
-    width: 100px;
-    height: 100px;
     object-fit: cover;
     flex-shrink: 0;
-    clip-path: polygon(2% 0%, 98% 3%, 100% 97%, 0% 100%);
+    border-radius: 4px;
+  }
+
+  /* portrait: mobile apps — side thumbnail */
+  .project-card:not(.landscape) .project-thumb {
+    width: 80px;
+    align-self: stretch;
+  }
+
+  /* landscape: web/desktop — 16:9 aspect ratio */
+  .project-card.landscape .project-thumb {
+    aspect-ratio: 16 / 9;
+    height: auto;
+    width: auto;
+    align-self: flex-start;
+    max-height: 140px;
   }
 
   .project-info {
