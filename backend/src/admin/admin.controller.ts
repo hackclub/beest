@@ -68,6 +68,13 @@ export class AdminController {
     return { success: true };
   }
 
+  // ── Projects ──
+
+  @Get('projects')
+  listProjects() {
+    return this.adminService.listAllProjects();
+  }
+
   // ── News CRUD ──
 
   @Get('news')

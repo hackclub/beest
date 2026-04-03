@@ -25,7 +25,7 @@ export class AuthService {
   private readonly jwtSecret: string;
 
   private readonly authorizeUrl =
-    'https://auth.hackclub.com/join/beest';
+    'https://auth.hackclub.com/oauth/authorize';
   private readonly tokenUrl = 'https://auth.hackclub.com/oauth/token';
   private readonly userinfoUrl = 'https://auth.hackclub.com/oauth/userinfo';
 

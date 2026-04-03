@@ -74,8 +74,19 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  me(@Req() req: Request) {
-    return (req as any).user;
+  async me(@Req() req: Request) {
+    const user = (req as any).user;
+    // Check if user has been banned since the JWT was issued
+    try {
+      const perms = await this.rsvpService.getPerms(user.email);
+      if (perms === 'Banned') {
+        throw new UnauthorizedException('Account banned');
+      }
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+      // Airtable lookup failed — don't block the response
+    }
+    return user;
   }
 
   @UseGuards(JwtAuthGuard)

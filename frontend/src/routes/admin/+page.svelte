@@ -47,12 +47,55 @@
 	let newNewsDate = $state('');
 	let newsSaving = $state(false);
 
+	// Projects state
+	interface ProjectSummary {
+		id: string;
+		name: string;
+		description: string;
+		projectType: string;
+		status: string;
+		codeUrl: string | null;
+		isUpdate: boolean;
+		createdAt: string;
+		updatedAt: string;
+		user: { id: string; name: string | null; slackId: string | null };
+	}
+
+	interface StatusCounts {
+		unshipped: number;
+		unreviewed: number;
+		changes_needed: number;
+		approved: number;
+	}
+
+	let allProjects: ProjectSummary[] = $state([]);
+	let statusCounts: StatusCounts = $state({ unshipped: 0, unreviewed: 0, changes_needed: 0, approved: 0 });
+	let projectsLoading = $state(false);
+	let projectStatusFilter = $state('');
+	let projectSearch = $state('');
+
 	function todayDateStr(): string {
 		const d = new Date();
 		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 	}
 
 	const PERMS_OPTIONS = ['User', 'Helper', 'Reviewer', 'Fraud Reviewer', 'Super Admin', 'Banned'];
+
+	let filteredProjects = $derived.by(() => {
+		let result = allProjects;
+		if (projectStatusFilter) {
+			result = result.filter(p => p.status === projectStatusFilter);
+		}
+		if (projectSearch.trim()) {
+			const q = projectSearch.trim().toLowerCase();
+			result = result.filter(p =>
+				p.name.toLowerCase().includes(q) ||
+				(p.user.name?.toLowerCase().includes(q)) ||
+				(p.user.slackId?.toLowerCase().includes(q))
+			);
+		}
+		return result;
+	});
 
 	let filteredUsers = $derived.by(() => {
 		let result = users;
@@ -195,9 +238,24 @@
 		}
 	}
 
+	async function loadProjects() {
+		projectsLoading = true;
+		try {
+			const res = await fetch('/api/admin/projects');
+			if (res.ok) {
+				const data = await res.json();
+				allProjects = data.projects;
+				statusCounts = data.statusCounts;
+			}
+		} finally {
+			projectsLoading = false;
+		}
+	}
+
 	$effect(() => {
 		if (activeTab === 'users') loadUsers();
 		if (activeTab === 'news') loadNews();
+		if (activeTab === 'projects') loadProjects();
 	});
 </script>
 
@@ -416,7 +474,65 @@
 		{:else if activeTab === 'fulfillment'}
 			<p class="placeholder">Fulfillment — coming soon.</p>
 		{:else if activeTab === 'projects'}
-			<p class="placeholder">Projects — coming soon.</p>
+			<div class="projects-admin">
+				<div class="status-pills">
+					<button class="pill" class:active={projectStatusFilter === ''} onclick={() => projectStatusFilter = ''}>
+						All <span class="pill-count">{statusCounts.unshipped + statusCounts.unreviewed + statusCounts.changes_needed + statusCounts.approved}</span>
+					</button>
+					<button class="pill pill-unshipped" class:active={projectStatusFilter === 'unshipped'} onclick={() => projectStatusFilter = projectStatusFilter === 'unshipped' ? '' : 'unshipped'}>
+						Unshipped <span class="pill-count">{statusCounts.unshipped}</span>
+					</button>
+					<button class="pill pill-unreviewed" class:active={projectStatusFilter === 'unreviewed'} onclick={() => projectStatusFilter = projectStatusFilter === 'unreviewed' ? '' : 'unreviewed'}>
+						Unreviewed <span class="pill-count">{statusCounts.unreviewed}</span>
+					</button>
+					<button class="pill pill-changes_needed" class:active={projectStatusFilter === 'changes_needed'} onclick={() => projectStatusFilter = projectStatusFilter === 'changes_needed' ? '' : 'changes_needed'}>
+						Changes Needed <span class="pill-count">{statusCounts.changes_needed}</span>
+					</button>
+					<button class="pill pill-approved" class:active={projectStatusFilter === 'approved'} onclick={() => projectStatusFilter = projectStatusFilter === 'approved' ? '' : 'approved'}>
+						Approved <span class="pill-count">{statusCounts.approved}</span>
+					</button>
+				</div>
+
+				<div class="users-toolbar">
+					<input type="text" placeholder="Search by project name, user name or Slack ID..." bind:value={projectSearch} class="users-search" />
+				</div>
+
+				{#if projectsLoading}
+					<p class="loading">Loading projects...</p>
+				{:else if filteredProjects.length === 0}
+					<p class="empty">No projects found.</p>
+				{:else}
+					<table class="users-table">
+						<thead>
+							<tr>
+								<th>Project</th>
+								<th>User</th>
+								<th>Type</th>
+								<th>Status</th>
+								<th>Update?</th>
+								<th>Created</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each filteredProjects as project}
+								<tr>
+									<td>
+										{project.name}
+										{#if project.codeUrl}
+											<a href={project.codeUrl} target="_blank" rel="noopener" class="project-link">code</a>
+										{/if}
+									</td>
+									<td>{project.user.name ?? '—'}{project.user.slackId ? ` (${project.user.slackId})` : ''}</td>
+									<td>{project.projectType}</td>
+									<td><span class="badge badge-{project.status}">{project.status}</span></td>
+									<td>{project.isUpdate ? 'Yes' : 'No'}</td>
+									<td>{formatDate(project.createdAt)}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{/if}
+			</div>
 		{/if}
 	</main>
 </div>
@@ -827,4 +943,59 @@
 	}
 
 	.btn-cancel:hover:not(:disabled) { background: #333; }
+
+	/* Projects tab */
+	.projects-admin {
+		max-width: 1100px;
+	}
+
+	.status-pills {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.4rem 0.9rem;
+		border-radius: 20px;
+		border: 1px solid #444;
+		background: #2a2a2a;
+		color: #aaa;
+		font-size: 0.8rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: background 0.15s, border-color 0.15s, color 0.15s;
+	}
+
+	.pill:hover { background: #333; color: #ccc; }
+
+	.pill.active { border-color: #666; color: #fff; background: #333; }
+
+	.pill-count {
+		background: #3a3a3a;
+		padding: 0.1rem 0.45rem;
+		border-radius: 10px;
+		font-size: 0.7rem;
+		font-weight: 600;
+	}
+
+	.pill.active .pill-count { background: #555; }
+
+	.pill-unshipped.active { border-color: #888; }
+	.pill-unreviewed.active { border-color: #d5b85b; color: #d5b85b; }
+	.pill-changes_needed.active { border-color: #d58b5b; color: #d58b5b; }
+	.pill-approved.active { border-color: #5b9bd5; color: #5b9bd5; }
+
+	.project-link {
+		color: #5b9bd5;
+		font-size: 0.7rem;
+		margin-left: 0.35rem;
+		text-decoration: none;
+	}
+
+	.project-link:hover { text-decoration: underline; }
 </style>

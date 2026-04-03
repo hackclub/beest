@@ -122,6 +122,46 @@ export class AdminService {
     await this.rsvpService.updatePerms(user.email, perms);
   }
 
+  // ── Projects ──
+
+  async listAllProjects() {
+    const projects = await this.projectRepo.find({
+      order: { createdAt: 'DESC' },
+      relations: ['user'],
+    });
+
+    const statusCounts = {
+      unshipped: 0,
+      unreviewed: 0,
+      changes_needed: 0,
+      approved: 0,
+    };
+
+    const mapped = projects.map((p) => {
+      if (p.status in statusCounts) {
+        statusCounts[p.status as keyof typeof statusCounts]++;
+      }
+      return {
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        projectType: p.projectType,
+        status: p.status,
+        codeUrl: p.codeUrl,
+        isUpdate: p.isUpdate,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+        user: {
+          id: p.user?.id,
+          name: p.user?.name,
+          slackId: p.user?.slackId,
+        },
+      };
+    });
+
+    return { statusCounts, projects: mapped };
+  }
+
   // ── News CRUD ──
 
   async listNews(): Promise<NewsItem[]> {
