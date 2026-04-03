@@ -405,14 +405,14 @@
 
 
   const shopItems = [
-    { src: '/images/shop/blahaj.webp', caption: 'Blahaj Plush', hours: 40 },
-    { src: '/images/shop/flight-stipend.webp', caption: 'Flight Stipend', hours: 40 },
-    { src: '/images/shop/framework.webp', caption: 'Framework Laptop', hours: 200 },
-    { src: '/images/shop/headphones.webp', caption: 'Headphones', hours: 80 },
-    { src: '/images/shop/polaroid.webp', caption: 'Polaroid Camera', hours: 60 },
-    { src: '/images/shop/poster.webp', caption: 'Beest Poster', hours: 20 },
-    { src: '/images/shop/printer.webp', caption: '3D Printer', hours: 150 },
-    { src: '/images/shop/stickers.webp', caption: 'Sticker Pack', hours: 10 }
+    { src: '/images/shop/blahaj.webp', caption: 'Blahaj Plush', desc: 'The iconic IKEA shark, yours to cuddle.', hours: 40 },
+    { src: '/images/shop/flight-stipend.webp', caption: 'Flight Stipend', desc: 'Help covering your flight to the event.', hours: 40 },
+    { src: '/images/shop/framework.webp', caption: 'Framework Laptop', desc: 'A fully modular, repairable laptop.', hours: 200 },
+    { src: '/images/shop/headphones.webp', caption: 'Headphones', desc: 'Premium over-ear headphones for deep focus.', hours: 80 },
+    { src: '/images/shop/polaroid.webp', caption: 'Polaroid Camera', desc: 'Snap instant photos at the event.', hours: 60 },
+    { src: '/images/shop/poster.webp', caption: 'Beest Poster', desc: 'A limited-edition Beest art print.', hours: 20 },
+    { src: '/images/shop/printer.webp', caption: '3D Printer', desc: 'Print your creations in the real world.', hours: 150 },
+    { src: '/images/shop/stickers.webp', caption: 'Sticker Pack', desc: 'A pack of holographic Hack Club stickers.', hours: 10 }
   ];
 
   const navItems = [
@@ -843,9 +843,11 @@
                 </div>
               </div>
             {/each}
-            <button class="action-btn new-project-btn" onclick={openCreateProject}>+ New Project</button>
           {/if}
         </div>
+        {#if projects.length > 0}
+          <button class="action-btn new-project-btn" onclick={openCreateProject}>+ New Project</button>
+        {/if}
 
         <div class="bottom-row">
         <div class="action-log">
@@ -890,29 +892,40 @@
     {#if activeSection === 'shop'}
     <section class="section section-shop">
       <div class="section-inner">
-        <div class="shop-header">
-          <div>
-            <h2 class="section-title">Earn Prizes</h2>
-            <p class="section-subtitle">Build projects, earn hours, unlock rewards.</p>
-          </div>
-          <div class="shoppable-box">
-            <span class="shoppable-label">Shoppable Hours</span>
-            <span class="shoppable-value">0h</span>
-          </div>
-        </div>
-        <p class="shop-warning">Hours spent on shop detract from hours qualifying for event.</p>
-        <div class="shop-grid">
-          {#each shopItems as item}
-            <article class="shop-card">
-              <div class="shop-card-img">
-                <img src={item.src} alt={item.caption} loading="lazy" decoding="async" />
+        <div class="shop-container">
+          <div class="shop-header-border">
+            <div class="shop-header">
+              <div>
+                <h2 class="section-title">Earn Prizes</h2>
+                <p class="section-subtitle">Build projects, earn hours, unlock rewards.</p>
               </div>
-              <div class="shop-card-body">
-                <p class="shop-card-name">{item.caption}</p>
-                <p class="shop-card-cost">{item.hours}h</p>
+              <div class="shoppable-box">
+                <span class="shoppable-label">Shoppable Hours</span>
+                <span class="shoppable-value">0h</span>
               </div>
-            </article>
-          {/each}
+            </div>
+          </div>
+          <div class="shop-warning-banner">
+            <div class="shop-warning-track">
+              {#each {length: 8} as _}
+                <span class="shop-warning-text">Hours spent on shop detract from hours qualifying for event.&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;</span>
+              {/each}
+            </div>
+          </div>
+          <div class="shop-grid">
+            {#each shopItems as item}
+              <article class="shop-card">
+                <div class="shop-card-img">
+                  <img src={item.src} alt={item.caption} loading="lazy" decoding="async" />
+                </div>
+                <div class="shop-card-body">
+                  <p class="shop-card-name">{item.caption}</p>
+                  <p class="shop-card-desc">{item.desc}</p>
+                  <p class="shop-card-cost">{item.hours}h</p>
+                </div>
+              </article>
+            {/each}
+          </div>
         </div>
       </div>
     </section>
@@ -1345,7 +1358,7 @@
   .section-inner {
     position: relative;
     z-index: 1;
-    max-width: 1100px;
+    max-width: 1600px;
     margin: 0 auto;
     height: 100%;
     display: flex;
@@ -1555,7 +1568,7 @@
 
   .form-grid,
   .form-header {
-    max-width: 1050px;
+    max-width: 1500px;
   }
 
   .form-header {
@@ -1905,7 +1918,7 @@
     align-items: flex-end;
     gap: 24px;
     margin-top: 24px;
-    max-width: 1050px;
+    max-width: 1500px;
   }
 
   .other-program-group {
@@ -2195,13 +2208,31 @@
     background: rgba(196, 131, 130, 0.1);
     border: 1px solid rgba(196, 131, 130, 0.3);
     border-radius: 6px;
-    max-width: 1050px;
+    max-width: 1500px;
     box-sizing: border-box;
   }
 
   /* ── shop ────────────────────────────────────────── */
   .section-shop {
     background: #56494a;
+    overflow-y: auto;
+  }
+
+  .section-shop::after {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+  }
+
+  .section-shop .section-inner {
+    height: auto;
+    z-index: 3;
+  }
+
+  .shop-header-border {
+    background: #1a1a1a;
+    padding: 2px;
+    clip-path: polygon(0% 1%, 1% 0%, 4% 1%, 8% 0%, 14% 1%, 20% 0%, 28% 1%, 36% 0%, 44% 1%, 52% 0%, 60% 1%, 68% 0%, 76% 1%, 84% 0%, 90% 1%, 96% 0%, 100% 1%, 100% 99%, 96% 100%, 90% 99%, 84% 100%, 76% 99%, 68% 100%, 60% 99%, 52% 100%, 44% 99%, 36% 100%, 28% 99%, 20% 100%, 14% 99%, 8% 100%, 4% 99%, 1% 100%, 0% 99%);
   }
 
   .shop-header {
@@ -2209,6 +2240,8 @@
     justify-content: space-between;
     align-items: flex-start;
     gap: 24px;
+    background: #6c6659;
+    padding: 24px 28px;
   }
 
   .shoppable-box {
@@ -2219,12 +2252,13 @@
   }
 
   .shoppable-label {
-    font-family: "Courier New", monospace;
-    font-size: 13px;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 18px;
     color: #e6f4fe;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     margin-bottom: 4px;
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
   }
 
   .shoppable-value {
@@ -2234,36 +2268,65 @@
     letter-spacing: 0.04em;
   }
 
-  .shop-warning {
-    margin: 32px 0 32px;
+  .shop-warning-banner {
+    margin: 56px -120px 56px;
+    background: #c48382;
+    padding: 16px 0;
+    transform: rotate(-3deg);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+    border-top: 2px solid #1a1a1a;
+    border-bottom: 2px solid #1a1a1a;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .shop-warning-track {
+    display: inline-flex;
+    transform: translateX(-9.0%);
+  }
+
+  .shop-warning-text {
     font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: clamp(22px, 2.5vw, 32px);
-    color: #c48382;
+    font-size: clamp(18px, 2.2vw, 28px);
+    color: #1a1a1a;
     font-weight: 700;
-    text-decoration: underline;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+  }
+
+  @keyframes marquee-scroll {
+    0% { transform: translateX(-50%); }
+    100% { transform: translateX(0); }
+  }
+
+  .shop-container {
+    background: #8a7f6f;
+    padding: 32px;
+    clip-path: polygon(0% 0.5%, 2% 0%, 6% 0.5%, 10% 0%, 16% 0.4%, 22% 0%, 28% 0.5%, 34% 0%, 40% 0.4%, 46% 0%, 52% 0.5%, 58% 0%, 64% 0.4%, 70% 0%, 76% 0.5%, 82% 0%, 88% 0.4%, 94% 0%, 98% 0.5%, 100% 0%, 100% 5%, 99.4% 10%, 100% 16%, 99.5% 22%, 100% 28%, 99.4% 34%, 100% 40%, 99.5% 46%, 100% 52%, 99.4% 58%, 100% 64%, 99.5% 70%, 100% 76%, 99.4% 82%, 100% 88%, 99.5% 94%, 100% 99.5%, 98% 100%, 94% 99.5%, 88% 100%, 82% 99.6%, 76% 100%, 70% 99.5%, 64% 100%, 58% 99.6%, 52% 100%, 46% 99.5%, 40% 100%, 34% 99.6%, 28% 100%, 22% 99.5%, 16% 100%, 10% 99.6%, 6% 100%, 2% 99.5%, 0% 100%, 0% 94%, 0.5% 88%, 0% 82%, 0.6% 76%, 0% 70%, 0.5% 64%, 0% 58%, 0.6% 52%, 0% 46%, 0.5% 40%, 0% 34%, 0.6% 28%, 0% 22%, 0.5% 16%, 0% 10%, 0.6% 5%);
   }
 
   .shop-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 24px;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 28px;
   }
 
   .shop-card {
-    background: #f0ebe5;
-    border: 1px solid #4b4840;
-    box-shadow: 5px 5px 0 #3a3832;
+    background: #cbc1ae;
+    border: 3px solid #3a3832;
+    box-shadow: 6px 6px 0 #3a3832;
     transition: transform 150ms ease, box-shadow 150ms ease;
     filter: saturate(0.667);
+    clip-path: polygon(0% 1%, 2% 0%, 5% 1%, 10% 0%, 20% 1%, 30% 0%, 40% 1%, 50% 0%, 60% 1%, 70% 0%, 80% 1%, 90% 0%, 95% 1%, 98% 0%, 100% 1%, 100% 99%, 98% 100%, 95% 99%, 90% 100%, 80% 99%, 70% 100%, 60% 99%, 50% 100%, 40% 99%, 30% 100%, 20% 99%, 10% 100%, 5% 99%, 2% 100%, 0% 99%);
   }
 
   .shop-card:hover {
-    transform: translate(-2px, -2px);
-    box-shadow: 7px 7px 0 #3a3832;
+    transform: translate(-3px, -3px);
+    box-shadow: 9px 9px 0 #3a3832;
   }
 
   .shop-card-img {
-    padding: 10px 10px 0;
+    padding: 16px 16px 0;
   }
 
   .shop-card-img img {
@@ -2271,33 +2334,36 @@
     aspect-ratio: 4 / 5;
     object-fit: contain;
     display: block;
-    border: 1px solid #6c6659;
-    background: #e6f4fe;
+    border: 2px solid #4b4840;
+    background: #f0ebe5;
   }
 
   .shop-card-body {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    padding: 8px 12px 10px;
-    gap: 8px;
+    padding: 14px 18px 16px;
   }
 
   .shop-card-name {
-    margin: 0;
-    font-family: "Courier New", monospace;
-    font-size: 14px;
+    margin: 0 0 4px;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 20px;
     color: #4b4840;
     line-height: 1.3;
+    font-weight: 600;
+  }
+
+  .shop-card-desc {
+    margin: 0 0 8px;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 15px;
+    color: #1a1a1a;
+    line-height: 1.4;
   }
 
   .shop-card-cost {
     margin: 0;
     font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: 16px;
+    font-size: 20px;
     color: #c48382;
-    white-space: nowrap;
-    flex-shrink: 0;
   }
 
   /* ── projects ────────────────────────────────────── */
@@ -2443,7 +2509,8 @@
     grid-template-columns: repeat(var(--cols, 1), 1fr);
     align-items: stretch;
     justify-content: start;
-    max-height: min(60vh, 600px);
+    max-height: none;
+    flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
   }
@@ -2572,11 +2639,11 @@
   /* ── project cards ──────────────────────────────── */
   .project-card {
     display: flex;
-    gap: 16px;
+    gap: 20px;
     min-width: 0;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(230, 244, 254, 0.1);
-    padding: 16px;
+    background: rgba(160, 150, 132, 0.85);
+    border: 1px solid rgba(230, 244, 254, 0.15);
+    padding: 28px 20px 20px;
     text-align: left;
     clip-path: polygon(
       0% 4%, 2% 0%, 5% 3%, 98% 1%, 100% 5%,
@@ -2587,7 +2654,7 @@
   }
 
   .project-card:hover {
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(160, 150, 132, 0.95);
   }
 
 
@@ -2599,7 +2666,7 @@
 
   /* portrait: mobile apps — side thumbnail */
   .project-card:not(.landscape) .project-thumb {
-    width: 80px;
+    width: 110px;
     align-self: stretch;
   }
 
@@ -2609,7 +2676,7 @@
     height: auto;
     width: auto;
     align-self: flex-start;
-    max-height: 140px;
+    max-height: 200px;
   }
 
   .project-info {
@@ -2620,13 +2687,14 @@
   .project-header-row {
     display: flex;
     align-items: center;
-    gap: 12px;
+    flex-wrap: wrap;
+    gap: 8px 12px;
     margin-bottom: 6px;
   }
 
   .project-name {
     font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: clamp(20px, 2vw, 26px);
+    font-size: clamp(22px, 2.2vw, 30px);
     color: #e6f4fe;
     margin: 0;
     letter-spacing: 0.02em;
@@ -2677,15 +2745,15 @@
 
   .project-desc {
     font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 18px;
+    font-size: 20px;
     text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
     color: #cbc1ae;
-    margin: 0 0 10px;
+    margin: 0 0 12px;
     line-height: 1.4;
     overflow: hidden;
     text-overflow: ellipsis;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
   }
 
@@ -2717,11 +2785,10 @@
   }
 
   .new-project-btn {
-    grid-column: 1 / -1;
-    justify-self: center;
-    align-self: start;
+    align-self: center;
     width: fit-content;
-    margin-top: 8px;
+    margin-top: 12px;
+    flex-shrink: 0;
     font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 17px;
     text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
@@ -3069,9 +3136,18 @@
       padding: 40px 20px 48px;
     }
 
+    .shop-container {
+      padding: 16px;
+    }
+
     .shop-grid {
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
       gap: 14px;
+    }
+
+    .shop-warning-banner {
+      margin: 20px -80px 20px;
+      padding: 8px 0;
     }
 
     .explore-grid {

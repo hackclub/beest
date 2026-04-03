@@ -4,7 +4,7 @@ import type { RequestHandler } from './$types';
 
 const BACKEND_URL = env.BACKEND_URL ?? 'http://localhost:3001';
 
-export const POST: RequestHandler = async ({ cookies }) => {
+export const GET: RequestHandler = async ({ cookies }) => {
 	const refreshToken = cookies.get('refresh_token');
 
 	// Invalidate the session in the DB
