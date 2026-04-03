@@ -67,8 +67,15 @@ export class Project {
   @Column({ type: 'varchar', name: 'screenshot_2_url', length: 2048, nullable: true })
   screenshot2Url: string | null;
 
-  @Column({ type: 'varchar', name: 'hackatime_project_name', length: 255, nullable: true })
-  hackatimeProjectName: string | null;
+  @Column({ type: 'text', name: 'hackatime_project_name', nullable: true, transformer: {
+    to: (value: string[] | null) => value && value.length > 0 ? JSON.stringify(value) : null,
+    from: (value: string | null) => {
+      if (!value) return [];
+      try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : [value]; }
+      catch { return [value]; }
+    },
+  }})
+  hackatimeProjectName: string[];
 
   @Column({ name: 'status', length: 20, default: 'unshipped' })
   status: string;
@@ -78,6 +85,9 @@ export class Project {
 
   @Column({ type: 'varchar', name: 'other_hc_program', length: 255, nullable: true })
   otherHcProgram: string | null;
+
+  @Column({ type: 'varchar', name: 'ai_use', length: 200, nullable: true })
+  aiUse: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

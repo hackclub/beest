@@ -11,6 +11,7 @@ import { User } from './user.entity';
 export const AUDIT_ACTIONS = [
   'project_created',
   'project_updated',
+  'project_submitted',
   'project_deleted',
   'hackatime_connected',
   'rsvp_submitted',

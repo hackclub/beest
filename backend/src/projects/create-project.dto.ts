@@ -6,7 +6,8 @@ export class CreateProjectDto {
   readmeUrl?: string;
   demoUrl?: string;
   screenshots?: string[];
-  hackatimeProjectName?: string;
+  hackatimeProjectName?: string[];
   isUpdate?: boolean;
   otherHcProgram?: string;
+  aiUse?: string;
 }

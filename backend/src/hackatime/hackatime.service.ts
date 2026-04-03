@@ -205,15 +205,16 @@ export class HackatimeService {
   }
 
   /**
-   * Fetches all-time stats from Hackatime and returns total seconds
-   * for only the specified project names.
+   * Fetches all-time stats from Hackatime and returns total hours
+   * plus a per-project-name breakdown for the specified project names.
+   * Single API call — no duplication.
    */
   async getHoursForProjects(
     userId: string,
     projectNames: string[],
-  ): Promise<{ totalSeconds: number; hours: number }> {
+  ): Promise<{ hours: number; perProject: Record<string, number> }> {
     if (projectNames.length === 0) {
-      return { totalSeconds: 0, hours: 0 };
+      return { hours: 0, perProject: {} };
     }
 
     const user = await this.userRepo.findOne({
@@ -222,7 +223,7 @@ export class HackatimeService {
     });
 
     if (!user?.hackatimeToken) {
-      return { totalSeconds: 0, hours: 0 };
+      return { hours: 0, perProject: {} };
     }
 
     try {
@@ -237,29 +238,36 @@ export class HackatimeService {
         this.logger.warn(
           `Hackatime stats fetch failed (${res.status}) for user ${userId}`,
         );
-        return { totalSeconds: 0, hours: 0 };
+        return { hours: 0, perProject: {} };
       }
 
       const body = await res.json().catch(() => null);
       const projects: { name: string; total_seconds: number }[] =
-        body?.projects ?? [];
+        body?.projects ?? body?.data ?? [];
 
       if (!Array.isArray(projects)) {
-        return { totalSeconds: 0, hours: 0 };
+        return { hours: 0, perProject: {} };
       }
 
       const nameSet = new Set(projectNames);
-      const totalSeconds = projects
-        .filter((p) => nameSet.has(p.name))
-        .reduce((sum, p) => sum + (p.total_seconds ?? 0), 0);
+      let totalSeconds = 0;
+      const perProject: Record<string, number> = {};
+
+      for (const p of projects) {
+        if (nameSet.has(p.name)) {
+          const secs = p.total_seconds ?? 0;
+          totalSeconds += secs;
+          perProject[p.name] = Math.round((secs / 3600) * 10) / 10;
+        }
+      }
 
       return {
-        totalSeconds,
         hours: Math.round((totalSeconds / 3600) * 10) / 10,
+        perProject,
       };
     } catch (err) {
       this.logger.error(`Hackatime stats fetch error for ${userId}: ${err}`);
-      return { totalSeconds: 0, hours: 0 };
+      return { hours: 0, perProject: {} };
     }
   }
 }

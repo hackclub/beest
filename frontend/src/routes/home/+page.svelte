@@ -29,21 +29,47 @@
   let readmeUrl = $state('');
   let screenshotFiles = $state<(File | null)[]>([null, null]);
   let screenshotPreviews = $state<string[]>(['', '']);
-  let hackatimeProject = $state('');
+  let activeScreenshot = $state(0);
+  let hackatimeProject = $state<string[]>([]);
   let isUpdateProject = $state(false);
   let otherHcProgram = $state(false);
   let otherHcProgramName = $state('');
+  let usedAi = $state(false);
+  let aiUseDescription = $state('');
   let projects = $state<any[]>([]);
   let hackatimeProjects = $state<string[]>([]);
   let hackatimeLoading = $state(false);
+  let hackatimeOpen = $state(false);
   let submitting = $state(false);
   let formError = $state('');
   let auditLog = $state<{ action: string; label: string; createdAt: string }[]>([]);
   let totalHours = $state(0);
+  let hoursByStatus = $state<Record<string, number>>({});
+  let displayHours = $state(0);
+  let displayByStatus = $state<Record<string, number>>({});
   const GOAL_HOURS = 40;
-  let progressPct = $derived(Math.min((totalHours / GOAL_HOURS) * 100, 100));
+
+  function animateProgress(targetHours: number, targetByStatus: Record<string, number>) {
+    const duration = 1200;
+    const start = performance.now();
+    const statuses = Object.keys(targetByStatus);
+
+    function tick(now: number) {
+      const t = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      displayHours = Math.round(targetHours * ease * 10) / 10;
+      const current: Record<string, number> = {};
+      for (const s of statuses) {
+        current[s] = targetByStatus[s] * ease;
+      }
+      displayByStatus = current;
+      if (t < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
   let keystrokes = $state(0);
   let canSubmit = $derived(projectName.trim() !== '' && projectDesc.trim() !== '' && projectType !== '' && !submitting);
+  let hasScreenshots = $derived(screenshotPreviews[0] !== '' || screenshotPreviews[1] !== '');
   let canSubmitForReview = $derived(
     projectName.trim() !== '' &&
     projectDesc.trim() !== '' &&
@@ -51,14 +77,25 @@
     codeUrl.trim() !== '' &&
     readmeUrl.trim() !== '' &&
     demoUrl.trim() !== '' &&
-    hackatimeProject !== '' &&
+    hackatimeProject.length > 0 &&
+    hasScreenshots &&
     !submitting
   );
   let projectCols = $derived(Math.ceil(Math.sqrt(projects.length)));
 
+  // Review checklist
+  let reviewProject = $state<any>(null);
+  let checkOpenSource = $state(false);
+  let checkDemoable = $state(false);
+  let checkReadme = $state(false);
+  let checkHackatime = $state(false);
+  let checkStartedOrUpdated = $state(false);
+  let canConfirmReview = $derived(checkOpenSource && checkDemoable && checkReadme && checkHackatime && checkStartedOrUpdated && !submitting);
+
   function resetForm() {
     creatingProject = false;
     editingProject = null;
+    reviewProject = null;
     projectName = '';
     projectDesc = '';
     projectType = '';
@@ -67,12 +104,21 @@
     readmeUrl = '';
     screenshotFiles = [null, null];
     screenshotPreviews = ['', ''];
-    hackatimeProject = '';
+    activeScreenshot = 0;
+    hackatimeProject = [];
+    hackatimeOpen = false;
     isUpdateProject = false;
     otherHcProgram = false;
     otherHcProgramName = '';
+    usedAi = false;
+    aiUseDescription = '';
     keystrokes = 0;
     formError = '';
+    checkOpenSource = false;
+    checkDemoable = false;
+    checkReadme = false;
+    checkHackatime = false;
+    checkStartedOrUpdated = false;
   }
 
   function openCreateProject() {
@@ -89,11 +135,13 @@
     codeUrl = project.codeUrl ?? '';
     demoUrl = project.demoUrl ?? '';
     readmeUrl = project.readmeUrl ?? '';
-    hackatimeProject = project.hackatimeProjectName ?? '';
+    hackatimeProject = Array.isArray(project.hackatimeProjectName) ? project.hackatimeProjectName : project.hackatimeProjectName ? [project.hackatimeProjectName] : [];
     isUpdateProject = project.isUpdate ?? false;
     otherHcProgram = !!(project.otherHcProgram);
     otherHcProgramName = project.otherHcProgram ?? '';
     screenshotPreviews = [project.screenshot1Url ?? '', project.screenshot2Url ?? ''];
+    usedAi = !!(project.aiUse);
+    aiUseDescription = project.aiUse ?? '';
   }
 
   function cancelCreateProject() {
@@ -141,6 +189,8 @@
       if (res.ok) {
         const data = await res.json();
         totalHours = data.hours ?? 0;
+        hoursByStatus = data.byStatus ?? {};
+        animateProgress(totalHours, hoursByStatus);
       }
     } catch { /* silent */ }
   }
@@ -203,9 +253,10 @@
         codeUrl: codeUrl || null,
         readmeUrl: readmeUrl || null,
         demoUrl: demoUrl || null,
-        hackatimeProjectName: hackatimeProject || null,
+        hackatimeProjectName: hackatimeProject.length > 0 ? hackatimeProject : null,
         isUpdate: isUpdateProject,
         otherHcProgram: otherHcProgram ? otherHcProgramName || null : null,
+        aiUse: usedAi ? aiUseDescription || null : null,
       };
       if (screenshots.length) body.screenshots = screenshots;
 
@@ -236,10 +287,62 @@
 
   async function submitForReview() {
     if (!editingProject || !canSubmitForReview) return;
+    formError = '';
+    submitting = true;
+
+    try {
+      const screenshots: string[] = [];
+      for (const file of screenshotFiles) {
+        if (file) screenshots.push(await fileToDataUri(file));
+      }
+
+      const body: any = {
+        name: projectName,
+        description: projectDesc,
+        projectType,
+        codeUrl: codeUrl || null,
+        readmeUrl: readmeUrl || null,
+        demoUrl: demoUrl || null,
+        hackatimeProjectName: hackatimeProject.length > 0 ? hackatimeProject : null,
+        isUpdate: isUpdateProject,
+        otherHcProgram: otherHcProgram ? otherHcProgramName || null : null,
+        aiUse: usedAi ? aiUseDescription || null : null,
+      };
+      if (screenshots.length) body.screenshots = screenshots;
+
+      const res = await fetch(`/api/projects/${editingProject.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const msg = Array.isArray(data.message) ? data.message.join(', ') : data.message;
+        formError = msg || `Server error (${res.status})`;
+        submitting = false;
+        return;
+      }
+
+      reviewProject = data;
+      editingProject = null;
+      creatingProject = false;
+      fetchProjects();
+      fetchAuditLog();
+      fetchProjectHours();
+    } catch {
+      formError = 'Something went wrong. Please try again.';
+    }
+    submitting = false;
+  }
+
+  async function confirmReview() {
+    if (!reviewProject || !canConfirmReview) return;
     submitting = true;
     formError = '';
     try {
-      const res = await fetch(`/api/projects/${editingProject.id}`, {
+      const res = await fetch(`/api/projects/${reviewProject.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'unreviewed' })
@@ -298,6 +401,7 @@
     if (id === 'faq') { window.location.href = '/FAQ'; return; }
     if (id === 'tutorial') { window.location.href = '/tutorial'; return; }
     if (creatingProject) cancelCreateProject();
+    if (reviewProject) resetForm();
     activeSection = id;
   }
 
@@ -316,6 +420,20 @@
 </script>
 
 <div class="home" class:tile-loaded={tileLoaded}>
+
+  <!-- Mobile warning -->
+  <div class="mobile-warning">
+    <div class="mobile-warning-inner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mobile-warning-icon">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <p class="mobile-warning-text">
+        <strong>#BEEST</strong> is built for desktop. For the best experience, please visit on a computer.
+      </p>
+    </div>
+  </div>
 
   <!-- Sidebar -->
   <nav class="sidebar pinned" aria-label="Home navigation">
@@ -402,32 +520,50 @@
           <span class="form-caption">Link to a live demo or playable version</span>
         </div>
 
-        <div class="form-group">
-          <label class="form-label" for="screenshot">Screenshots</label>
-          <div class="screenshot-row">
-            <label class="upload-btn" for="screenshot">
-              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              <span class="upload-btn-text">Upload</span>
-            </label>
-            <div class="screenshot-box">
-              {#if screenshotPreviews[0]}
-                <img src={screenshotPreviews[0]} alt="Preview 1" class="screenshot-preview" />
-                <button class="screenshot-remove" onclick={() => { screenshotFiles[0] = null; screenshotPreviews[0] = ''; }}>&times;</button>
-              {/if}
+        <div class="form-row form-row-top">
+          <div class="form-group screenshot-group">
+            <label class="form-label" for="screenshot">Screenshots</label>
+            <div class="screenshot-row">
+              <div class="screenshot-controls">
+                <label class="upload-btn" for="screenshot">
+                  <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  <span class="upload-btn-text">Upload</span>
+                </label>
+                <div class="screenshot-tabs">
+                  <button type="button" class="screenshot-tab" class:active={activeScreenshot === 0} onclick={() => { activeScreenshot = 0; }}>1</button>
+                  <button type="button" class="screenshot-tab" class:active={activeScreenshot === 1} class:disabled-field={!screenshotPreviews[1]} disabled={!screenshotPreviews[1]} onclick={() => { activeScreenshot = 1; }}>2</button>
+                </div>
+              </div>
+              <div class="screenshot-box">
+                {#if screenshotPreviews[activeScreenshot]}
+                  <img src={screenshotPreviews[activeScreenshot]} alt="Preview {activeScreenshot + 1}" class="screenshot-preview" />
+                  <button class="screenshot-remove" onclick={() => { screenshotFiles[activeScreenshot] = null; screenshotPreviews[activeScreenshot] = ''; if (activeScreenshot === 1) activeScreenshot = 0; }}>&times;</button>
+                {/if}
+              </div>
             </div>
-            <div class="screenshot-box">
-              {#if screenshotPreviews[1]}
-                <img src={screenshotPreviews[1]} alt="Preview 2" class="screenshot-preview" />
-                <button class="screenshot-remove" onclick={() => { screenshotFiles[1] = null; screenshotPreviews[1] = ''; }}>&times;</button>
-              {/if}
+            <input id="screenshot" type="file" accept="image/*" class="form-file-hidden" onchange={handleScreenshot} />
+            <span class="form-caption">Upload up to 2 screenshots</span>
+          </div>
+
+          <div class="form-group ai-use-group">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
+            <label class="form-label">AI Use</label>
+            <!-- svelte-ignore a11y_label_has_associated_control -->
+            <label class="form-checkbox ai-checkbox">
+              <input type="checkbox" bind:checked={usedAi} />
+              <span>Was this project made with AI? (Up to 30% is okay)</span>
+            </label>
+            <label class="form-label ai-sub-label" class:disabled-label={!usedAi} for="ai-use-desc">How did you use AI?</label>
+            <textarea id="ai-use-desc" class="form-input form-textarea ai-textarea" class:disabled-field={!usedAi} maxlength={200} disabled={!usedAi} placeholder="I used AI to help with ideation by bouncing ideas around, I also used it to decide the architecture of the platform and fix bugs but most of the code is my original work." bind:value={aiUseDescription}></textarea>
+            <div class="form-caption-row">
+              <span class="form-caption" class:disabled-label={!usedAi}>Describe how AI was used in this project</span>
+              <span class="form-charcount" class:disabled-label={!usedAi} class:over={aiUseDescription.length >= 200}>{aiUseDescription.length}/200</span>
             </div>
           </div>
-          <input id="screenshot" type="file" accept="image/*" class="form-file-hidden" onchange={handleScreenshot} />
-          <span class="form-caption">Show off with a banner or screenshot</span>
         </div>
 
         <div class="form-row">
@@ -445,21 +581,43 @@
               <option value="ios">iOS Playable</option>
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label" for="hackatime">Hackatime Project/s</label>
+          <div class="form-group hackatime-group">
+            <label class="form-label">Hackatime Project/s</label>
             <div class="hackatime-row">
-              <select id="hackatime" class="form-input form-select" bind:value={hackatimeProject}>
-                <option value="" disabled selected>Select a project</option>
-                {#if hackatimeLoading}
-                  <option value="" disabled>Loading...</option>
-                {:else if hackatimeProjects.length === 0}
-                  <option value="" disabled>No projects found</option>
-                {:else}
-                  {#each hackatimeProjects as proj}
-                    <option value={proj}>{proj}</option>
-                  {/each}
+              <div class="hackatime-select-wrap">
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div class="hackatime-trigger" onclick={() => { hackatimeOpen = !hackatimeOpen; }}>
+                  {#if hackatimeProject.length === 0}
+                    <span class="hackatime-placeholder">Select projects</span>
+                  {:else}
+                    <span class="hackatime-selected">{hackatimeProject.join(', ')}</span>
+                  {/if}
+                </div>
+                {#if hackatimeOpen}
+                  <div class="hackatime-dropdown">
+                    {#if hackatimeLoading}
+                      <span class="hackatime-empty">Loading...</span>
+                    {:else if hackatimeProjects.length === 0}
+                      <span class="hackatime-empty">No projects found</span>
+                    {:else}
+                      {#each hackatimeProjects as proj}
+                        <label class="hackatime-option">
+                          <input type="checkbox" checked={hackatimeProject.includes(proj)} onchange={(e) => {
+                            const target = e.target as HTMLInputElement;
+                            if (target.checked) {
+                              hackatimeProject = [...hackatimeProject, proj];
+                            } else {
+                              hackatimeProject = hackatimeProject.filter((p) => p !== proj);
+                            }
+                          }} />
+                          <span>{proj}</span>
+                        </label>
+                      {/each}
+                    {/if}
+                  </div>
                 {/if}
-              </select>
+              </div>
               <button type="button" class="refresh-btn" onclick={fetchHackatimeProjects} disabled={hackatimeLoading} title="Refresh Hackatime projects">
                 <svg class="refresh-icon" class:spinning={hackatimeLoading} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3" />
@@ -472,11 +630,11 @@
         <div class="form-row">
           <label class="form-checkbox">
             <input type="checkbox" bind:checked={isUpdateProject} />
-            <span>This is an update to an existing project</span>
+            <span class="noselect">This is an update to an existing project</span>
           </label>
           <label class="form-checkbox">
             <input type="checkbox" bind:checked={otherHcProgram} />
-            <span>This is submitted to another Hack Club program</span>
+            <span class="noselect">This is submitted to another Hack Club program</span>
           </label>
         </div>
 
@@ -530,7 +688,45 @@
     </div>
     {/if}
 
-    {#if !creatingProject && !editingProject && activeSection === 'projects'}
+    {#if reviewProject}
+    <section class="section section-review">
+      <div class="section-inner">
+        <button class="form-cancel review-close" onclick={resetForm}>&times;</button>
+        <h2 class="section-title">Submit "{reviewProject.name}" for Review</h2>
+        <div class="review-checklist">
+          <label class="review-check">
+            <input type="checkbox" bind:checked={checkOpenSource} />
+            <span>My project is open source with a cloneable repository</span>
+          </label>
+          <label class="review-check">
+            <input type="checkbox" bind:checked={checkDemoable} />
+            <span>My project is demo-able (someone with no coding experience can use it)</span>
+          </label>
+          <label class="review-check">
+            <input type="checkbox" bind:checked={checkReadme} />
+            <span>My project has a ReadMe describing the features and tech stack, and how to contribute</span>
+          </label>
+          <label class="review-check">
+            <input type="checkbox" bind:checked={checkHackatime} />
+            <span>I have recorded my time with Hackatime as faithfully as possible, not inflating or manipulating hours using bots, scripts or hacks. I understand that purposeful cheating can result in a ban from all Hack Club programs</span>
+          </label>
+          <label class="review-check">
+            <input type="checkbox" bind:checked={checkStartedOrUpdated} />
+            <span>I started this project later than April 2nd, 2025, or shipped a significant update to an old project</span>
+          </label>
+        </div>
+        {#if formError}
+          <p class="form-error">{formError}</p>
+        {/if}
+        <button class="action-btn review-submit-btn" disabled={!canConfirmReview} onclick={confirmReview}>
+          {#if submitting}Submitting...{:else}Submit for Review{/if}
+        </button>
+        <p class="review-note">Review means a human is looking over your project and checking that the code is functional, not AI generated and that the demo works. It could take around a week (hopefully less) for us to get around to your project, at which point we will offer feedback or approve your time spent. In rare cases where we believe you have unintentionally exaggerated your hours, we may approve a percentage of your hours.</p>
+      </div>
+    </section>
+    {/if}
+
+    {#if !creatingProject && !editingProject && !reviewProject && activeSection === 'projects'}
     <section class="section section-projects">
       <div class="section-inner">
         <div class="section-header">
@@ -548,11 +744,17 @@
 
         <div class="progress-bar-wrap">
           <div class="progress-labels">
-            <span class="progress-hours">{totalHours}h</span>
-            <span class="progress-goal">{totalHours >= GOAL_HOURS ? 'Qualified!' : `${GOAL_HOURS}h to qualify`}</span>
+            <span class="progress-hours">{displayHours}h</span>
+            <span class="progress-goal">{(hoursByStatus['approved'] ?? 0) >= GOAL_HOURS ? 'Qualified!' : `${GOAL_HOURS}h approved to qualify`}</span>
           </div>
           <div class="progress-track">
-            <div class="progress-fill unshipped" style="width: {progressPct}%"></div>
+            {#each ['approved', 'unreviewed', 'changes_needed', 'unshipped'] as status}
+              {@const pct = Math.min(((displayByStatus[status] ?? 0) / GOAL_HOURS) * 100, 100)}
+              {@const label = status === 'changes_needed' ? 'Changes Needed' : status.charAt(0).toUpperCase() + status.slice(1)}
+              {#if pct > 0}
+                <div class="progress-fill {status}" style="width: {pct}%" title="{Math.round((hoursByStatus[status] ?? 0) * 10) / 10}h {label}"></div>
+              {/if}
+            {/each}
           </div>
           <div class="progress-ticks">
             <span>0</span>
@@ -590,8 +792,8 @@
                     {#if project.readmeUrl}
                       <a href={project.readmeUrl} target="_blank" rel="noopener noreferrer" class="project-link">README</a>
                     {/if}
-                    {#if project.hackatimeProjectName}
-                      <span class="project-hackatime">Hackatime: {project.hackatimeProjectName}</span>
+                    {#if project.hackatimeProjectName?.length}
+                      <span class="project-hackatime">Hackatime: {Array.isArray(project.hackatimeProjectName) ? project.hackatimeProjectName.join(', ') : project.hackatimeProjectName}</span>
                     {/if}
                   </div>
                 </div>
@@ -610,7 +812,7 @@
             {:else}
               {#each auditLog as entry}
                 <div class="timeline-item">
-                  <div class="timeline-dot {entry.action === 'project_created' ? 'shipped' : entry.action === 'project_updated' ? 'updated' : 'feedback'}"></div>
+                  <div class="timeline-dot {entry.action === 'project_created' ? 'shipped' : entry.action === 'project_submitted' ? 'submitted' : entry.action === 'project_updated' ? 'updated' : 'feedback'}"></div>
                   <div class="timeline-content">
                     <p class="timeline-label">{entry.label}</p>
                     <span class="timeline-time">{timeAgo(entry.createdAt)}</span>
@@ -625,20 +827,8 @@
           <h3 class="news-title">News</h3>
           <div class="news-list">
             <div class="news-item">
-              <span class="news-date">Mar 28</span>
-              <p class="news-text">Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
-            </div>
-            <div class="news-item">
-              <span class="news-date">Mar 22</span>
-              <p class="news-text">Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
-            </div>
-            <div class="news-item">
-              <span class="news-date">Mar 15</span>
-              <p class="news-text">Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
-            </div>
-            <div class="news-item">
-              <span class="news-date">Mar 10</span>
-              <p class="news-text">Duis aute irure dolor in reprehenderit in voluptate velit esse cillum.</p>
+              <span class="news-date">Apr 3</span>
+              <p class="news-text">Beest is soft launched! You can start making progress toward the event while I iron out the bugs! Thanks for helping me through beta -Euan.</p>
             </div>
           </div>
         </div>
@@ -918,6 +1108,7 @@
     opacity: 0;
     transform: translateX(-40px);
     transition: opacity 150ms ease, transform 250ms cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
   }
 
   .sidebar:hover .sidebar-content,
@@ -967,7 +1158,8 @@
     gap: 12px;
     width: 100%;
     padding: 14px 14px;
-    border: none;
+    border: 3px solid transparent;
+    border-bottom: 6px solid transparent;
     border-radius: 6px;
     background: transparent;
     color: #cbc1ae;
@@ -976,17 +1168,25 @@
     letter-spacing: 0.04em;
     text-align: left;
     cursor: inherit;
-    transition: background 150ms ease, color 150ms ease;
+    transition: background 150ms ease, color 150ms ease, transform 0.1s ease, border-bottom-width 0.1s ease, border-color 150ms ease;
   }
 
   .nav-btn:hover {
     background: rgba(230, 244, 254, 0.08);
     color: #e6f4fe;
+    border-color: rgba(230, 244, 254, 0.12);
+  }
+
+  .nav-btn:active {
+    transform: translateY(3px);
+    border-bottom-width: 3px;
   }
 
   .nav-btn.active {
     background: rgba(230, 244, 254, 0.12);
     color: #e6f4fe;
+    border-color: rgba(230, 244, 254, 0.18);
+    border-bottom-color: #c48382;
   }
 
   .sticker-promo {
@@ -1043,7 +1243,7 @@
   /* ── main ────────────────────────────────────────── */
   .main {
     flex: 1;
-    margin-left: 80px;
+    margin-left: 210px;
     display: flex;
     flex-direction: column;
   }
@@ -1051,7 +1251,7 @@
   /* ── sections ────────────────────────────────────── */
   .section {
     position: relative;
-    padding: 48px 48px 32px;
+    padding: 48px 48px 32px 150px;
     height: 100vh;
     box-sizing: border-box;
     overflow: hidden;
@@ -1113,7 +1313,7 @@
   /* ── bottom row ───────────────────────────────────── */
   .bottom-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 28px;
     margin-top: 24px;
     flex: 1;
@@ -1198,6 +1398,11 @@
     border-color: #cbc1ae;
   }
 
+  .timeline-dot.submitted {
+    background: #5a9e6f;
+    border-color: #5a9e6f;
+  }
+
   .timeline-dot.updated {
     background: #c48382;
     border-color: #c48382;
@@ -1268,7 +1473,7 @@
   /* ── create project form ─────────────────────────── */
   .create-project-form {
     background: #635a4e;
-    padding: 48px 48px 32px 300px;
+    padding: 48px 48px 32px 150px;
     min-height: 100vh;
     box-sizing: border-box;
     display: flex;
@@ -1327,7 +1532,7 @@
 
   .form-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 24px;
     align-items: end;
   }
@@ -1340,6 +1545,11 @@
     font-family: "Courier New", monospace;
     font-size: 15px;
     color: #cbc1ae;
+  }
+
+  .noselect {
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   .form-checkbox input[type="checkbox"] {
@@ -1401,7 +1611,7 @@
 
   .form-label {
     font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: 16px;
+    font-size: 19px;
     color: #cbc1ae;
     letter-spacing: 0.04em;
   }
@@ -1443,7 +1653,7 @@
     background-repeat: no-repeat;
     background-position: right 12px center;
     background-color: rgba(0, 0, 0, 0.2);
-    padding-right: 36px;
+    padding: 14px 36px 14px 14px;
   }
 
   .form-select option {
@@ -1463,22 +1673,65 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    width: 160px;
-    flex-shrink: 0;
+    flex: 1;
     background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(230, 244, 254, 0.15);
+    border: 3px solid rgba(230, 244, 254, 0.2);
+    border-bottom: 7px solid rgba(230, 244, 254, 0.25);
     cursor: pointer;
-    transition: background 150ms ease;
+    transition: background 150ms ease, transform 0.1s ease, border-bottom-width 0.1s ease, border-color 150ms ease;
   }
 
   .upload-btn:hover {
     background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(230, 244, 254, 0.35);
+  }
+
+  .upload-btn:active {
+    transform: translateY(4px);
+    border-bottom-width: 3px;
   }
 
   .upload-btn-text {
     font-family: "Courier New", monospace;
     font-size: 13px;
     color: #cbc1ae;
+  }
+
+  .screenshot-controls {
+    display: flex;
+    flex-direction: column;
+    width: 120px;
+    flex-shrink: 0;
+    gap: 8px;
+  }
+
+  .screenshot-tabs {
+    display: flex;
+    gap: 6px;
+  }
+
+  .screenshot-tab {
+    flex: 1;
+    padding: 8px 0;
+    font-family: "Courier New", monospace;
+    font-size: 15px;
+    font-weight: bold;
+    color: #cbc1ae;
+    background: rgba(0, 0, 0, 0.2);
+    border: 2px solid rgba(230, 244, 254, 0.15);
+    cursor: pointer;
+    transition: background 150ms ease, border-color 150ms ease;
+  }
+
+  .screenshot-tab:hover:not(:disabled) {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(230, 244, 254, 0.3);
+  }
+
+  .screenshot-tab.active {
+    background: rgba(147, 180, 205, 0.2);
+    border-color: #93b4cd;
+    color: #e6f4fe;
   }
 
   .screenshot-box {
@@ -1489,6 +1742,36 @@
     border: 2px dashed rgba(230, 244, 254, 0.25);
     background: rgba(0, 0, 0, 0.1);
     position: relative;
+  }
+
+  .form-row-top {
+    align-items: stretch;
+  }
+
+  .ai-use-group {
+    flex: 1;
+  }
+
+  .ai-sub-label {
+    font-size: 13px;
+  }
+
+  .ai-checkbox {
+    margin-bottom: 10px;
+  }
+
+  .ai-textarea {
+    min-height: 80px;
+    flex: 1;
+  }
+
+  .disabled-field {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .disabled-label {
+    opacity: 0.35;
   }
 
   .screenshot-remove {
@@ -1559,6 +1842,7 @@
 
   .form-bottom-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-end;
     gap: 24px;
     margin-top: 24px;
@@ -1580,7 +1864,8 @@
   .form-btn-delete {
     padding: 10px 24px;
     background: none;
-    border: 2px solid #c48382;
+    border: 3px solid #c48382;
+    border-bottom: 7px solid #a06a69;
     border-radius: 4px;
     font-family: "Courier New", monospace;
     font-size: 15px;
@@ -1588,7 +1873,7 @@
     color: #c48382;
     cursor: pointer;
     margin-right: auto;
-    transition: background 150ms ease, color 150ms ease;
+    transition: background 150ms ease, color 150ms ease, transform 0.1s ease, border-bottom-width 0.1s ease;
   }
 
   .form-btn-delete:hover {
@@ -1596,10 +1881,16 @@
     color: #fff;
   }
 
+  .form-btn-delete:active {
+    transform: translateY(4px);
+    border-bottom-width: 3px;
+  }
+
   .form-btn-submit {
     padding: 10px 28px;
     background: #c48382;
-    border: none;
+    border: 3px solid #a06a69;
+    border-bottom: 7px solid #8a5857;
     border-radius: 4px;
     font-family: "Courier New", monospace;
     font-size: 15px;
@@ -1607,12 +1898,18 @@
     color: #fff;
     cursor: pointer;
     box-shadow: 4px 4px 0 #3a3832;
-    transition: transform 100ms ease, box-shadow 100ms ease;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, border-bottom-width 0.1s ease;
   }
 
   .form-btn-submit:hover:not(:disabled) {
     transform: translate(-1px, -1px);
     box-shadow: 5px 5px 0 #3a3832;
+  }
+
+  .form-btn-submit:active:not(:disabled) {
+    transform: translateY(4px);
+    border-bottom-width: 3px;
+    box-shadow: 2px 1px 0 #3a3832;
   }
 
   .form-btn-submit:disabled {
@@ -1627,7 +1924,8 @@
   .form-btn-review {
     padding: 10px 28px;
     background: #7f796d;
-    border: none;
+    border: 3px solid #6a655a;
+    border-bottom: 7px solid #5a5549;
     border-radius: 4px;
     font-family: "Courier New", monospace;
     font-size: 15px;
@@ -1635,11 +1933,13 @@
     color: #fff;
     cursor: not-allowed;
     opacity: 0.5;
-    transition: background 200ms ease, opacity 200ms ease;
+    transition: background 200ms ease, opacity 200ms ease, transform 0.1s ease, border-bottom-width 0.1s ease, box-shadow 0.1s ease;
   }
 
   .form-btn-review.ready {
     background: #5a9e6f;
+    border-color: #488a5a;
+    border-bottom-color: #3a7a4a;
     cursor: pointer;
     opacity: 1;
     box-shadow: 4px 4px 0 #3a3832;
@@ -1649,6 +1949,12 @@
     background: #4a8e5f;
     transform: translate(-1px, -1px);
     box-shadow: 5px 5px 0 #3a3832;
+  }
+
+  .form-btn-review.ready:active {
+    transform: translateY(4px);
+    border-bottom-width: 3px;
+    box-shadow: 2px 1px 0 #3a3832;
   }
 
   .review-tooltip {
@@ -1679,14 +1985,112 @@
     transform: translateY(6px);
   }
 
+  .hackatime-group {
+    position: relative;
+  }
+
   .hackatime-row {
     display: flex;
     gap: 8px;
     align-items: stretch;
   }
 
-  .hackatime-row .form-select {
+  .hackatime-select-wrap {
+    position: relative;
     flex: 1;
+  }
+
+  .hackatime-trigger {
+    padding: 10px 14px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(230, 244, 254, 0.15);
+    cursor: pointer;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    font-family: "Courier New", monospace;
+    font-size: 15px;
+    color: #e6f4fe;
+    transition: border-color 150ms ease;
+    clip-path: polygon(
+      0% 6%, 4% 0%, 8% 4%, 14% 1%, 20% 5%, 28% 0%, 35% 3%, 42% 1%, 50% 5%, 58% 0%, 65% 4%, 72% 1%, 80% 5%, 86% 0%, 92% 3%, 96% 1%, 100% 4%,
+      99.5% 50%,
+      100% 94%, 96% 100%, 92% 96%, 86% 100%, 80% 95%, 72% 100%, 65% 97%, 58% 100%, 50% 95%, 42% 100%, 35% 97%, 28% 100%, 20% 96%, 14% 100%, 8% 97%, 4% 100%, 0% 95%,
+      0.5% 50%
+    );
+  }
+
+  .hackatime-placeholder {
+    font-family: "Courier New", monospace;
+    font-size: 14px;
+    color: #7f796d;
+  }
+
+  .hackatime-selected {
+    font-family: "Courier New", monospace;
+    font-size: 14px;
+    color: #cbc1ae;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hackatime-dropdown {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 4px 0;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-bottom: none;
+    border-radius: 3px 3px 0 0;
+  }
+
+  .hackatime-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+    color: #222;
+    padding: 5px 8px;
+  }
+
+  .hackatime-option:hover {
+    background: #f0f0f0;
+  }
+
+  .hackatime-option input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    min-width: 14px;
+    border: 1px solid #999;
+    border-radius: 2px;
+    background: #fff;
+    cursor: pointer;
+  }
+
+  .hackatime-option input[type="checkbox"]:checked {
+    background: #222;
+    border-color: #222;
+  }
+
+  .hackatime-empty {
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+    color: #999;
+    padding: 5px 8px;
+    padding: 4px;
   }
 
   .refresh-btn {
@@ -1870,6 +2274,7 @@
   }
 
   .progress-track {
+    display: flex;
     width: 100%;
     height: 28px;
     background: rgba(0, 0, 0, 0.3);
@@ -1884,11 +2289,13 @@
 
   .progress-fill {
     height: 100%;
-    background: #c48382;
-    border-radius: 3px;
     min-width: 4px;
-    transition: width 600ms cubic-bezier(0.4, 0, 0.2, 1);
   }
+
+  .progress-fill.approved { background: #93b4cd; }
+  .progress-fill.unreviewed { background: #cbc1ae; }
+  .progress-fill.changes_needed { background: #d4a55a; }
+  .progress-fill.unshipped { background: #c48382; }
 
   .progress-ticks {
     display: flex;
@@ -2002,14 +2409,105 @@
     letter-spacing: 0.04em;
     text-decoration: none;
     text-transform: uppercase;
-    border: none;
+    border: 3px solid #a06a69;
+    border-bottom: 8px solid #8a5857;
     box-shadow: 4px 4px 0 #3a3832;
-    transition: transform 100ms ease, box-shadow 100ms ease;
+    transition: transform 0.1s ease, box-shadow 0.1s ease, border-bottom-width 0.1s ease;
   }
 
   .action-btn:hover {
     transform: translate(-1px, -1px);
     box-shadow: 5px 5px 0 #3a3832;
+  }
+
+  .action-btn:active {
+    transform: translateY(5px);
+    border-bottom-width: 3px;
+    box-shadow: 2px 1px 0 #3a3832;
+  }
+
+  /* ── review checklist ─────────────────────────────── */
+  .section-review .section-inner {
+    max-width: 700px;
+    position: relative;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .review-close {
+    position: absolute;
+    top: -8px;
+    right: 0;
+  }
+
+  .review-note {
+    font-family: "Courier New", monospace;
+    font-size: 14px;
+    color: #9e9888;
+    line-height: 1.6;
+    margin: 16px 0 28px;
+  }
+
+  .review-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    margin-bottom: 28px;
+  }
+
+  .review-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    cursor: pointer;
+    font-family: "Courier New", monospace;
+    font-size: 15px;
+    color: #cbc1ae;
+    line-height: 1.5;
+  }
+
+  .review-check input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    border: 3px solid #6c6659;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    margin-top: 2px;
+    transition: background 150ms ease, border-color 150ms ease;
+  }
+
+  .review-check input[type="checkbox"]:checked {
+    background: #5a9e6f;
+    border-color: #488a5a;
+  }
+
+  .review-check input[type="checkbox"]:checked::after {
+    content: '\2713';
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    width: 100%;
+    height: 100%;
+  }
+
+  .review-submit-btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    font-size: 20px;
+    text-align: center;
+  }
+
+  .review-submit-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   /* ── project cards ──────────────────────────────── */
@@ -2365,7 +2863,56 @@
     color: #c48382;
   }
 
-  /* ── mobile ──────────────────────────────────────── */
+  /* ── mobile warning ───────────────────────────────── */
+  .mobile-warning {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #4b4840;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+  }
+
+  .mobile-warning-inner {
+    text-align: center;
+    max-width: 360px;
+  }
+
+  .mobile-warning-icon {
+    width: 48px;
+    height: 48px;
+    color: #c48382;
+    margin-bottom: 20px;
+  }
+
+  .mobile-warning-text {
+    font-family: "Courier New", monospace;
+    font-size: 16px;
+    color: #cbc1ae;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .mobile-warning-text strong {
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 20px;
+    color: #e6f4fe;
+  }
+
+  @media (max-width: 600px) {
+    .mobile-warning {
+      display: flex;
+    }
+
+    .sidebar,
+    .main {
+      display: none;
+    }
+  }
+
+  /* ── responsive ─────────────────────────────────── */
   @media (min-width: 1200px) {
     .form-gear {
       display: block;
@@ -2425,6 +2972,13 @@
       padding: 8px 4px;
       font-size: 10px;
       border-radius: 4px;
+      border-width: 2px;
+      border-bottom-width: 4px;
+    }
+
+    .nav-btn:active {
+      transform: translateY(2px);
+      border-bottom-width: 2px;
     }
 
 

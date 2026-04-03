@@ -38,10 +38,26 @@ export class ProjectsController {
 
     const projects = await this.projectsService.findByUser(user.uid);
     const linkedNames = projects
-      .map((p) => p.hackatimeProjectName)
+      .flatMap((p) => p.hackatimeProjectName ?? [])
       .filter((n): n is string => !!n);
 
-    return this.hackatimeService.getHoursForProjects(user.sub, linkedNames);
+    const { hours, perProject } = await this.hackatimeService.getHoursForProjects(
+      user.sub,
+      [...new Set(linkedNames)],
+    );
+
+    const byStatus: Record<string, number> = {};
+    for (const p of projects) {
+      const names = p.hackatimeProjectName ?? [];
+      const status = p.status ?? 'unshipped';
+      for (const name of names) {
+        if (perProject[name]) {
+          byStatus[status] = (byStatus[status] ?? 0) + perProject[name];
+        }
+      }
+    }
+
+    return { hours, byStatus };
   }
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })

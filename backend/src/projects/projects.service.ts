@@ -65,24 +65,26 @@ export class ProjectsService {
     const validated = this.validateScreenshots(dto.screenshots);
     const screenshotUrls = await this.uploadScreenshots(validated);
 
-    // --- optional hackatime project name (validated against real projects) ---
-    let hackatimeProjectName: string | null = null;
-    if (dto.hackatimeProjectName && typeof dto.hackatimeProjectName === 'string') {
-      const cleaned = this.sanitize(dto.hackatimeProjectName).slice(0, 255);
-      if (cleaned) {
-        const realProjects =
-          await this.hackatimeService.getProjectNames(hcaSub);
+    // --- optional hackatime project names (validated against real projects) ---
+    const hackatimeProjectName: string[] = [];
+    if (dto.hackatimeProjectName && Array.isArray(dto.hackatimeProjectName) && dto.hackatimeProjectName.length > 0) {
+      const realProjects = await this.hackatimeService.getProjectNames(hcaSub);
+      for (const raw of dto.hackatimeProjectName) {
+        if (typeof raw !== 'string') continue;
+        const cleaned = this.sanitize(raw).slice(0, 255);
+        if (!cleaned) continue;
         if (!realProjects.includes(cleaned)) {
           throw new BadRequestException(
-            'That Hackatime project was not found on your account',
+            `Hackatime project "${cleaned}" was not found on your account`,
           );
         }
-        hackatimeProjectName = cleaned;
+        hackatimeProjectName.push(cleaned);
       }
     }
 
     const isUpdate = dto.isUpdate === true;
     const otherHcProgram = this.validateOptionalString(dto.otherHcProgram, 'otherHcProgram', 255);
+    const aiUse = this.validateOptionalString(dto.aiUse, 'aiUse', 200);
 
     const project = this.projectRepo.create({
       userId,
@@ -97,6 +99,7 @@ export class ProjectsService {
       hackatimeProjectName,
       isUpdate,
       otherHcProgram,
+      aiUse,
     });
 
     const saved = await this.projectRepo.save(project);
@@ -130,6 +133,7 @@ export class ProjectsService {
         'status',
         'isUpdate',
         'otherHcProgram',
+        'aiUse',
         'createdAt',
         'updatedAt',
       ],
@@ -178,20 +182,23 @@ export class ProjectsService {
       project.screenshot2Url = screenshotUrls[1];
     }
     if (dto.hackatimeProjectName !== undefined) {
-      if (dto.hackatimeProjectName === null || dto.hackatimeProjectName === '') {
-        project.hackatimeProjectName = null;
-      } else {
-        const cleaned = this.sanitize(dto.hackatimeProjectName).slice(0, 255);
-        if (cleaned) {
-          const realProjects =
-            await this.hackatimeService.getProjectNames(hcaSub);
+      if (dto.hackatimeProjectName === null || (Array.isArray(dto.hackatimeProjectName) && dto.hackatimeProjectName.length === 0)) {
+        project.hackatimeProjectName = [];
+      } else if (Array.isArray(dto.hackatimeProjectName)) {
+        const realProjects = await this.hackatimeService.getProjectNames(hcaSub);
+        const validated: string[] = [];
+        for (const raw of dto.hackatimeProjectName) {
+          if (typeof raw !== 'string') continue;
+          const cleaned = this.sanitize(raw).slice(0, 255);
+          if (!cleaned) continue;
           if (!realProjects.includes(cleaned)) {
             throw new BadRequestException(
-              'That Hackatime project was not found on your account',
+              `Hackatime project "${cleaned}" was not found on your account`,
             );
           }
-          project.hackatimeProjectName = cleaned;
+          validated.push(cleaned);
         }
+        project.hackatimeProjectName = validated;
       }
     }
     if (dto.isUpdate !== undefined) {
@@ -199,6 +206,9 @@ export class ProjectsService {
     }
     if (dto.otherHcProgram !== undefined) {
       project.otherHcProgram = dto.otherHcProgram === null ? null : this.validateOptionalString(dto.otherHcProgram, 'otherHcProgram', 255);
+    }
+    if (dto.aiUse !== undefined) {
+      project.aiUse = dto.aiUse === null ? null : this.validateOptionalString(dto.aiUse, 'aiUse', 200);
     }
     if (dto.status !== undefined) {
       if (dto.status !== 'unreviewed') {
@@ -209,11 +219,19 @@ export class ProjectsService {
 
     const saved = await this.projectRepo.save(project);
 
-    await this.auditLogService.log(
-      userId,
-      'project_updated',
-      `Updated project "${project.name}"`,
-    );
+    if (dto.status === 'unreviewed') {
+      await this.auditLogService.log(
+        userId,
+        'project_submitted',
+        `Submitted "${project.name}" for review`,
+      );
+    } else {
+      await this.auditLogService.log(
+        userId,
+        'project_updated',
+        `Updated project "${project.name}"`,
+      );
+    }
 
     const { userId: _uid, user: _user, ...safe } = saved;
     return safe;
