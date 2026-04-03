@@ -87,6 +87,70 @@ export class RsvpService {
     return data.records?.length > 0;
   }
 
+  async findRecordIdByEmail(rawEmail: string): Promise<string | null> {
+    const email = this.sanitizeEmail(rawEmail);
+    const searchParams = new URLSearchParams({
+      filterByFormula: `{Email} = "${this.escapeAirtableValue(email)}"`,
+      maxRecords: '1',
+    });
+
+    const res = await fetchWithTimeout(`${this.baseUrl}?${searchParams}`, {
+      headers: { Authorization: `Bearer ${this.airtableApiKey}` },
+    });
+
+    if (!res.ok) {
+      throw new HttpException('Failed to find Airtable record', HttpStatus.BAD_GATEWAY);
+    }
+
+    const data = await res.json();
+    return data.records?.[0]?.id ?? null;
+  }
+
+  async updatePerms(rawEmail: string, perms: string): Promise<void> {
+    const recordId = await this.findRecordIdByEmail(rawEmail);
+    if (!recordId) {
+      throw new HttpException('User not found in Airtable', HttpStatus.NOT_FOUND);
+    }
+
+    const res = await fetchWithTimeout(`${this.baseUrl}/${recordId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${this.airtableApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ fields: { Perms: perms } }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('Airtable update error:', res.status, text);
+      throw new HttpException('Failed to update permissions', HttpStatus.BAD_GATEWAY);
+    }
+  }
+
+  async getPerms(rawEmail: string): Promise<string | null> {
+    const email = this.sanitizeEmail(rawEmail);
+    const searchParams = new URLSearchParams({
+      filterByFormula: `{Email} = "${this.escapeAirtableValue(email)}"`,
+      maxRecords: '1',
+    });
+    searchParams.append('fields[]', 'Perms');
+
+    const res = await fetchWithTimeout(`${this.baseUrl}?${searchParams}`, {
+      headers: { Authorization: `Bearer ${this.airtableApiKey}` },
+    });
+
+    if (!res.ok) {
+      throw new HttpException(
+        'Failed to check permissions',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    const data = await res.json();
+    return data.records?.[0]?.fields?.Perms ?? null;
+  }
+
   private async createRecord(email: string): Promise<void> {
     const res = await fetchWithTimeout(this.baseUrl, {
       method: 'POST',

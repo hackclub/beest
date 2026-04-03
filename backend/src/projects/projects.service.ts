@@ -262,7 +262,7 @@ export class ProjectsService {
    * The result is treated as a plain-text string.
    */
   private sanitize(raw: string): string {
-    return raw
+    return String(raw)
       .replace(/[<>"'`&\\]/g, '') // strip injection-relevant chars
       .replace(/\0/g, '') // strip null bytes
       .trim();

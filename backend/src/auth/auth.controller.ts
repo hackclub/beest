@@ -4,9 +4,11 @@ import {
   Post,
   Body,
   Req,
+  Query,
   UseGuards,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
@@ -84,6 +86,29 @@ export class AuthController {
       throw new BadRequestException('No email in token');
     }
     return this.rsvpService.createRsvp(email);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('scope')
+  async checkScope(
+    @Req() req: Request,
+    @Query('scope') scope: string,
+  ) {
+    const email = (req as any).user?.email;
+    if (!email) throw new ForbiddenException();
+
+    const perms = await this.rsvpService.getPerms(email);
+
+    const scopeRequirements: Record<string, string> = {
+      admin: 'Super Admin',
+    };
+
+    const required = scopeRequirements[scope];
+    if (!required || perms !== required) {
+      throw new ForbiddenException();
+    }
+
+    return { allowed: true };
   }
 
   /**

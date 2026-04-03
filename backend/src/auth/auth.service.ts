@@ -165,6 +165,20 @@ export class AuthService {
     // 4. Upsert user in DB
     const user = await this.upsertUser(userinfo);
 
+    // 4b. Check if user is banned
+    try {
+      const perms = await this.rsvpService.getPerms(userinfo.email);
+      if (perms === 'Banned') {
+        return {
+          token: '',
+          refreshToken: '',
+          redirectTo: 'https://fraud.hackclub.com/',
+        };
+      }
+    } catch (err) {
+      this.logger.error(`Perms check failed for ${userinfo.sub}: ${err}`);
+    }
+
     // 5. Submit RSVP
     let redirectTo = '/home';
     try {

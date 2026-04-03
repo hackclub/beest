@@ -440,7 +440,7 @@
     <div class="sidebar-panel">
       <div class="sidebar-content">
         <a href="/" class="sidebar-brand">#BEEST</a>
-        <p class="sidebar-greeting">Hey {(data.user.name ?? 'there!').split(' ')[0]}</p>
+        <p class="sidebar-greeting">Hey {data.user.name ?? 'there!'}</p>
         <ul class="sidebar-nav">
           {#each navItems as item}
             <li>
@@ -648,7 +648,7 @@
         {#if otherHcProgram}
         <div class="form-group other-program-group">
           <label class="form-label" for="other-program">Which program?</label>
-          <input id="other-program" type="text" class="form-input" maxlength={255} placeholder="e.g. Boba Drops, Arcade" bind:value={otherHcProgramName} />
+          <input id="other-program" type="text" class="form-input" maxlength={255} placeholder="e.g. Boba Drops, Flavortown" bind:value={otherHcProgramName} />
         </div>
         {/if}
         <div class="form-actions">
@@ -745,7 +745,7 @@
         <div class="progress-bar-wrap">
           <div class="progress-labels">
             <span class="progress-hours">{displayHours}h</span>
-            <span class="progress-goal">{(hoursByStatus['approved'] ?? 0) >= GOAL_HOURS ? 'Qualified!' : `${GOAL_HOURS}h approved to qualify`}</span>
+            <span class="progress-goal">{(hoursByStatus['approved'] ?? 0) >= GOAL_HOURS ? `${GOAL_HOURS}h approved` : `${GOAL_HOURS}h to qualify`}</span>
           </div>
           <div class="progress-track">
             {#each ['approved', 'unreviewed', 'changes_needed', 'unshipped'] as status}

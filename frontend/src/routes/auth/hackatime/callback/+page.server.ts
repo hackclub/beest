@@ -47,6 +47,13 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 
 	const { redirectTo } = await res.json();
 
+	// Banned users get redirected to fraud page
+	if (redirectTo === 'https://fraud.hackclub.com/') {
+		cookies.delete('auth_token', { path: '/' });
+		cookies.delete('refresh_token', { path: '/' });
+		redirect(302, 'https://fraud.hackclub.com/');
+	}
+
 	// Defense-in-depth: only follow relative redirects from the backend
 	if (typeof redirectTo !== 'string' || !redirectTo.startsWith('/') || redirectTo.startsWith('//')) {
 		redirect(302, '/tutorial');

@@ -15,6 +15,8 @@ export const AUDIT_ACTIONS = [
   'project_deleted',
   'hackatime_connected',
   'rsvp_submitted',
+  'admin_ban',
+  'admin_perms_change',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

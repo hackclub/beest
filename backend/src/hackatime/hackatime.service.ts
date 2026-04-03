@@ -5,7 +5,9 @@ import { Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { fetchWithTimeout } from '../fetch.util';
 import { User } from '../entities/user.entity';
+import { Session } from '../entities/session.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { RsvpService } from '../rsvp/rsvp.service';
 
 @Injectable()
 export class HackatimeService {
@@ -21,7 +23,10 @@ export class HackatimeService {
     private configService: ConfigService,
     @InjectRepository(User)
     private userRepo: Repository<User>,
+    @InjectRepository(Session)
+    private sessionRepo: Repository<Session>,
     private auditLogService: AuditLogService,
+    private rsvpService: RsvpService,
   ) {
     this.clientId = this.configService.get('HACKATIME_CLIENT_ID');
     this.clientSecret = this.configService.get('HACKATIME_CLIENT_SECRET');
@@ -137,7 +142,29 @@ export class HackatimeService {
       throw new Error('Invalid token response from Hackatime');
     }
 
-    // 3. Persist the token to the user's DB record
+    // 3. Check if the user is banned on Hackatime
+    try {
+      const meRes = await fetchWithTimeout(
+        `${this.baseUrl}/api/v1/authenticated/me`,
+        { headers: { Authorization: `Bearer ${tokens.access_token}` } },
+      );
+      if (meRes.ok) {
+        const meData = await meRes.json();
+        if (meData?.trust_factor?.trust_level === 'red') {
+          this.logger.warn(`Hackatime-banned user attempted connection: ${userId}`);
+          const user = await this.userRepo.findOne({ where: { hcaSub: userId } });
+          if (user?.email) {
+            await this.rsvpService.updatePerms(user.email, 'Banned');
+            await this.sessionRepo.delete({ userId: user.id });
+          }
+          return { success: false, redirectTo: 'https://fraud.hackclub.com/' };
+        }
+      }
+    } catch (err) {
+      this.logger.error(`Hackatime ban check failed for ${userId}: ${err}`);
+    }
+
+    // 4. Persist the token to the user's DB record
     // Use find+save (not update) so the column encryption transformer runs
     const user = await this.userRepo.findOne({ where: { hcaSub: userId } });
     if (!user) {

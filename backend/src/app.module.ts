@@ -7,6 +7,7 @@ import { HackatimeModule } from './hackatime/hackatime.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { ProjectsModule } from './projects/projects.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
+import { AdminModule } from './admin/admin.module';
 import { User } from './entities/user.entity';
 import { Session } from './entities/session.entity';
 import { Project } from './entities/project.entity';
@@ -35,6 +36,7 @@ import { HealthController } from './health.controller';
     OnboardingModule,
     ProjectsModule,
     AuditLogModule,
+    AdminModule,
   ],
 })
 export class AppModule {}
