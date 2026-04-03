@@ -55,7 +55,14 @@
 		projectType: string;
 		status: string;
 		codeUrl: string | null;
+		demoUrl: string | null;
+		readmeUrl: string | null;
+		screenshot1Url: string | null;
+		screenshot2Url: string | null;
+		hackatimeProjectName: string[];
 		isUpdate: boolean;
+		otherHcProgram: string | null;
+		aiUse: string | null;
 		createdAt: string;
 		updatedAt: string;
 		user: { id: string; name: string | null; slackId: string | null };
@@ -72,7 +79,105 @@
 	let statusCounts: StatusCounts = $state({ unshipped: 0, unreviewed: 0, changes_needed: 0, approved: 0 });
 	let projectsLoading = $state(false);
 	let projectStatusFilter = $state('');
+	let projectTypeFilter = $state('');
 	let projectSearch = $state('');
+
+	// Hackatime detail expansion
+	interface HackatimeDetail {
+		totalHours: number;
+		trustLevel: string | null;
+		hackatimeProjects: { name: string; hours: number; languages: string[] }[];
+		unifiedDuplicate: boolean;
+		unifiedError: boolean;
+	}
+	let expandedProjectId = $state<string | null>(null);
+	let hackatimeData = $state<HackatimeDetail | null>(null);
+	let hackatimeLoading = $state(false);
+	let overrideJustification = $state('');
+	let userFeedback = $state('');
+	let reviewSubmitting = $state(false);
+	let customHours = $state(0);
+
+	let selectedProject = $derived(allProjects.find(p => p.id === expandedProjectId) ?? null);
+
+	async function reviewProject(status: 'approved' | 'changes_needed') {
+		if (!expandedProjectId || reviewSubmitting) return;
+		reviewSubmitting = true;
+		try {
+			const res = await fetch(`/api/admin/projects/${expandedProjectId}/review`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ status }),
+			});
+			if (res.ok) {
+				const proj = allProjects.find(p => p.id === expandedProjectId);
+				if (proj) proj.status = status;
+			}
+		} finally {
+			reviewSubmitting = false;
+		}
+	}
+
+	function buildJustification(adjustedHours: number, label: string) {
+		if (!hackatimeData) return;
+		const trustLabels: Record<string, string> = { blue: 'standard', yellow: 'warned', red: 'banned' };
+		const trustLabel = trustLabels[hackatimeData.trustLevel?.toLowerCase() ?? ''] ?? hackatimeData.trustLevel ?? 'unknown';
+		const proj = allProjects.find(p => p.id === expandedProjectId);
+		const updateNote = proj?.isUpdate ? ' (this is an update to an existing project)' : '';
+		overrideJustification = `the user has trust level ${trustLabel} and tracked ${hackatimeData.totalHours} hours on the project through hackatime (${label} to ${adjustedHours}h)${updateNote}\n\nsigned off by ${data.user.name ?? 'unknown'}`;
+	}
+
+	function adjustHours(factor: number) {
+		if (!hackatimeData) return;
+		const adjusted = Math.round(hackatimeData.totalHours * factor * 10) / 10;
+		customHours = adjusted;
+		const label = factor === 0.5 ? 'halved' : factor === 1/3 ? 'reduced to a third' : `reduced to ${Math.round(factor * 100)}%`;
+		buildJustification(adjusted, label);
+	}
+
+	function applyCustomHours() {
+		if (!hackatimeData) return;
+		const rounded = Math.round(customHours * 10) / 10;
+		buildJustification(rounded, `adjusted`);
+	}
+
+	async function selectProject(projectId: string) {
+		if (expandedProjectId === projectId) {
+			expandedProjectId = null;
+			hackatimeData = null;
+			userFeedback = '';
+			return;
+		}
+		expandedProjectId = projectId;
+		hackatimeData = null;
+		userFeedback = '';
+		overrideJustification = '';
+
+		const proj = allProjects.find(p => p.id === projectId);
+		if (proj?.status === 'unreviewed') {
+			hackatimeLoading = true;
+			try {
+				const res = await fetch(`/api/admin/projects/${projectId}/hackatime`);
+				if (res.ok) {
+					hackatimeData = await res.json();
+					customHours = hackatimeData?.totalHours ?? 0;
+					const trustLabels: Record<string, string> = { blue: 'standard', yellow: 'warned', red: 'banned' };
+					const trustLabel = trustLabels[hackatimeData?.trustLevel?.toLowerCase() ?? ''] ?? hackatimeData?.trustLevel ?? 'unknown';
+					const updateNote = proj.isUpdate ? ' (this is an update to an existing project)' : '';
+					const unifiedNote = !hackatimeData?.unifiedDuplicate && proj.codeUrl
+						? `\nAs of ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} this is the first submission of this code URL to unified.`
+						: '';
+					overrideJustification = `the user has trust level ${trustLabel} and tracked ${hackatimeData?.totalHours ?? 0} hours on the project through hackatime${updateNote}${unifiedNote}\n\nsigned off by ${data.user.name ?? 'unknown'}`;
+				} else {
+					hackatimeData = { totalHours: 0, hackatimeProjects: [], trustLevel: null, unifiedDuplicate: false, unifiedError: false };
+				}
+			} catch {
+				hackatimeData = { totalHours: 0, hackatimeProjects: [], trustLevel: null, unifiedDuplicate: false, unifiedError: false };
+			} finally {
+				hackatimeLoading = false;
+			}
+		}
+	}
 
 	function todayDateStr(): string {
 		const d = new Date();
@@ -81,10 +186,15 @@
 
 	const PERMS_OPTIONS = ['User', 'Helper', 'Reviewer', 'Fraud Reviewer', 'Super Admin', 'Banned'];
 
+	const PROJECT_TYPES = ['web', 'windows', 'mac', 'linux', 'cross-platform', 'python', 'android', 'ios'];
+
 	let filteredProjects = $derived.by(() => {
 		let result = allProjects;
 		if (projectStatusFilter) {
 			result = result.filter(p => p.status === projectStatusFilter);
+		}
+		if (projectTypeFilter) {
+			result = result.filter(p => p.projectType === projectTypeFilter);
 		}
 		if (projectSearch.trim()) {
 			const q = projectSearch.trim().toLowerCase();
@@ -495,42 +605,172 @@
 
 				<div class="users-toolbar">
 					<input type="text" placeholder="Search by project name, user name or Slack ID..." bind:value={projectSearch} class="users-search" />
+					<select bind:value={projectTypeFilter} class="type-filter-select">
+						<option value="">All Types</option>
+						{#each PROJECT_TYPES as t}
+							<option value={t}>{t}</option>
+						{/each}
+					</select>
 				</div>
 
 				{#if projectsLoading}
 					<p class="loading">Loading projects...</p>
-				{:else if filteredProjects.length === 0}
-					<p class="empty">No projects found.</p>
 				{:else}
-					<table class="users-table">
-						<thead>
-							<tr>
-								<th>Project</th>
-								<th>User</th>
-								<th>Type</th>
-								<th>Status</th>
-								<th>Update?</th>
-								<th>Created</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each filteredProjects as project}
-								<tr>
-									<td>
-										{project.name}
-										{#if project.codeUrl}
-											<a href={project.codeUrl} target="_blank" rel="noopener" class="project-link">code</a>
+					<div class="proj-split">
+						<div class="proj-sidebar">
+							{#if filteredProjects.length === 0}
+								<p class="empty">No projects found.</p>
+							{:else}
+								{#each filteredProjects as project}
+									<button
+										class="proj-sidebar-item"
+										class:active={expandedProjectId === project.id}
+										onclick={() => selectProject(project.id)}
+									>
+										<span class="proj-sidebar-name">{project.name}</span>
+										<span class="proj-sidebar-meta">
+											{project.user.name ?? '—'}
+											<span class="badge badge-{project.status} badge-sm">{project.status}</span>
+										</span>
+									</button>
+								{/each}
+							{/if}
+						</div>
+
+						<div class="proj-main">
+							{#if selectedProject}
+								<div class="proj-main-header">
+									<h3 class="proj-main-title">{selectedProject.name}</h3>
+									<span class="badge badge-{selectedProject.status}">{selectedProject.status}</span>
+								</div>
+
+								<p class="proj-main-desc">{selectedProject.description}</p>
+
+								<div class="proj-main-meta">
+									<span>Type: <strong>{selectedProject.projectType}</strong></span>
+									<span>User: <strong>{selectedProject.user.name ?? '—'}</strong>{selectedProject.user.slackId ? ` (${selectedProject.user.slackId})` : ''}</span>
+									<span>Update: <strong>{selectedProject.isUpdate ? 'Yes' : 'No'}</strong></span>
+									<span>Created: <strong>{formatDate(selectedProject.createdAt)}</strong></span>
+								</div>
+
+								<div class="ht-actions">
+									{#if selectedProject.codeUrl}
+										<a href={selectedProject.codeUrl} target="_blank" rel="noopener" class="ht-btn ht-btn-github">GitHub</a>
+									{/if}
+									{#if selectedProject.demoUrl}
+										<a href={selectedProject.demoUrl} target="_blank" rel="noopener" class="ht-btn ht-btn-demo">Demo</a>
+									{/if}
+									{#if selectedProject.readmeUrl}
+										<a href={selectedProject.readmeUrl} target="_blank" rel="noopener" class="ht-btn ht-btn-readme">README</a>
+									{/if}
+									{#if !selectedProject.codeUrl && !selectedProject.demoUrl && !selectedProject.readmeUrl}
+										<span class="ht-empty">No links provided</span>
+									{/if}
+								</div>
+
+								{#if selectedProject.screenshot1Url || selectedProject.screenshot2Url}
+									<div class="proj-screenshots">
+										{#if selectedProject.screenshot1Url}
+											<img src={selectedProject.screenshot1Url} alt="Screenshot 1" class="proj-screenshot" />
 										{/if}
-									</td>
-									<td>{project.user.name ?? '—'}{project.user.slackId ? ` (${project.user.slackId})` : ''}</td>
-									<td>{project.projectType}</td>
-									<td><span class="badge badge-{project.status}">{project.status}</span></td>
-									<td>{project.isUpdate ? 'Yes' : 'No'}</td>
-									<td>{formatDate(project.createdAt)}</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
+										{#if selectedProject.screenshot2Url}
+											<img src={selectedProject.screenshot2Url} alt="Screenshot 2" class="proj-screenshot" />
+										{/if}
+									</div>
+								{/if}
+
+								{#if selectedProject.hackatimeProjectName?.length > 0}
+									<div class="proj-info-row">
+										<span class="proj-info-label">Hackatime Projects:</span>
+										<span class="proj-info-value">{selectedProject.hackatimeProjectName.join(', ')}</span>
+									</div>
+								{/if}
+								{#if selectedProject.otherHcProgram}
+									<div class="proj-info-row">
+										<span class="proj-info-label">Other HC Program:</span>
+										<span class="proj-info-value">{selectedProject.otherHcProgram}</span>
+									</div>
+								{/if}
+								{#if selectedProject.aiUse}
+									<div class="proj-info-row">
+										<span class="proj-info-label">AI Usage:</span>
+										<span class="proj-info-value">{selectedProject.aiUse}</span>
+									</div>
+								{/if}
+
+								{#if selectedProject.status === 'unreviewed'}
+									<hr class="proj-divider" />
+
+									<a href="https://hack-club-hq.gitbook.io/ysws-project-submission-guidelines/BLBRN8LIfoCZhFV6oMNR" target="_blank" rel="noopener" class="ht-btn ht-btn-docs" style="display:inline-flex; margin-bottom: 0.75rem;">Open Docs</a>
+
+									{#if hackatimeLoading}
+										<span class="ht-loading">Loading Hackatime data...</span>
+									{:else if hackatimeData}
+										<div class="ht-detail">
+											<div class="ht-header">
+												<span class="ht-trust">Trust Level: <strong class="trust-{hackatimeData.trustLevel ?? 'unknown'}">{{ blue: 'standard', yellow: 'warned', red: 'banned' }[hackatimeData.trustLevel?.toLowerCase() ?? ''] ?? hackatimeData.trustLevel ?? 'unknown'}</strong></span>
+												<span class="ht-total">{hackatimeData.totalHours}h total</span>
+											</div>
+											{#if hackatimeData.hackatimeProjects.length > 0}
+												<div class="ht-projects">
+													{#each hackatimeData.hackatimeProjects as hp}
+														<div class="ht-project">
+															<span class="ht-project-name">{hp.name}</span>
+															<span class="ht-project-hours">{hp.hours}h</span>
+															{#if hp.languages.length > 0}
+																<span class="ht-project-langs">{hp.languages.join(', ')}</span>
+															{/if}
+														</div>
+													{/each}
+												</div>
+											{:else}
+												<span class="ht-empty">No linked Hackatime projects found</span>
+											{/if}
+											{#if hackatimeData?.unifiedDuplicate}
+												<div class="unified-duplicate-alert">Duplicate Found — This code URL already exists in Unified Approved Projects</div>
+											{:else if hackatimeData?.unifiedError}
+												<div class="unified-error-alert">Unified check failed — could not verify code URL against Approved Projects</div>
+											{/if}
+											<label class="ht-justification-label">
+												Override Justification:
+												<textarea class="ht-justification" bind:value={overrideJustification} rows="3"></textarea>
+											</label>
+										</div>
+									{/if}
+
+									<div class="hours-adjust">
+										<span class="hours-adjust-label">Adjust Hours:</span>
+										<button class="hours-btn" onclick={() => adjustHours(0.5)}>Halve</button>
+										<button class="hours-btn" onclick={() => adjustHours(1/3)}>Third</button>
+										<button class="hours-btn" onclick={() => adjustHours(0.25)}>Quarter</button>
+										<div class="hours-custom">
+											<button class="hours-tick" onclick={() => { customHours = Math.max(0, Math.round((customHours - 1) * 10) / 10); applyCustomHours(); }}>-</button>
+											<input type="number" class="hours-input" bind:value={customHours} onchange={applyCustomHours} min="0" step="0.1" />
+											<button class="hours-tick" onclick={() => { customHours = Math.round((customHours + 1) * 10) / 10; applyCustomHours(); }}>+</button>
+										</div>
+									</div>
+
+									<hr class="proj-divider" />
+
+									<div class="user-feedback-box">
+										<label class="user-feedback-label">
+											User Feedback:
+											<textarea class="user-feedback" bind:value={userFeedback} rows="4" placeholder="Feedback to send to the user about their project..."></textarea>
+										</label>
+									</div>
+
+									<div class="review-actions">
+										<button class="review-btn review-btn-approve" onclick={() => reviewProject('approved')} disabled={reviewSubmitting}>Approve</button>
+										<button class="review-btn review-btn-reject" onclick={() => reviewProject('changes_needed')} disabled={reviewSubmitting}>Reject</button>
+									</div>
+								{/if}
+							{:else}
+								<div class="proj-main-empty">
+									<p>Select a project to review</p>
+								</div>
+							{/if}
+						</div>
+					</div>
 				{/if}
 			</div>
 		{/if}
@@ -610,8 +850,8 @@
 
 	.users-search {
 		flex: 1;
-		background: #1a1a1a;
-		border: 1px solid #444;
+		background: #1e1e1e;
+		border: 2px solid #666;
 		border-radius: 6px;
 		color: #e0e0e0;
 		padding: 0.5rem 0.75rem;
@@ -636,6 +876,22 @@
 	}
 
 	.users-perms-filter:focus {
+		outline: none;
+		border-color: #5b9bd5;
+	}
+
+	.type-filter-select {
+		background: #1e1e1e;
+		border: 2px solid #666;
+		border-radius: 6px;
+		color: #e0e0e0;
+		padding: 0.5rem 0.75rem;
+		font-size: 0.85rem;
+		font-family: inherit;
+		cursor: pointer;
+	}
+
+	.type-filter-select:focus {
 		outline: none;
 		border-color: #5b9bd5;
 	}
@@ -946,7 +1202,8 @@
 
 	/* Projects tab */
 	.projects-admin {
-		max-width: 1100px;
+		max-width: 1600px;
+		margin: 0 auto;
 	}
 
 	.status-pills {
@@ -962,40 +1219,513 @@
 		gap: 0.4rem;
 		padding: 0.4rem 0.9rem;
 		border-radius: 20px;
-		border: 1px solid #444;
+		border: 2px solid #777;
 		background: #2a2a2a;
-		color: #aaa;
+		color: #ccc;
 		font-size: 0.8rem;
 		font-weight: 500;
 		cursor: pointer;
 		transition: background 0.15s, border-color 0.15s, color 0.15s;
 	}
 
-	.pill:hover { background: #333; color: #ccc; }
+	.pill:hover { background: #383838; color: #eee; }
 
-	.pill.active { border-color: #666; color: #fff; background: #333; }
+	.pill.active { color: #fff; }
 
 	.pill-count {
-		background: #3a3a3a;
+		background: #444;
 		padding: 0.1rem 0.45rem;
 		border-radius: 10px;
 		font-size: 0.7rem;
 		font-weight: 600;
+		color: #ddd;
 	}
 
-	.pill.active .pill-count { background: #555; }
+	.pill.active .pill-count { background: rgba(255,255,255,0.15); }
 
-	.pill-unshipped.active { border-color: #888; }
-	.pill-unreviewed.active { border-color: #d5b85b; color: #d5b85b; }
-	.pill-changes_needed.active { border-color: #d58b5b; color: #d58b5b; }
-	.pill-approved.active { border-color: #5b9bd5; color: #5b9bd5; }
+	.pill-unshipped { background: #c48382; border-color: #e09a99; color: #fff; }
+	.pill-unshipped.active { background: #d4908f; border-color: #f0b0af; }
 
-	.project-link {
-		color: #5b9bd5;
-		font-size: 0.7rem;
-		margin-left: 0.35rem;
+	.pill-unreviewed { background: #b5a88e; border-color: #cbc1ae; color: #fff; }
+	.pill-unreviewed.active { background: #cbc1ae; border-color: #e0d8c8; }
+
+	.pill-changes_needed { background: #d4a55a; border-color: #e6ba70; color: #fff; }
+	.pill-changes_needed.active { background: #e0b468; border-color: #f0ca80; }
+
+	.pill-approved { background: #93b4cd; border-color: #aaccdd; color: #fff; }
+	.pill-approved.active { background: #a8c6dd; border-color: #c0ddef; }
+
+	.proj-split {
+		display: flex;
+		gap: 2px;
+		background: #777;
+		border: 2px solid #777;
+		border-radius: 8px;
+		overflow: hidden;
+		min-height: 70vh;
+	}
+
+	.proj-sidebar {
+		width: 340px;
+		flex-shrink: 0;
+		background: #1e1e1e;
+		overflow-y: auto;
+		max-height: 80vh;
+	}
+
+	.proj-sidebar-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		width: 100%;
+		padding: 0.65rem 0.85rem;
+		border: none;
+		border-bottom: 1px solid #333;
+		background: transparent;
+		color: #ccc;
+		text-align: left;
+		cursor: pointer;
+		font-family: inherit;
+		font-size: 0.8rem;
+		transition: background 0.1s;
+	}
+
+	.proj-sidebar-item:hover {
+		background: #2a2a2a;
+	}
+
+	.proj-sidebar-item.active {
+		background: #2e2e2e;
+		border-left: 4px solid #5b9bd5;
+	}
+
+	.proj-sidebar-name {
+		font-weight: 600;
+		color: #e0e0e0;
+		font-size: 0.85rem;
+	}
+
+	.proj-sidebar-meta {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: #888;
+		font-size: 0.75rem;
+	}
+
+	.badge-sm {
+		font-size: 0.65rem;
+		padding: 0.1rem 0.35rem;
+	}
+
+	.proj-main {
+		flex: 1;
+		background: #252525;
+		padding: 1.25rem 1.5rem;
+		overflow-y: auto;
+		max-height: 80vh;
+	}
+
+	.proj-main-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 100%;
+		color: #666;
+		font-size: 0.9rem;
+	}
+
+	.proj-main-header {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.proj-main-title {
+		margin: 0;
+		font-size: 1.2rem;
+		color: #fff;
+	}
+
+	.proj-main-desc {
+		color: #bbb;
+		font-size: 0.85rem;
+		line-height: 1.5;
+		margin: 0 0 1rem;
+	}
+
+	.proj-main-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 1rem;
+		font-size: 0.8rem;
+		color: #999;
+		margin-bottom: 1rem;
+	}
+
+	.proj-main-meta strong {
+		color: #e0e0e0;
+	}
+
+	.proj-screenshots {
+		display: flex;
+		gap: 0.75rem;
+		margin: 1rem 0;
+	}
+
+	.proj-screenshot {
+		max-width: 280px;
+		max-height: 200px;
+		border: 2px solid #555;
+		border-radius: 6px;
+		object-fit: cover;
+	}
+
+	.proj-info-row {
+		display: flex;
+		gap: 0.5rem;
+		align-items: baseline;
+		font-size: 0.85rem;
+		margin-bottom: 0.4rem;
+	}
+
+	.proj-info-label {
+		color: #999;
+		flex-shrink: 0;
+	}
+
+	.proj-info-value {
+		color: #e0e0e0;
+	}
+
+	.proj-divider {
+		border: none;
+		border-top: 2px solid #666;
+		margin: 1rem 0;
+	}
+
+	.ht-actions {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 0.25rem;
+	}
+
+	.ht-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.5rem 1.5rem;
+		border-radius: 6px;
+		font-size: 0.85rem;
+		font-weight: 600;
+		font-family: inherit;
 		text-decoration: none;
+		cursor: pointer;
+		transition: opacity 0.15s;
 	}
 
-	.project-link:hover { text-decoration: underline; }
+	.ht-btn:hover {
+		opacity: 0.85;
+	}
+
+	.ht-btn-github {
+		background: #7b5ea7;
+		color: #fff;
+		border: 2px solid #a080d0;
+	}
+
+	.ht-btn-demo {
+		background: #5b9bd5;
+		color: #fff;
+		border: 2px solid #8fc4ef;
+	}
+
+	.ht-btn-readme {
+		background: #4a9a5a;
+		color: #fff;
+		border: 2px solid #6abf7a;
+	}
+
+	.ht-btn-docs {
+		background: #fff;
+		color: #111;
+		border: 2px solid #ddd;
+	}
+
+	.user-feedback-box {
+		margin-top: 0.25rem;
+	}
+
+	.user-feedback-label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		font-size: 0.8rem;
+		color: #aaa;
+	}
+
+	.user-feedback {
+		background: #1e1e1e;
+		border: 2px solid #777;
+		border-radius: 6px;
+		color: #e0e0e0;
+		padding: 0.5rem 0.75rem;
+		font-size: 0.85rem;
+		font-family: inherit;
+		resize: vertical;
+	}
+
+	.user-feedback:focus {
+		outline: none;
+		border-color: #5b9bd5;
+	}
+
+	.hours-adjust {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.5rem;
+	}
+
+	.hours-adjust-label {
+		font-size: 0.8rem;
+		color: #aaa;
+	}
+
+	.hours-btn {
+		height: 30px;
+		padding: 0 0.85rem;
+		border: 2px solid #777;
+		border-radius: 6px;
+		background: #333;
+		color: #e0e0e0;
+		font-size: 0.8rem;
+		font-weight: 600;
+		font-family: inherit;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.hours-btn:hover {
+		background: #444;
+	}
+
+	.hours-custom {
+		display: flex;
+		align-items: center;
+		gap: 0;
+		margin-left: 0.5rem;
+	}
+
+	.hours-tick {
+		width: 30px;
+		height: 30px;
+		border: 2px solid #777;
+		background: #333;
+		color: #e0e0e0;
+		font-size: 1rem;
+		font-weight: 700;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-family: inherit;
+	}
+
+	.hours-tick:first-child {
+		border-radius: 6px 0 0 6px;
+		border-right: none;
+	}
+
+	.hours-tick:last-child {
+		border-radius: 0 6px 6px 0;
+		border-left: none;
+	}
+
+	.hours-tick:hover {
+		background: #444;
+	}
+
+	.hours-input {
+		width: 55px;
+		height: 30px;
+		border: 2px solid #777;
+		border-left: none;
+		border-right: none;
+		background: #1e1e1e;
+		color: #e0e0e0;
+		font-size: 0.85rem;
+		font-family: inherit;
+		text-align: center;
+		appearance: textfield;
+		-moz-appearance: textfield;
+	}
+
+	.hours-input::-webkit-inner-spin-button,
+	.hours-input::-webkit-outer-spin-button {
+		-webkit-appearance: none;
+		margin: 0;
+	}
+
+	.hours-input:focus {
+		outline: none;
+		border-color: #5b9bd5;
+	}
+
+
+	.review-actions {
+		display: flex;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
+	.review-btn {
+		flex: 1;
+		padding: 0.75rem 1.5rem;
+		border: none;
+		border-radius: 8px;
+		font-size: 1rem;
+		font-weight: 700;
+		font-family: inherit;
+		cursor: pointer;
+		transition: opacity 0.15s;
+		color: #fff;
+	}
+
+	.review-btn:hover {
+		opacity: 0.85;
+	}
+
+	.review-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.review-btn-approve {
+		background: #4a9a5a;
+	}
+
+	.review-btn-reject {
+		background: #c44040;
+	}
+
+	.ht-detail {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.ht-header {
+		display: flex;
+		align-items: center;
+		gap: 1.5rem;
+		font-size: 0.85rem;
+		color: #ccc;
+	}
+
+	.ht-trust strong {
+		font-weight: 600;
+	}
+
+	.trust-green { color: #4caf50; }
+	.trust-blue { color: #5b9bd5; }
+	.trust-yellow { color: #ffc107; }
+	.trust-red { color: #f44336; }
+	.trust-unknown { color: #888; }
+
+	.ht-total {
+		color: #5b9bd5;
+		font-weight: 600;
+	}
+
+	.ht-projects {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.ht-project {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		background: #2a2a2a;
+		border: 2px solid #666;
+		border-radius: 4px;
+		padding: 0.35rem 0.6rem;
+		font-size: 0.8rem;
+		color: #ddd;
+	}
+
+	.ht-project-name {
+		font-weight: 600;
+		color: #e0e0e0;
+	}
+
+	.ht-project-hours {
+		color: #5b9bd5;
+	}
+
+	.ht-project-langs {
+		color: #888;
+		font-size: 0.75rem;
+	}
+
+	.ht-loading {
+		color: #888;
+		font-size: 0.85rem;
+	}
+
+	.ht-empty {
+		color: #666;
+		font-size: 0.85rem;
+		font-style: italic;
+	}
+
+	.unified-duplicate-alert {
+		background: rgba(220, 50, 50, 0.15);
+		border: 2px solid #c44040;
+		border-radius: 6px;
+		color: #f44336;
+		font-weight: 700;
+		font-size: 0.85rem;
+		padding: 0.5rem 0.75rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.unified-error-alert {
+		background: rgba(212, 165, 90, 0.15);
+		border: 2px solid #d4a55a;
+		border-radius: 6px;
+		color: #d4a55a;
+		font-weight: 700;
+		font-size: 0.85rem;
+		padding: 0.5rem 0.75rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.ht-justification-label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		font-size: 0.8rem;
+		color: #aaa;
+		margin-top: 0.25rem;
+	}
+
+	.ht-justification {
+		background: #1e1e1e;
+		border: 2px solid #777;
+		border-radius: 6px;
+		color: #e0e0e0;
+		padding: 0.5rem 0.75rem;
+		font-size: 0.85rem;
+		font-family: inherit;
+		resize: vertical;
+	}
+
+	.ht-justification:focus {
+		outline: none;
+		border-color: #5b9bd5;
+	}
 </style>

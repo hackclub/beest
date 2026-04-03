@@ -26,7 +26,6 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	}
 
 	const { url: authorizeUrl, state } = await res.json();
-
 	// Store backend-generated values in httpOnly cookies for the callback
 	const cookieOpts = {
 		path: '/',

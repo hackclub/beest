@@ -17,6 +17,7 @@ export const AUDIT_ACTIONS = [
   'rsvp_submitted',
   'admin_ban',
   'admin_perms_change',
+  'project_reviewed',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

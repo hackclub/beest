@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { IsNull } from 'typeorm';
 import { fetchWithTimeout } from '../fetch.util';
 import { User } from '../entities/user.entity';
 import { Session } from '../entities/session.entity';
@@ -10,7 +11,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { RsvpService } from '../rsvp/rsvp.service';
 
 @Injectable()
-export class HackatimeService {
+export class HackatimeService implements OnModuleInit {
   private readonly logger = new Logger(HackatimeService.name);
   private readonly clientId: string | undefined;
   private readonly clientSecret: string | undefined;
@@ -142,7 +143,8 @@ export class HackatimeService {
       throw new Error('Invalid token response from Hackatime');
     }
 
-    // 3. Check if the user is banned on Hackatime
+    // 3. Check if the user is banned on Hackatime + grab their Hackatime user ID
+    let hackatimeUid: string | null = null;
     try {
       const meRes = await fetchWithTimeout(
         `${this.baseUrl}/api/v1/authenticated/me`,
@@ -150,6 +152,7 @@ export class HackatimeService {
       );
       if (meRes.ok) {
         const meData = await meRes.json();
+        hackatimeUid = meData?.id?.toString() ?? meData?.user_id?.toString() ?? null;
         if (meData?.trust_factor?.trust_level === 'red') {
           this.logger.warn(`Hackatime-banned user attempted connection: ${userId}`);
           const user = await this.userRepo.findOne({ where: { hcaSub: userId } });
@@ -164,13 +167,16 @@ export class HackatimeService {
       this.logger.error(`Hackatime ban check failed for ${userId}: ${err}`);
     }
 
-    // 4. Persist the token to the user's DB record
+    // 4. Persist the token (and Hackatime user ID) to the user's DB record
     // Use find+save (not update) so the column encryption transformer runs
     const user = await this.userRepo.findOne({ where: { hcaSub: userId } });
     if (!user) {
       throw new Error('User not found');
     }
     user.hackatimeToken = tokens.access_token;
+    if (hackatimeUid) {
+      user.hackatimeUserId = hackatimeUid;
+    }
     await this.userRepo.save(user);
     this.logger.log(`Hackatime connected for user ${userId}`);
 
@@ -295,6 +301,42 @@ export class HackatimeService {
     } catch (err) {
       this.logger.error(`Hackatime stats fetch error for ${userId}: ${err}`);
       return { hours: 0, perProject: {} };
+    }
+  }
+
+  /**
+   * One-time backfill: for users who connected Hackatime before we started
+   * storing the Hackatime user ID, fetch it via their stored OAuth token.
+   */
+  async onModuleInit() {
+    const needsBackfill = await this.userRepo.find({
+      where: { hackatimeUserId: IsNull() },
+      select: ['id', 'hcaSub', 'hackatimeToken', 'hackatimeUserId'],
+    }).then((users) => users.filter((u) => !!u.hackatimeToken));
+    if (needsBackfill.length === 0) return;
+
+    this.logger.log(`Backfilling Hackatime user IDs for ${needsBackfill.length} user(s)...`);
+
+    for (const user of needsBackfill) {
+      try {
+        const res = await fetchWithTimeout(
+          `${this.baseUrl}/api/v1/authenticated/me`,
+          { headers: { Authorization: `Bearer ${user.hackatimeToken}` } },
+        );
+        if (!res.ok) {
+          this.logger.warn(`Backfill: /me failed (${res.status}) for user ${user.hcaSub}`);
+          continue;
+        }
+        const data = await res.json();
+        const htId = data?.id?.toString() ?? data?.user_id?.toString() ?? null;
+        if (htId) {
+          user.hackatimeUserId = htId;
+          await this.userRepo.save(user);
+          this.logger.log(`Backfill: stored Hackatime user ID ${htId} for user ${user.hcaSub}`);
+        }
+      } catch (err) {
+        this.logger.warn(`Backfill: error for user ${user.hcaSub}: ${err}`);
+      }
     }
   }
 }

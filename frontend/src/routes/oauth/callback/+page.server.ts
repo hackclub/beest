@@ -13,7 +13,7 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 	cookies.delete('oauth_state', { path: '/' });
 
 	if (!code || !state) {
-		// Log the provider's error server-side only 
+		// Log the provider's error server-side only
 		const oauthError = url.searchParams.get('error_description') ?? url.searchParams.get('error');
 		if (oauthError) {
 			console.error(`OAuth error from provider: ${oauthError}`);
@@ -21,7 +21,7 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
 		return { error: 'Authentication could not be completed. Please try again.' };
 	}
 
-	// Forward everything to the backend 
+	// Forward everything to the backend
 	const res = await fetch(`${BACKEND_URL}/api/auth/handle-callback`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },

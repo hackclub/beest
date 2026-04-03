@@ -997,6 +997,7 @@
     <section class="section section-settings">
       <div class="section-inner">
         <h2 class="section-title settings-title">Settings</h2>
+
         <div class="settings-links">
           <a href="https://email-tools.hackclub.com/" target="_blank" rel="noopener" class="settings-link">
             <h3 class="settings-link-title">Email Preferences</h3>
@@ -1022,6 +1023,36 @@
             <h3 class="settings-link-title">Log Out</h3>
             <p class="settings-link-desc">Sign out of your account.</p>
           </a>
+        </div>
+
+        <div class="account-card">
+          <h3 class="account-card-heading">Your Account</h3>
+          <div class="account-fields">
+            <div class="account-field">
+              <span class="account-label">Name</span>
+              <span class="account-value">{data.user.name ?? '—'}</span>
+            </div>
+            <div class="account-field">
+              <span class="account-label">Nickname</span>
+              <span class="account-value">{data.user.nickname ?? '—'}</span>
+            </div>
+            <div class="account-field">
+              <span class="account-label">Email</span>
+              <span class="account-value">{data.user.email ?? '—'}</span>
+            </div>
+            <div class="account-field">
+              <span class="account-label">Slack ID</span>
+              <span class="account-value">{data.user.slack_id ?? '—'}</span>
+            </div>
+            <div class="account-field">
+              <span class="account-label">HCA Subject</span>
+              <span class="account-value account-value-mono">{data.user.sub ?? '—'}</span>
+            </div>
+            <div class="account-field">
+              <span class="account-label">User ID</span>
+              <span class="account-value account-value-mono">{data.user.uid ?? '—'}</span>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -2958,6 +2989,58 @@
   /* ── settings ────────────────────────────────────── */
   .section-settings {
     background: #4b4840;
+  }
+
+  .account-card {
+    max-width: 480px;
+    margin-top: 48px;
+    padding: 24px 28px;
+    background: rgba(0, 0, 0, 0.25);
+    clip-path: polygon(0% 2%, 3% 0%, 97% 1%, 100% 3%, 99% 97%, 96% 100%, 4% 99%, 0% 96%);
+  }
+
+  .account-card-heading {
+    margin: 0 0 20px;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 26px;
+    color: #e6f4fe;
+    letter-spacing: 0.04em;
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
+  }
+
+  .account-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .account-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  .account-label {
+    font-family: "Courier New", monospace;
+    font-size: 15px;
+    color: #93b4cd;
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
+  }
+
+  .account-value {
+    font-family: "Courier New", monospace;
+    font-size: 15px;
+    color: #cbc1ae;
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+    text-align: right;
+    word-break: break-all;
+  }
+
+  .account-value-mono {
+    font-size: 13px;
+    opacity: 0.8;
   }
 
   .settings-links {

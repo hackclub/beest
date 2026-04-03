@@ -75,6 +75,31 @@ export class AdminController {
     return this.adminService.listAllProjects();
   }
 
+  @Get('projects/:id/hackatime')
+  getProjectHackatime(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getProjectHackatime(id);
+  }
+
+  @Post('projects/:id/review')
+  async reviewProject(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { status: string },
+    @Req() req: Request,
+  ) {
+    const validStatuses = ['approved', 'changes_needed'];
+    if (!validStatuses.includes(body.status)) {
+      throw new BadRequestException(`status must be one of: ${validStatuses.join(', ')}`);
+    }
+    const adminUid = (req as any).user?.uid;
+    await this.adminService.setProjectStatus(id, body.status);
+    await this.auditLogService.log(
+      adminUid,
+      'project_reviewed',
+      `Set project ${id} status to ${body.status}`,
+    );
+    return { success: true };
+  }
+
   // ── News CRUD ──
 
   @Get('news')
