@@ -529,9 +529,6 @@
 
 </div><!-- saturate-wrap -->
 
-<button class="translate-btn" onclick={() => dutch = !dutch} aria-label="Toggle Dutch translation">
-  {dutch ? '🇬🇧 EN' : '🇳🇱 NL'}
-</button>
 
 <style>
   @font-face {
@@ -1854,25 +1851,4 @@
     }
   }
 
-  .translate-btn {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    z-index: 9999;
-    background: #4b4840;
-    color: #cbc1ae;
-    border: 2px solid #7f796d;
-    border-radius: 12px;
-    padding: 10px 16px;
-    font-family: inherit;
-    font-size: 0.95rem;
-    font-weight: 700;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    transition: background 0.2s, transform 0.15s;
-  }
-  .translate-btn:hover {
-    background: #6c6659;
-    transform: scale(1.05);
-  }
 </style>

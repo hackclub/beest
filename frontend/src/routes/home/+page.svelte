@@ -302,9 +302,12 @@
   }
 
   onMount(() => {
-    const tileImg = new Image();
-    tileImg.src = '/images/tile.webp';
-    tileImg.onload = () => { tileLoaded = true; };
+    let loaded = 0;
+    for (const src of ['/images/tile.webp', '/images/tile2.webp', '/images/tile3.webp']) {
+      const img = new Image();
+      img.src = src;
+      img.onload = () => { if (++loaded === 3) tileLoaded = true; };
+    }
     fetchProjects();
     fetchHackatimeProjects();
     fetchAuditLog();
@@ -1065,8 +1068,19 @@
     background-repeat: repeat;
   }
 
-  .tile-loaded .section::after {
+  .tile-loaded .section-projects::after,
+  .tile-loaded .section-settings::after,
+  .tile-loaded .create-project-form::after {
     background-image: url('/images/tile.webp');
+  }
+
+  .tile-loaded .section-shop::after,
+  .tile-loaded .section-leaderboard::after {
+    background-image: url('/images/tile2.webp');
+  }
+
+  .tile-loaded .section-explore::after {
+    background-image: url('/images/tile3.webp');
   }
 
   .section-inner {
@@ -1262,6 +1276,17 @@
     width: 100%;
     position: relative;
     overflow-x: clip;
+  }
+
+  .create-project-form::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.12;
+    mix-blend-mode: overlay;
+    background-size: 512px 512px;
+    background-repeat: repeat;
   }
 
   .form-grid,

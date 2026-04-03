@@ -1,4 +1,4 @@
-import { Controller, Get, Req, UseGuards, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Req, UseGuards, Logger } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -21,6 +21,15 @@ export class OnboardingController {
     private readonly userRepo: Repository<User>,
   ) {}
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @Post('two-emails')
+  async setTwoEmails(@Req() req: Request) {
+    const user = (req as any).user;
+    await this.userRepo.update({ hcaSub: user.sub }, { twoEmails: true });
+    return { ok: true };
+  }
+
   /**
    * Returns completion status for each onboarding step.
    * The frontend uses this to show "Complete! Move on?" vs action buttons.
@@ -36,9 +45,12 @@ export class OnboardingController {
     try {
       const dbUser = await this.userRepo.findOne({
         where: { hcaSub: user.sub },
-        select: ['email'],
+        select: ['email', 'twoEmails'],
       });
-      if (dbUser?.email) {
+      if (dbUser?.twoEmails) {
+        // User confirmed they use a different email on Slack — skip email lookup
+        slack = 'full_member';
+      } else if (dbUser?.email) {
         slack = await this.slackService.checkMembership(dbUser.email);
       }
     } catch (err) {

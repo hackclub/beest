@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { fetchWithTimeout } from '../fetch.util';
 import { User } from '../entities/user.entity';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class HackatimeService {
@@ -20,6 +21,7 @@ export class HackatimeService {
     private configService: ConfigService,
     @InjectRepository(User)
     private userRepo: Repository<User>,
+    private auditLogService: AuditLogService,
   ) {
     this.clientId = this.configService.get('HACKATIME_CLIENT_ID');
     this.clientSecret = this.configService.get('HACKATIME_CLIENT_SECRET');
@@ -144,6 +146,8 @@ export class HackatimeService {
     user.hackatimeToken = tokens.access_token;
     await this.userRepo.save(user);
     this.logger.log(`Hackatime connected for user ${userId}`);
+
+    await this.auditLogService.log(user.id, 'hackatime_connected', 'Connected Hackatime');
 
     return { success: true, redirectTo: '/tutorial?stage=2' };
   }

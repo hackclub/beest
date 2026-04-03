@@ -9,6 +9,48 @@
 
   let slackStatus = $state(data.onboarding.slack);
   let slackRefreshing = $state(false);
+  let twoEmailsChecked = $state(false);
+
+  async function confirmTwoEmails() {
+    const res = await fetch('/api/onboarding/two-emails', { method: 'POST' });
+    if (res.ok) goToSection(2);
+  }
+
+  // Create project form
+  let showProjectForm = $state(false);
+  let projectName = $state('');
+  let projectDesc = $state('');
+  let projectType = $state('');
+  let projectSubmitting = $state(false);
+  let projectError = $state('');
+  let projectCreated = $state(data.onboarding.project);
+  const canCreateProject = $derived(projectName.trim() && projectDesc.trim() && projectType);
+
+  async function createProject() {
+    if (!canCreateProject || projectSubmitting) return;
+    projectSubmitting = true;
+    projectError = '';
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: projectName.trim(),
+          description: projectDesc.trim(),
+          projectType,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        projectError = body?.message ?? 'Something went wrong';
+        return;
+      }
+      projectCreated = true;
+      showProjectForm = false;
+    } finally {
+      projectSubmitting = false;
+    }
+  }
 
   async function refreshSlack() {
     slackRefreshing = true;
@@ -23,10 +65,10 @@
     }
   }
 
-  // Scrollymation plays in reverse scroll direction — scroll UP to progress
-  const scrollLength = $derived(innerHeight * 10);
-  const maxScroll = $derived(innerHeight * 13);
-  const progress = $derived(Math.min(Math.max((maxScroll - scrollY) / scrollLength, 0), 1));
+  // Time-based animation progress (0 → 1) instead of scroll-driven
+  const ANIM_DURATION = 3000; // ms for full intro animation
+  let progress = $state(0);
+  let animStartTime = $state(0);
 
   // SVG text draw progress — starts after clouds are off screen, finishes by end
   const drawProgress = $derived(Math.min(Math.max((progress - 0.4) / 0.5, 0), 1));
@@ -40,17 +82,40 @@
   const translateY = $derived(progress * -15);
   const scale = $derived(1 + progress * 0.3);
 
-  // Show enter button once all scroll animations are done
   let transitioned = $state(false);
-  let skyEl: HTMLElement;
+  let skyEl = $state<HTMLElement>();
   let locked = $state(false);
-  const showEnter = $derived(progress >= 1 && !transitioned);
+  const showStart = $derived(progress >= 1 && !transitioned);
+
+  let animRunning = $state(false);
+
+  function startIntroAnimation() {
+    animRunning = true;
+    animStartTime = performance.now();
+    function step(now: number) {
+      if (!animRunning) return;
+      const elapsed = now - animStartTime;
+      progress = Math.min(elapsed / ANIM_DURATION, 1);
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      } else {
+        animRunning = false;
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
+  function skipIntro() {
+    if (!animRunning) return;
+    animRunning = false;
+    progress = 1;
+  }
 
   async function enterSky() {
     transitioned = true;
     await tick();
     // Start one section below landing, animate scroll up to landing
-    const landingPos = skyEl.offsetTop + skyEl.offsetHeight - innerHeight * 2;
+    const landingPos = skyEl!.offsetTop + skyEl!.offsetHeight - innerHeight * 2;
     const startPos = landingPos + innerHeight;
     window.scrollTo(0, startPos);
     await tick();
@@ -77,8 +142,11 @@
   // Prevent scrolling past the bottom back into the scrollymation
   $effect(() => {
     if (locked && skyEl) {
+      const top = skyEl.offsetTop + innerHeight;
       const bottom = skyEl.offsetTop + skyEl.offsetHeight - innerHeight;
-      if (scrollY > bottom) {
+      if (scrollY < top) {
+        window.scrollTo(0, top);
+      } else if (scrollY > bottom) {
         window.scrollTo(0, bottom);
       }
     }
@@ -93,9 +161,6 @@
   const gradientStops = skyColors
     .map((c, i) => `${c} ${(i / (skyColors.length - 1)) * 100}%`)
     .join(', ');
-
-  // Scroll indicator fades out as user starts scrolling up
-  const indicatorOpacity = $derived(Math.min(Math.max(1 - progress * 5, 0), 1));
 
   // Cloud rows at section boundaries — alternate left/right, embedded in page edge
   const numSections = skyColors.length;
@@ -145,14 +210,14 @@
     requestAnimationFrame(check);
   }
 
-  // Block manual scrolling once in sky sections
+  // Block manual scrolling once in sky sections — only allow programmatic nav
   function blockScroll(e: Event) {
-    if (locked || showEnter) e.preventDefault();
+    if (locked && !navigating) e.preventDefault();
   }
 
   const scrollKeys = new Set(['ArrowUp', 'ArrowDown', 'Space', 'PageUp', 'PageDown', 'Home', 'End']);
   function blockKeys(e: KeyboardEvent) {
-    if ((locked || showEnter) && scrollKeys.has(e.code)) e.preventDefault();
+    if (locked && scrollKeys.has(e.code)) e.preventDefault();
   }
 
   function cleanupListeners() {
@@ -173,7 +238,8 @@
     window.addEventListener('keydown', blockKeys);
 
     if (data.stage != null) {
-      // Skip scrollymation and jump directly to the requested section
+      // Skip intro animation and jump directly to the requested section
+      progress = 1;
       transitioned = true;
       locked = true;
       tick().then(() => {
@@ -182,8 +248,9 @@
         }
       });
     } else {
-      // Start at the bottom so user scrolls UP to play the scrollymation
-      window.scrollTo(0, innerHeight * 13);
+      // Auto-play the intro animation
+      window.scrollTo(0, 0);
+      setTimeout(startIntroAnimation, 500);
     }
 
     totalLength = pathEls.reduce((sum, p) => sum + p.getTotalLength(), 0);
@@ -215,9 +282,9 @@
 
 <svelte:window bind:scrollY bind:innerHeight />
 
-<div class="scroll-container" class:hidden={locked} class:collapsed={transitioned}>
+<div class="scroll-container" class:hidden={locked}>
   <div class="tile-bg" class:hidden={locked || transitioned}></div>
-  <div class="sticky-frame">
+  <div class="sticky-frame" role="button" tabindex="0" onclick={skipIntro} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') skipIntro(); }}>
     <svg class="draw-text" viewBox="0 0 1000 130" xmlns="http://www.w3.org/2000/svg">
       <path bind:this={pathEls[0]} d="M20,20 Q28,65 35,100 Q40,70 48,45 Q52,60 58,100 Q65,65 72,20" />
       <path bind:this={pathEls[1]} d="M88,60 Q90,40 108,40 Q125,42 122,60 L88,62 Q86,88 108,90 Q120,88 125,78" />
@@ -235,36 +302,32 @@
       <path bind:this={pathEls[13]} d="M712,50 Q705,38 702,50 Q698,60 714,65 Q730,72 726,85 Q722,98 710,92" />
       <path bind:this={pathEls[14]} d="M745,25 Q742,58 745,92 Q748,100 758,98 M732,45 L762,45" />
     </svg>
-    {#if showEnter}
-      <button class="enter-btn" onclick={enterSky}>Enter</button>
+    {#if showStart}
+      <button class="start-btn" onclick={enterSky}>Start</button>
     {/if}
     <img
       src="/images/beest2.webp"
       alt=""
       class="beest"
+      decoding="async"
       style="transform: translateY({beestY}%); opacity: {beestProgress};"
     />
-    <img src="/images/Beach.webp" alt="" class="layer beach" />
-    <img src="/images/Water%20swooosh.webp" alt="" class="layer water" />
+    <img src="/images/Beach.webp" alt="" class="layer beach" decoding="async" />
+    <img src="/images/Water%20swooosh.webp" alt="" class="layer water" decoding="async" />
     <img
       src="/images/cloud-left.webp"
       alt=""
       class="cloud cloud-left"
+      decoding="async"
       style="transform: translate({-translateX}vw, {translateY}vh) scale({scale});"
     />
     <img
       src="/images/cloud-right.webp"
       alt=""
       class="cloud cloud-right"
+      decoding="async"
       style="transform: translate({translateX}vw, {translateY}vh) scale({scale});"
     />
-    {#if indicatorOpacity > 0}
-      <div class="scroll-indicator" style="opacity: {indicatorOpacity};">
-        <div class="scroll-arrow"></div>
-        <div class="scroll-arrow delay"></div>
-        <span class="scroll-label">Scroll up</span>
-      </div>
-    {/if}
   </div>
 </div>
 
@@ -277,6 +340,8 @@
       src="/images/cloud.webp"
       alt=""
       class="scattered-cloud"
+      loading="lazy"
+      decoding="async"
       style="
         top: {cloud.top}%;
         left: {cloud.left}%;
@@ -289,36 +354,75 @@
     src="/images/cloud.webp"
     alt=""
     class="go-cloud"
+    loading="lazy"
+    decoding="async"
     style="top: {innerHeight + innerHeight * 0.35}px;"
   />
   <!-- Section 0: Go! (top — last seen) -->
   <div class="section-content go-section" style="top: {innerHeight}px;">
-    <h2 class="section-title">Go!</h2>
-    <p class="section-paragraph">You're all set to build — community and prizes await you, but if you ever get stuck you can always replay this tutorial, read the <a href="/faq" class="section-link">FAQ</a> or ask in <a href="https://hackclub.enterprise.slack.com/archives/C0AQ4T1CWH2" target="_blank" rel="noopener" class="section-link">#beest-help</a> on Slack.</p>
-    <a href="/home" class="action-btn go-home-btn">Go to Home</a>
+    <div class="go-box">
+      <p class="section-paragraph">You're all set! If you get stuck you can replay this tutorial, read the <a href="/faq" class="section-link">FAQ</a> or ask in <a href="https://hackclub.enterprise.slack.com/archives/C0AQ4T1CWH2" target="_blank" rel="noopener" class="section-link">#beest-help</a>.</p>
+      <a href="/home" class="action-btn go-home-btn" data-sveltekit-reload>GO!</a>
+    </div>
   </div>
 
   <!-- Section 1: Create a Project -->
   <div class="section-content" style="top: {innerHeight * 2}px;">
     <h2 class="section-title">Create a Project</h2>
-    <div class="projects-row">
-      <button class="project-card create-card">
+    <p class="section-paragraph">Tell us your idea! It doesn't have to be related to the beest, make an automation you've always wanted or a game for you and your friends. Make anything! (Just not AI slop or college projects, we only want to reward creativity and real learning.)</p>
+    {#if projectCreated && !showProjectForm}
+      <button class="action-btn complete-btn" onclick={() => goToSection(0)}>Project created! Move on?</button>
+    {:else if showProjectForm}
+      <div class="project-form">
+        <label class="form-label" for="tut-name">Project Name</label>
+        <input id="tut-name" class="form-field" type="text" maxlength="50" bind:value={projectName} placeholder="My cool project" />
+
+        <label class="form-label" for="tut-desc">Description</label>
+        <textarea id="tut-desc" class="form-field form-textarea" maxlength="300" bind:value={projectDesc} placeholder="What does it do?"></textarea>
+
+        <label class="form-label" for="tut-type">Project Type</label>
+        <select id="tut-type" class="form-field" bind:value={projectType}>
+          <option value="" disabled selected>Select a type</option>
+          <option value="web">Web</option>
+          <option value="windows">Windows</option>
+          <option value="mac">Mac</option>
+          <option value="linux">Linux</option>
+          <option value="cross-platform">Cross Platform</option>
+          <option value="python">Python</option>
+          <option value="android">Android</option>
+          <option value="ios">iOS</option>
+        </select>
+
+        {#if projectError}
+          <p class="form-error">{projectError}</p>
+        {/if}
+
+        <div class="form-actions">
+          <button class="create-submit-btn" disabled={!canCreateProject || projectSubmitting} onclick={createProject}>
+            {projectSubmitting ? 'Creating...' : 'Create'}
+          </button>
+          <button class="skip-btn" onclick={() => { showProjectForm = false; }}>Cancel</button>
+        </div>
+      </div>
+    {:else}
+      <button class="project-card create-card" onclick={() => { showProjectForm = true; }}>
         <span class="create-icon">+</span>
         <span class="create-label">Create Project</span>
       </button>
-    </div>
+    {/if}
   </div>
 
   <!-- Section 2: Connect Hackatime -->
   <div class="section-content" style="top: {innerHeight * 3}px;">
     <h2 class="section-title">Connect Hackatime</h2>
-    <p class="section-paragraph">Track your build time and unlock rewards by connecting Hackatime to your project.</p>
+    <p class="section-paragraph">We want to reward you for time spent building, so we made Hackatime! Its like a smart stopwatch that automatically tracks how long you code for, and it works in all your existing code editors. To be rewarded for your work youll need to set up an account on <a href="https://hackatime.hackclub.com" target="_blank" rel="noopener" class="section-link">hackatime.hackclub.com</a> and then hit connect to link it to Beest!</p>
     {#if data.onboarding.hackatime}
       <button class="action-btn complete-btn" onclick={() => goToSection(1)}>Complete! Move on?</button>
     {:else}
       <form method="POST" action="/api/auth/hackatime/start">
         <button type="submit" class="action-btn">Connect Hackatime</button>
       </form>
+      <button class="skip-btn" onclick={() => goToSection(1)}>I'll do this later</button>
     {/if}
   </div>
 
@@ -326,6 +430,8 @@
     src="/images/cloud.webp"
     alt=""
     class="projects-cloud"
+    loading="lazy"
+    decoding="async"
     style="top: {innerHeight * 4}px;"
   />
   <!-- Section 3: Join Slack (bottom — first seen after landing) -->
@@ -335,29 +441,31 @@
       <p class="section-paragraph">It looks like you are already on the Hack Club Slack! We're so glad to have you :)</p>
       <button class="action-btn complete-btn" onclick={() => goToSection(2)}>Move on</button>
     {:else if slackStatus === 'guest'}
-      <p class="section-paragraph">It looks like you haven't fully joined our Slack, that's where the magic happens. Check your email, join the conversation and then try hitting refresh.</p>
-      <div class="slack-actions">
-        <a href="https://hackclub.com/slack/" target="_blank" rel="noopener" class="action-btn">Join Slack</a>
-        <button class="action-btn refresh-btn" disabled={slackRefreshing} onclick={refreshSlack}>
-          {slackRefreshing ? 'Checking...' : 'Refresh'}
-        </button>
-      </div>
+      <p class="section-paragraph">Hey! It looks like you are new to our community! Check your email for a message from Slack, then follow the instructions in #welcome-to-hack-club. Slack is where everyone is talking - theres 100 THOUSAND technical teens waiting to hear from you.</p>
+      <button class="action-btn" class:complete-btn={twoEmailsChecked} class:refresh-btn={!twoEmailsChecked} disabled={slackRefreshing && !twoEmailsChecked} onclick={twoEmailsChecked ? confirmTwoEmails : refreshSlack}>
+        {twoEmailsChecked ? 'Got it, Move on!' : slackRefreshing ? 'Checking...' : 'Refresh'}
+      </button>
+      <label class="two-emails-label">
+        <input type="checkbox" bind:checked={twoEmailsChecked} />
+        I use Hack Club Slack on a different email
+      </label>
       <button class="skip-btn" onclick={() => goToSection(2)}>I'll do this later</button>
     {:else}
       <p class="section-paragraph">Join the Hack Club Slack to meet other builders, get help, and share your progress.</p>
-      <div class="slack-actions">
-        <a href="https://hackclub.com/slack/" target="_blank" rel="noopener" class="action-btn">Join Slack</a>
-        <button class="action-btn refresh-btn" disabled={slackRefreshing} onclick={refreshSlack}>
-          {slackRefreshing ? 'Checking...' : 'Refresh'}
-        </button>
-      </div>
+      <button class="action-btn" class:complete-btn={twoEmailsChecked} class:refresh-btn={!twoEmailsChecked} disabled={slackRefreshing && !twoEmailsChecked} onclick={twoEmailsChecked ? confirmTwoEmails : refreshSlack}>
+        {twoEmailsChecked ? 'Got it, Move on!' : slackRefreshing ? 'Checking...' : 'Refresh'}
+      </button>
+      <label class="two-emails-label">
+        <input type="checkbox" bind:checked={twoEmailsChecked} />
+        I use Hack Club Slack on a different email
+      </label>
       <button class="skip-btn" onclick={() => goToSection(2)}>I'll do this later</button>
     {/if}
   </div>
   <div class="sky-hero">
-    <img src="/images/beest2.webp" alt="" class="hero-beest" />
-    <img src="/images/Beach.webp" alt="" class="hero-beach" />
-    <img src="/images/Water%20swooosh.webp" alt="" class="hero-water" />
+    <img src="/images/beest2.webp" alt="" class="hero-beest" loading="lazy" decoding="async" />
+    <img src="/images/Beach.webp" alt="" class="hero-beach" loading="lazy" decoding="async" />
+    <img src="/images/Water%20swooosh.webp" alt="" class="hero-water" loading="lazy" decoding="async" />
   </div>
 </div>
 {#if locked}
@@ -370,13 +478,50 @@
 {/if}
 
 <style>
+  :global(body) {
+    margin: 0;
+    padding: 0;
+    filter: none !important;
+  }
+
+  @font-face {
+    font-family: "Sunny Mood";
+    src: url("/fonts/SunnyMood.woff2") format("woff2");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+  }
+
   .scroll-container {
-    height: 1400vh;
+    height: 100vh;
     background: #2e3563;
   }
 
-  .scroll-container.collapsed {
-    height: 200vh;
+  .start-btn {
+    position: absolute;
+    top: 22%;
+    left: 5%;
+    z-index: 5;
+    background: white;
+    border: 4px solid #222;
+    border-bottom: 8px solid #222;
+    color: #222;
+    font-size: 1.2rem;
+    font-weight: bold;
+    padding: 0.8rem 2.5rem;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: transform 0.1s, border-bottom-width 0.1s;
+    user-select: none;
+  }
+
+  .start-btn:hover {
+    background: #f5f5f5;
+  }
+
+  .start-btn:active {
+    transform: translateY(4px);
+    border-bottom-width: 4px;
   }
 
   .sticky-frame {
@@ -393,30 +538,6 @@
     z-index: 1;
   }
 
-  .enter-btn {
-    position: absolute;
-    top: 22%;
-    left: 5%;
-    z-index: 5;
-    background: rgba(255, 255, 255, 0.15);
-    border: 2px solid rgba(255, 255, 255, 0.6);
-    color: white;
-    font-size: 1.2rem;
-    padding: 0.8rem 2.5rem;
-    border-radius: 2rem;
-    cursor: pointer;
-    backdrop-filter: blur(8px);
-    animation: fade-in 0.6s ease;
-  }
-
-  .enter-btn:hover {
-    background: rgba(255, 255, 255, 0.3);
-  }
-
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
 
   .draw-text {
     position: absolute;
@@ -478,48 +599,6 @@
   }
 
 
-  /* ── Scroll indicator ── */
-  .scroll-indicator {
-    position: absolute;
-    bottom: 5vh;
-    left: 2rem;
-    z-index: 12;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.3rem;
-    pointer-events: none;
-  }
-
-  .scroll-arrow {
-    width: 1.8rem;
-    height: 1.8rem;
-    border-left: 5px solid white;
-    border-top: 5px solid white;
-    transform: rotate(45deg);
-    animation: bounce-up 1.6s ease-in-out infinite;
-    opacity: 0.8;
-  }
-
-  .scroll-arrow.delay {
-    animation-delay: 0.2s;
-    opacity: 0.5;
-  }
-
-  @keyframes bounce-up {
-    0%, 100% { transform: rotate(45deg) translateX(0) translateY(0); }
-    50% { transform: rotate(45deg) translateX(-6px) translateY(-6px); }
-  }
-
-  .scroll-label {
-    color: white;
-    font-size: 1.3rem;
-    font-weight: bold;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    margin-top: 0.8rem;
-    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
-  }
 
   .hidden {
     display: none !important;
@@ -557,7 +636,7 @@
     position: absolute;
     left: 55%;
     transform: translateX(calc(-50% + 40px)) translateY(-15%);
-    width: 80vw;
+    width: 90vw;
     height: auto;
     z-index: 1;
     pointer-events: none;
@@ -629,16 +708,36 @@
 
   .section-title {
     color: white;
-    font-size: 2.5rem;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 3rem;
     margin-bottom: 2rem;
     text-align: center;
+    text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.6);
   }
 
-  .go-section .section-title,
+  .go-box {
+    background: white;
+    border: 3px solid #222;
+    border-radius: 0.6rem;
+    padding: 0.8rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: fit-content;
+    margin-top: 9rem;
+  }
+
+  .go-box .section-paragraph {
+    margin-bottom: 1rem;
+    max-width: 500px;
+    text-wrap: balance;
+  }
+
   .go-section .section-paragraph,
   .go-section .section-link {
-    color: black;
+    color: #222;
     font-weight: bold;
+    text-shadow: none;
   }
 
   .go-home-btn {
@@ -652,37 +751,123 @@
     background: #5a574f;
   }
 
-  .go-section .section-title,
-  .go-section .section-paragraph {
-    text-shadow: 2px 2px 0 rgba(71, 69, 63, 0.35);
+
+  /* ── Create Project Form ── */
+  .project-form {
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border: 3px solid #222;
+    border-radius: 0.6rem;
+    padding: 1.5rem;
+    background: white;
+    color: #222;
+    margin: 0 auto;
   }
 
-  /* ── Your Projects ── */
-  .projects-row {
+  .form-label {
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: bold;
+    margin-top: 0.5rem;
+  }
+
+  .form-field {
+    width: 100%;
+    padding: 0.7rem 0.9rem;
+    font-size: 1rem;
+    border: 3px solid #222;
+    border-radius: 0.4rem;
+    background: white;
+    color: #222;
+    box-sizing: border-box;
+  }
+
+  .form-field:focus {
+    outline: none;
+    border-color: #222;
+  }
+
+  .form-textarea {
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  select.form-field {
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .form-error {
+    color: #ff6b6b;
+    font-size: 0.9rem;
+    margin: 0;
+  }
+
+  .form-actions {
     display: flex;
-    gap: 2rem;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+  }
+
+  .create-submit-btn {
+    background: white;
+    color: #222;
+    border: 4px solid #222;
+    border-bottom: 8px solid #222;
+    border-radius: 0.5rem;
+    font-size: 1.1rem;
+    font-weight: bold;
+    padding: 0.8rem 2.5rem;
+    cursor: pointer;
+    transition: transform 0.1s, border-bottom-width 0.1s;
+    user-select: none;
+  }
+
+  .create-submit-btn:hover:not(:disabled) {
+    background: #f5f5f5;
+  }
+
+  .create-submit-btn:active:not(:disabled) {
+    transform: translateY(4px);
+    border-bottom-width: 4px;
+  }
+
+  .create-submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .project-card {
     background: white;
-    border: 2px dashed #ccc;
+    border: 4px solid #222;
+    border-bottom: 8px solid #222;
     border-radius: 1rem;
     padding: 2rem;
     width: 260px;
-    height: 340px;
+    height: 170px;
     color: #222;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
+    margin: 0 auto;
+    transition: transform 0.1s, border-bottom-width 0.1s;
+    user-select: none;
   }
 
   .project-card:hover {
-    border-color: #999;
-    background: #f8f8f8;
+    background: #f5f5f5;
+  }
+
+  .project-card:active {
+    transform: translateY(4px);
+    border-bottom-width: 4px;
   }
 
   .create-icon {
@@ -701,11 +886,13 @@
 
   .section-paragraph {
     color: white;
-    font-size: 1.15rem;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 1.3rem;
     line-height: 1.8;
     max-width: 550px;
     text-align: center;
     margin-bottom: 2rem;
+    text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.6);
   }
 
   .section-link {
@@ -720,48 +907,64 @@
   .action-btn {
     background: white;
     color: #222;
-    border: none;
+    border: 4px solid #222;
+    border-bottom: 8px solid #222;
     font-size: 1.1rem;
+    font-weight: bold;
     padding: 0.8rem 2.5rem;
     border-radius: 0.5rem;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: transform 0.1s, border-bottom-width 0.1s;
+    user-select: none;
   }
 
   .action-btn:hover {
-    background: #eee;
+    background: #f5f5f5;
+  }
+
+  .action-btn:active {
+    transform: translateY(4px);
+    border-bottom-width: 4px;
   }
 
   .complete-btn {
     background: #4ade80;
     color: #14532d;
-    font-weight: bold;
+    border-color: #14532d;
   }
 
   .complete-btn:hover {
     background: #86efac;
   }
 
-  .slack-actions {
-    display: flex;
-    gap: 1rem;
-    align-items: center;
-  }
-
   .refresh-btn {
-    background: rgba(255, 255, 255, 0.15);
-    color: white;
-    border: 2px solid rgba(255, 255, 255, 0.4);
-    backdrop-filter: blur(8px);
+    background: white;
+    color: #222;
+    border-color: #222;
   }
 
   .refresh-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.3);
+    background: #f5f5f5;
   }
 
   .refresh-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .two-emails-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.9rem;
+    margin-top: 1rem;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .two-emails-label input {
+    cursor: pointer;
   }
 
   .skip-btn {
