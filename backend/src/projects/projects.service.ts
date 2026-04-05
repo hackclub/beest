@@ -230,8 +230,8 @@ export class ProjectsService {
     if (dto.screenshots !== undefined) {
       const validated = this.validateScreenshots(dto.screenshots);
       const screenshotUrls = await this.uploadScreenshots(validated);
-      project.screenshot1Url = screenshotUrls[0];
-      project.screenshot2Url = screenshotUrls[1];
+      project.screenshot1Url = screenshotUrls[0] ?? null;
+      project.screenshot2Url = screenshotUrls[1] ?? null;
     }
     if (dto.hackatimeProjectName !== undefined) {
       if (dto.hackatimeProjectName === null || (Array.isArray(dto.hackatimeProjectName) && dto.hackatimeProjectName.length === 0)) {

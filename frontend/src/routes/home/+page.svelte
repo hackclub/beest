@@ -295,7 +295,12 @@
         otherHcProgram: otherHcProgram ? otherHcProgramName || null : null,
         aiUse: usedAi ? aiUseDescription || null : null,
       };
-      if (screenshots.length) body.screenshots = screenshots;
+      if (screenshots.length) {
+        body.screenshots = screenshots;
+      } else if (isEdit) {
+        // Send empty array to clear deleted screenshots
+        body.screenshots = [];
+      }
 
       const res = await fetch(url, {
         method,
@@ -345,7 +350,11 @@
         otherHcProgram: otherHcProgram ? otherHcProgramName || null : null,
         aiUse: usedAi ? aiUseDescription || null : null,
       };
-      if (screenshots.length) body.screenshots = screenshots;
+      if (screenshots.length) {
+        body.screenshots = screenshots;
+      } else {
+        body.screenshots = [];
+      }
 
       const res = await fetch(`/api/projects/${editingProject.id}`, {
         method: 'PATCH',
@@ -2705,7 +2714,7 @@
     display: flex;
     gap: 20px;
     min-width: 0;
-    background: rgba(160, 150, 132, 0.85);
+    background: rgba(0, 0, 0, 0.2);
     border: 1px solid rgba(230, 244, 254, 0.15);
     padding: 28px 20px 20px;
     text-align: left;
@@ -2718,38 +2727,15 @@
   }
 
   .project-card:hover {
-    background: rgba(160, 150, 132, 0.95);
+    background: rgba(0, 0, 0, 0.3);
   }
-
-  .project-card.status-unshipped {
-    background: rgba(196, 131, 130, 0.45);
-    border-color: rgba(196, 131, 130, 0.4);
-  }
-  .project-card.status-unshipped:hover { background: rgba(196, 131, 130, 0.55); }
-
-  .project-card.status-unreviewed {
-    background: rgba(203, 193, 174, 0.5);
-    border-color: rgba(203, 193, 174, 0.4);
-  }
-  .project-card.status-unreviewed:hover { background: rgba(203, 193, 174, 0.6); }
-
-  .project-card.status-changes_needed {
-    background: rgba(212, 165, 90, 0.45);
-    border-color: rgba(212, 165, 90, 0.4);
-  }
-  .project-card.status-changes_needed:hover { background: rgba(212, 165, 90, 0.55); }
-
-  .project-card.status-approved {
-    background: rgba(147, 180, 205, 0.45);
-    border-color: rgba(147, 180, 205, 0.4);
-  }
-  .project-card.status-approved:hover { background: rgba(147, 180, 205, 0.55); }
 
 
   .project-thumb {
     object-fit: cover;
     flex-shrink: 0;
     border-radius: 4px;
+    max-width: 50%;
   }
 
   .project-thumb-cat {

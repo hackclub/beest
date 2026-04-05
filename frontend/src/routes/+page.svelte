@@ -25,14 +25,32 @@
   // ease-out: parallax decelerates near the end for a smoother hero→content transition
   const rawProgress = $derived(Math.min(scrollY / PARALLAX_TRAVEL, 1));
   const easedProgress = $derived(rawProgress * (2 - rawProgress));
-  const pxRemaining = $derived(PARALLAX_TRAVEL * (1 - easedProgress));
-  const postScroll = $derived(Math.max(scrollY - PARALLAX_TRAVEL, 0));
+
+  // Time-based hero animation: waiting → animating → scrolling → done
+  let animPhase = $state<'waiting' | 'animating' | 'scrolling' | 'done'>('waiting');
+  let animValue = $state(0); // 0→1 during animation
+
+  const pxRemaining = $derived(
+    animPhase === 'done'
+      ? PARALLAX_TRAVEL * (1 - easedProgress)
+      : animPhase === 'animating'
+      ? PARALLAX_TRAVEL * (1 - animValue * (2 - animValue))
+      : animPhase === 'scrolling'
+      ? 0
+      : PARALLAX_TRAVEL
+  );
+  const postScroll = $derived(
+    animPhase === 'done'
+      ? Math.max(scrollY - PARALLAX_TRAVEL, 0)
+      : 0
+  );
   let heroHeight = $state(0);
   let dutch = $state(false);
   let freeVisible = $state(false);
   let freeEl: HTMLElement;
   let diagramEl: HTMLElement;
   let diagramTop = $state(0);
+  let stickerCtaEl: HTMLElement;
 
   onMount(() => {
     const observer = new IntersectionObserver(([e]) => {
@@ -56,11 +74,48 @@
     tileImg.src = '/images/tile.webp';
     tileImg.onload = () => document.documentElement.classList.add('tile-loaded');
 
+    // Lock scroll during hero animation
+    document.documentElement.style.overflow = 'hidden';
+
+    // Hero entrance animation: 1s pause, then 2.5s parallax reveal, then auto-scroll
+    let animRaf: number;
+    const animDelay = setTimeout(() => {
+      animPhase = 'animating';
+      const duration = 2500;
+      const start = performance.now();
+      const tick = (now: number) => {
+        const elapsed = now - start;
+        animValue = Math.min(elapsed / duration, 1);
+        if (animValue < 1) {
+          animRaf = requestAnimationFrame(tick);
+        } else {
+          // Unlock scroll, then auto-scroll to sticker CTA section
+          document.documentElement.style.overflow = '';
+          animPhase = 'scrolling';
+          stickerCtaEl.scrollIntoView({ behavior: 'smooth' });
+        }
+      };
+      animRaf = requestAnimationFrame(tick);
+    }, 1000);
+
     return () => {
       observer.disconnect();
       window.removeEventListener('resize', updateTop);
       clearTimeout(hintTimer);
+      clearTimeout(animDelay);
+      cancelAnimationFrame(animRaf);
+      document.documentElement.style.overflow = '';
     };
+  });
+
+  // Once auto-scroll reaches the target, switch to normal scroll-driven mode
+  $effect(() => {
+    if (animPhase === 'scrolling' && stickerCtaEl) {
+      const rect = stickerCtaEl.getBoundingClientRect();
+      if (rect.top <= 10) {
+        animPhase = 'done';
+      }
+    }
   });
 
   // 0 -> 1 as the diagram scrolls through the viewport
@@ -71,11 +126,35 @@
   const showB = $derived(annotate > 0.25);
   const showC = $derived(annotate > 0.45);
 
+  const titleFull = '#BEEST';
+  let titleText = $state('');
+  let titleDone = $state(false);
+
   const subtitleEN = 'Code a project, Fly to the Netherlands, Build a mechanical animal!';
   const subtitleNL = 'Programmeer een project, kom naar Scheveningen, bouw een mechanisch dier!';
   let subtitleText = $state('');
 
+  // Type the title first, then the subtitle
   $effect(() => {
+    let i = 0;
+    titleText = '';
+    titleDone = false;
+    let timeout: ReturnType<typeof setTimeout>;
+    const typeTitle = () => {
+      i++;
+      titleText = titleFull.slice(0, i);
+      if (i >= titleFull.length) {
+        titleDone = true;
+        return;
+      }
+      timeout = setTimeout(typeTitle, 140 + Math.random() * 60);
+    };
+    timeout = setTimeout(typeTitle, 1500);
+    return () => clearTimeout(timeout);
+  });
+
+  $effect(() => {
+    if (!titleDone) return;
     const target = dutch ? subtitleNL : subtitleEN;
     let i = 0;
     subtitleText = '';
@@ -84,10 +163,10 @@
       i++;
       subtitleText = target.slice(0, i);
       if (i >= target.length) return;
-      const delay = target[i - 1] === ',' ? 350 + Math.random() * 100 : 35 + Math.random() * 25;
+      const delay = target[i - 1] === ',' ? 350 + Math.random() * 100 : 45 + Math.random() * 35;
       timeout = setTimeout(typeNext, delay);
     };
-    timeout = setTimeout(typeNext, 60);
+    timeout = setTimeout(typeNext, 400);
     return () => clearTimeout(timeout);
   });
 
@@ -228,14 +307,14 @@
     </svg>
   </div>
   <div class="hero-overlay">
-    <h1 class="hero-title">#BEEST</h1>
-    <p class="hero-subtitle">{subtitleText}<span class="cursor">|</span></p>
+    <h1 class="hero-title">{titleText}{#if !titleDone}<span class="cursor">|</span>{/if}</h1>
+    <p class="hero-subtitle">{subtitleText}{#if titleDone}<span class="cursor">|</span>{/if}</p>
   </div>
 
 </div>
 </div>
 
-<section class="sticker-cta">
+<section class="sticker-cta" bind:this={stickerCtaEl}>
   <div class="cta-group">
     <div class="cta-sticker">
       <img src="/images/sticker.webp" alt="Beest sticker" loading="lazy" decoding="async" />
