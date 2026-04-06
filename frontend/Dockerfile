@@ -11,4 +11,5 @@ COPY --from=build /app/build ./build
 COPY --from=build /app/package*.json ./
 RUN npm ci --omit=dev
 EXPOSE 3000
+ENV BODY_SIZE_LIMIT=10485760
 CMD ["node", "build"]
