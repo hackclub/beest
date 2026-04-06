@@ -217,7 +217,7 @@
 
   const scrollKeys = new Set(['ArrowUp', 'ArrowDown', 'Space', 'PageUp', 'PageDown', 'Home', 'End']);
   function blockKeys(e: KeyboardEvent) {
-    if (locked && scrollKeys.has(e.code)) e.preventDefault();
+    if (locked && scrollKeys.has(e.code) && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement)) e.preventDefault();
   }
 
   function cleanupListeners() {
@@ -442,6 +442,7 @@
       <button class="action-btn complete-btn" onclick={() => goToSection(2)}>Move on</button>
     {:else if slackStatus === 'guest'}
       <p class="section-paragraph">Hey! It looks like you are new to our community! Check your email for a message from Slack, then follow the instructions in #welcome-to-hack-club. Slack is where everyone is talking - theres 100 THOUSAND technical teens waiting to hear from you.</p>
+      <a href="https://hackclub.enterprise.slack.com/archives/C0A9PMV58R5" target="_blank" rel="noopener" class="action-btn join-btn">Join!</a>
       <button class="action-btn" class:complete-btn={twoEmailsChecked} class:refresh-btn={!twoEmailsChecked} disabled={slackRefreshing && !twoEmailsChecked} onclick={twoEmailsChecked ? confirmTwoEmails : refreshSlack}>
         {twoEmailsChecked ? 'Got it, Move on!' : slackRefreshing ? 'Checking...' : 'Refresh'}
       </button>
@@ -452,6 +453,7 @@
       <button class="skip-btn" onclick={() => goToSection(2)}>I'll do this later</button>
     {:else}
       <p class="section-paragraph">Join the Hack Club Slack to meet other builders, get help, and share your progress.</p>
+      <a href="https://hackclub.enterprise.slack.com/archives/C0A9PMV58R5" target="_blank" rel="noopener" class="action-btn join-btn">Join!</a>
       <button class="action-btn" class:complete-btn={twoEmailsChecked} class:refresh-btn={!twoEmailsChecked} disabled={slackRefreshing && !twoEmailsChecked} onclick={twoEmailsChecked ? confirmTwoEmails : refreshSlack}>
         {twoEmailsChecked ? 'Got it, Move on!' : slackRefreshing ? 'Checking...' : 'Refresh'}
       </button>
@@ -937,7 +939,20 @@
     background: #86efac;
   }
 
-  .refresh-btn {
+  .join-btn {
+    background: white;
+    color: #222;
+    border-color: #222;
+    text-decoration: none;
+    text-align: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .join-btn:hover {
+    background: #f5f5f5;
+  }
+
+.refresh-btn {
     background: white;
     color: #222;
     border-color: #222;
