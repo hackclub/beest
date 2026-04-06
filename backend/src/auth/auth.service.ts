@@ -25,7 +25,7 @@ export class AuthService {
   private readonly jwtSecret: string;
 
   private readonly authorizeUrl =
-    'https://auth.hackclub.com/oauth/authorize';
+    'https://auth.hackclub.com/join/beest';
   private readonly tokenUrl = 'https://auth.hackclub.com/oauth/token';
   private readonly userinfoUrl = 'https://auth.hackclub.com/oauth/userinfo';
 
@@ -79,7 +79,6 @@ export class AuthService {
       response_type: 'code',
       scope: this.scopes,
       state: signedState,
-      return_to: '/join/beest',
     });
 
     if (sanitizedEmail) {
