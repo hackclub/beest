@@ -70,6 +70,7 @@
 		createdAt: string;
 		updatedAt: string;
 		user: { id: string; name: string | null; slackId: string | null };
+		latestSubmission: { id: string; changeDescription: string | null; minHoursConfirmed: boolean; status: string; createdAt: string } | null;
 	}
 
 	interface StatusCounts {
@@ -89,6 +90,7 @@
 	// Hackatime detail expansion
 	interface HackatimeDetail {
 		totalHours: number;
+		previousApprovedHours: number;
 		trustLevel: string | null;
 		hackatimeProjects: { name: string; hours: number; languages: string[] }[];
 		unifiedDuplicate: boolean;
@@ -161,7 +163,11 @@
 		const trustLabel = trustLabels[hackatimeData.trustLevel?.toLowerCase() ?? ''] ?? hackatimeData.trustLevel ?? 'unknown';
 		const proj = allProjects.find(p => p.id === expandedProjectId);
 		const updateNote = proj?.isUpdate ? ' (this is an update to an existing project)' : '';
-		overrideJustification = `the user has trust level ${trustLabel} and tracked ${hackatimeData.totalHours} hours on the project through hackatime (${label} to ${adjustedHours}h)${updateNote}\n\nsigned off by ${data.user.name ?? 'unknown'}`;
+		const htNames = (hackatimeData.hackatimeProjects ?? []).map(p => p.name).join(', ');
+		const htNamesNote = htNames ? `\nHackatime projects: ${htNames}` : '';
+		const prevHours = hackatimeData.previousApprovedHours ?? 0;
+		const deltaNote = prevHours > 0 ? `\nPreviously approved: ${prevHours}h — delta: ${Math.round((adjustedHours - prevHours) * 10) / 10}h` : '';
+		overrideJustification = `the user has trust level ${trustLabel} and tracked ${hackatimeData.totalHours} hours on the project through hackatime (${label} to ${adjustedHours}h)${updateNote}${htNamesNote}${deltaNote}\n\nsigned off by ${data.user.name ?? 'unknown'}`;
 	}
 
 	function adjustHours(factor: number) {
@@ -210,12 +216,16 @@
 					const unifiedNote = !hackatimeData?.unifiedDuplicate && !hackatimeData?.unifiedError && proj.codeUrl
 						? `\nAs of ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} this is the first submission of this code URL to unified.`
 						: '';
-					overrideJustification = `the user has trust level ${trustLabel} and tracked ${hackatimeData?.totalHours ?? 0} hours on the project through hackatime${updateNote}${unifiedNote}\n\nsigned off by ${data.user.name ?? 'unknown'}`;
+					const htNames = (hackatimeData?.hackatimeProjects ?? []).map(p => p.name).join(', ');
+					const htNamesNote = htNames ? `\nHackatime projects: ${htNames}` : '';
+					const prevHours = hackatimeData?.previousApprovedHours ?? 0;
+					const deltaNote = prevHours > 0 ? `\nPreviously approved: ${prevHours}h — delta: ${Math.round((customHours - prevHours) * 10) / 10}h` : '';
+					overrideJustification = `the user has trust level ${trustLabel} and tracked ${hackatimeData?.totalHours ?? 0} hours on the project through hackatime${updateNote}${htNamesNote}${deltaNote}${unifiedNote}\n\nsigned off by ${data.user.name ?? 'unknown'}`;
 				} else {
-					hackatimeData = { totalHours: 0, hackatimeProjects: [], trustLevel: null, unifiedDuplicate: false, unifiedError: false };
+					hackatimeData = { totalHours: 0, previousApprovedHours: 0, hackatimeProjects: [], trustLevel: null, unifiedDuplicate: false, unifiedError: false };
 				}
 			} catch {
-				hackatimeData = { totalHours: 0, hackatimeProjects: [], trustLevel: null, unifiedDuplicate: false, unifiedError: false };
+				hackatimeData = { totalHours: 0, previousApprovedHours: 0, hackatimeProjects: [], trustLevel: null, unifiedDuplicate: false, unifiedError: false };
 			} finally {
 				hackatimeLoading = false;
 			}
@@ -1217,6 +1227,19 @@
 									</div>
 								{/if}
 
+								{#if selectedProject.latestSubmission?.changeDescription}
+									<div class="proj-info-row">
+										<span class="proj-info-label">Resubmission Notes:</span>
+										<span class="proj-info-value" style="white-space: pre-wrap">{selectedProject.latestSubmission.changeDescription}</span>
+									</div>
+									{#if selectedProject.latestSubmission.minHoursConfirmed}
+										<div class="proj-info-row">
+											<span class="proj-info-label">Min Hours:</span>
+											<span class="proj-info-value">Confirmed 3+ hours since last ship</span>
+										</div>
+									{/if}
+								{/if}
+
 								{#if selectedProject.status === 'unreviewed'}
 									<hr class="proj-divider" />
 
@@ -1227,6 +1250,9 @@
 											<div class="ht-header">
 												<span class="ht-trust">Trust Level: <strong class="trust-{hackatimeData.trustLevel ?? 'unknown'}">{{ blue: 'standard', yellow: 'warned', red: 'banned' }[hackatimeData.trustLevel?.toLowerCase() ?? ''] ?? hackatimeData.trustLevel ?? 'unknown'}</strong></span>
 												<span class="ht-total">{hackatimeData.totalHours}h total</span>
+												{#if hackatimeData.previousApprovedHours > 0}
+													<span class="ht-delta">prev: {hackatimeData.previousApprovedHours}h — delta: {Math.round((hackatimeData.totalHours - hackatimeData.previousApprovedHours) * 10) / 10}h</span>
+												{/if}
 											</div>
 											{#if hackatimeData.hackatimeProjects.length > 0}
 												<div class="ht-projects">
@@ -2364,6 +2390,12 @@
 	.ht-total {
 		color: #5b9bd5;
 		font-weight: 600;
+	}
+
+	.ht-delta {
+		color: #c48382;
+		font-weight: 600;
+		font-size: 0.85rem;
 	}
 
 	.ht-projects {

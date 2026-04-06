@@ -150,6 +150,29 @@ export class ProjectsController {
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @UseGuards(JwtAuthGuard)
+  @Post(':id/resubmit')
+  async resubmit(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Body() body: { changeDescription?: string; minHoursConfirmed?: boolean },
+  ) {
+    const user = (req as any).user;
+    if (!user?.uid) throw new UnauthorizedException('No user identity');
+    if (!body.changeDescription || typeof body.changeDescription !== 'string') {
+      throw new UnauthorizedException('changeDescription is required');
+    }
+    return this.projectsService.resubmit(
+      id,
+      user.uid,
+      user.sub,
+      body.changeDescription,
+      body.minHoursConfirmed === true,
+      user.impersonator_name,
+    );
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
   @Delete(':id')
   async delete(@Param('id') id: string, @Req() req: Request) {
     const user = (req as any).user;

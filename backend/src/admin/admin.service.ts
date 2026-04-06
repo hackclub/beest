@@ -15,6 +15,7 @@ import { NewsItem } from '../entities/news-item.entity';
 import { ProjectReview } from '../entities/project-review.entity';
 import { ShopItem } from '../entities/shop-item.entity';
 import { Order } from '../entities/order.entity';
+import { Submission } from '../entities/submission.entity';
 import { RsvpService } from '../rsvp/rsvp.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { fetchWithTimeout } from '../fetch.util';
@@ -46,6 +47,7 @@ export class AdminService {
     @InjectRepository(ProjectReview) private readonly reviewRepo: Repository<ProjectReview>,
     @InjectRepository(ShopItem) private readonly shopRepo: Repository<ShopItem>,
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
+    @InjectRepository(Submission) private readonly submissionRepo: Repository<Submission>,
     private readonly rsvpService: RsvpService,
     private readonly auditLogService: AuditLogService,
   ) {
@@ -227,10 +229,20 @@ export class AdminService {
       approved: 0,
     };
 
+    // Fetch latest submission for each project in a single query
+    const latestSubmissions = await this.submissionRepo
+      .createQueryBuilder('s')
+      .distinctOn(['s.project_id'])
+      .orderBy('s.project_id')
+      .addOrderBy('s.created_at', 'DESC')
+      .getMany();
+    const submissionMap = new Map(latestSubmissions.map((s) => [s.projectId, s]));
+
     const mapped = projects.map((p) => {
       if (p.status in statusCounts) {
         statusCounts[p.status as keyof typeof statusCounts]++;
       }
+      const latestSub = submissionMap.get(p.id);
       return {
         id: p.id,
         name: p.name,
@@ -253,6 +265,13 @@ export class AdminService {
           name: p.user?.name,
           slackId: p.user?.slackId,
         },
+        latestSubmission: latestSub ? {
+          id: latestSub.id,
+          changeDescription: latestSub.changeDescription,
+          minHoursConfirmed: latestSub.minHoursConfirmed,
+          status: latestSub.status,
+          createdAt: latestSub.createdAt,
+        } : null,
       };
     });
 
@@ -275,6 +294,12 @@ export class AdminService {
     });
     if (!project) throw new NotFoundException('Project not found');
 
+    // Find the latest unreviewed submission for this project
+    const submission = await this.submissionRepo.findOne({
+      where: { projectId, status: 'unreviewed' },
+      order: { createdAt: 'DESC' },
+    });
+
     // 1. Update project status and hours
     project.status = status;
     if (overrideHours !== null && overrideHours !== undefined) {
@@ -285,24 +310,42 @@ export class AdminService {
     }
     await this.projectRepo.save(project);
 
-    // 2. Grant pipes when approving (user-facing hours = overrideHours)
-    //    Uses atomic increment to prevent race conditions.
-    //    Only grants the delta if project was previously approved (re-approval case).
+    // 2. Grant pipes as delta on this submission
+    //    Pipes granted = overrideHours for THIS submission minus what was already granted on previous submissions.
+    //    The project's pipesGranted tracks the cumulative total.
     if (status === 'approved' && project.overrideHours != null && project.overrideHours > 0) {
-      const pipesToGrant = Math.floor(project.overrideHours);
+      const totalPipesTarget = Math.floor(project.overrideHours);
       const previouslyGranted = project.pipesGranted ?? 0;
-      const delta = pipesToGrant - previouslyGranted;
+      const delta = totalPipesTarget - previouslyGranted;
       if (delta > 0) {
         await this.userRepo.increment({ id: project.userId }, 'pipes', delta);
-        project.pipesGranted = pipesToGrant;
+        project.pipesGranted = totalPipesTarget;
         await this.projectRepo.save(project);
+
+        // Track what this submission granted
+        if (submission) {
+          submission.pipesGranted = delta;
+        }
       }
     }
 
-    // 3. Save the review record
+    // 3. Update the submission status and hours
+    if (submission) {
+      submission.status = status;
+      if (overrideHours !== null && overrideHours !== undefined) {
+        submission.overrideHours = Math.round(overrideHours * 10) / 10;
+      }
+      if (internalHours !== null && internalHours !== undefined) {
+        submission.internalHours = Math.round(internalHours * 10) / 10;
+      }
+      await this.submissionRepo.save(submission);
+    }
+
+    // 4. Save the review record (linked to submission if one exists)
     const review = this.reviewRepo.create({
       projectId,
       reviewerId,
+      submissionId: submission?.id ?? null,
       status,
       feedback: feedback || null,
       internalNote: internalNote || null,
@@ -310,7 +353,7 @@ export class AdminService {
     });
     await this.reviewRepo.save(review);
 
-    // 4. Audit log to the project owner (not the reviewer)
+    // 5. Audit log to the project owner (not the reviewer)
     const label =
       status === 'approved'
         ? `Project "${project.name}" was approved`
@@ -430,7 +473,7 @@ export class AdminService {
     const hackatimeNames: string[] = project.hackatimeProjectName ?? [];
     const user = project.user;
     if (!user) {
-      return { projectId, hackatimeProjects: [], totalHours: 0, trustLevel: null, unifiedDuplicate: false, unifiedError: true };
+      return { projectId, hackatimeProjects: [], totalHours: 0, previousApprovedHours: 0, trustLevel: null, unifiedDuplicate: false, unifiedError: true };
     }
 
     try {
@@ -442,13 +485,13 @@ export class AdminService {
           { email: user.email },
         );
         if (!emailRes.ok) {
-          return { projectId, hackatimeProjects: [], totalHours: 0, trustLevel: null, unifiedDuplicate: false, unifiedError: true };
+          return { projectId, hackatimeProjects: [], totalHours: 0, previousApprovedHours: 0, trustLevel: null, unifiedDuplicate: false, unifiedError: true };
         }
         const emailData = await emailRes.json();
         hackatimeUserId = emailData.user_id;
       }
       if (!hackatimeUserId) {
-        return { projectId, hackatimeProjects: [], totalHours: 0, trustLevel: null, unifiedDuplicate: false, unifiedError: true };
+        return { projectId, hackatimeProjects: [], totalHours: 0, previousApprovedHours: 0, trustLevel: null, unifiedDuplicate: false, unifiedError: true };
       }
 
       // 2. Get user info (trust level), projects, and Unified duplicate check in parallel
@@ -489,10 +532,18 @@ export class AdminService {
         matched.reduce((sum, p) => sum + p.hours, 0) * 10,
       ) / 10;
 
-      return { projectId, hackatimeProjects: matched, totalHours, trustLevel, unifiedDuplicate: unifiedResult.duplicate, unifiedError: unifiedResult.error };
+      // Calculate previous approved hours for delta display on resubmissions
+      const lastApprovedSub = await this.submissionRepo.findOne({
+        where: { projectId, status: 'approved' },
+        order: { createdAt: 'DESC' },
+        select: ['id', 'overrideHours'],
+      });
+      const previousApprovedHours = lastApprovedSub?.overrideHours ?? 0;
+
+      return { projectId, hackatimeProjects: matched, totalHours, previousApprovedHours, trustLevel, unifiedDuplicate: unifiedResult.duplicate, unifiedError: unifiedResult.error };
     } catch (err) {
       this.logger.error(`Hackatime admin lookup error for project ${projectId}: ${err}`);
-      return { projectId, hackatimeProjects: [], totalHours: 0, trustLevel: null, unifiedDuplicate: false, unifiedError: true };
+      return { projectId, hackatimeProjects: [], totalHours: 0, previousApprovedHours: 0, trustLevel: null, unifiedDuplicate: false, unifiedError: true };
     }
   }
 

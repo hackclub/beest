@@ -11,6 +11,7 @@ import { NewsItem } from '../entities/news-item.entity';
 import { ProjectReview } from '../entities/project-review.entity';
 import { ShopItem } from '../entities/shop-item.entity';
 import { Order } from '../entities/order.entity';
+import { Submission } from '../entities/submission.entity';
 import { ShopModule } from '../shop/shop.module';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
@@ -19,7 +20,7 @@ import { ReviewerGuard } from './reviewer.guard';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Session, Project, AuditLog, NewsItem, ProjectReview, ShopItem, Order]),
+    TypeOrmModule.forFeature([User, Session, Project, AuditLog, NewsItem, ProjectReview, ShopItem, Order, Submission]),
     AuthModule,
     RsvpModule,
     AuditLogModule,

@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Project, VALID_PROJECT_TYPES } from '../entities/project.entity';
 import { Comment } from '../entities/comment.entity';
+import { Submission } from '../entities/submission.entity';
 import { fetchWithTimeout } from '../fetch.util';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { HackatimeService } from '../hackatime/hackatime.service';
@@ -43,6 +44,8 @@ export class ProjectsService {
     private projectRepo: Repository<Project>,
     @InjectRepository(Comment)
     private commentRepo: Repository<Comment>,
+    @InjectRepository(Submission)
+    private submissionRepo: Repository<Submission>,
   ) {
     this.cdnApiKey = this.configService.getOrThrow('CDN_API_KEY');
   }
@@ -346,6 +349,9 @@ export class ProjectsService {
     }
     if (dto.status !== undefined) {
       if (dto.status === 'unreviewed') {
+        if (project.status !== 'unshipped' && project.status !== 'changes_needed') {
+          throw new BadRequestException('Invalid status transition');
+        }
         project.status = 'unreviewed';
       } else if (
         dto.status === 'unshipped' &&
@@ -362,6 +368,16 @@ export class ProjectsService {
     const saved = await this.projectRepo.save(project);
 
     if (dto.status === 'unreviewed') {
+      // Create a submission record for this review request
+      const submission = this.submissionRepo.create({
+        projectId: project.id,
+        userId,
+        changeDescription: null,
+        minHoursConfirmed: false,
+        status: 'unreviewed',
+      });
+      await this.submissionRepo.save(submission);
+
       await this.auditLogService.log(
         userId,
         'project_submitted',
@@ -393,6 +409,9 @@ export class ProjectsService {
       where: { id: projectId, userId },
     });
     if (!project) throw new NotFoundException('Project not found');
+    if (project.status === 'approved') {
+      throw new ForbiddenException('Approved projects cannot be deleted');
+    }
 
     const name = project.name;
     await this.projectRepo.remove(project);
@@ -403,6 +422,97 @@ export class ProjectsService {
       `Deleted project "${name}"`,
       impersonatorName,
     );
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Resubmit (approved → unreviewed with change description)           */
+  /* ------------------------------------------------------------------ */
+
+  async resubmit(
+    projectId: string,
+    userId: string,
+    hcaSub: string,
+    changeDescription: string,
+    minHoursConfirmed: boolean,
+    impersonatorName?: string,
+  ) {
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId, userId },
+    });
+    if (!project) throw new NotFoundException('Project not found');
+    if (project.status !== 'approved') {
+      throw new BadRequestException('Only approved projects can be resubmitted');
+    }
+
+    // Validate inputs
+    const cleanDesc = this.requireString(changeDescription, 'changeDescription', 500);
+    if (!minHoursConfirmed) {
+      throw new BadRequestException('You must confirm at least 3 hours of work since the last ship');
+    }
+
+    // Verify at least 3 hours of new Hackatime work since last approval
+    const linkedNames = (project.hackatimeProjectName ?? []).filter((n) => !!n);
+    const previousApprovedHours = project.overrideHours ?? 0;
+    if (linkedNames.length > 0) {
+      try {
+        const { hours: currentHours } = await this.hackatimeService.getHoursForProjects(
+          hcaSub,
+          [...new Set(linkedNames)],
+        );
+        const delta = currentHours - previousApprovedHours;
+        if (delta < 3) {
+          throw new BadRequestException(
+            `Only ${Math.round(delta * 10) / 10} new hours recorded since last approval. You need at least 3 hours of new work.`,
+          );
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+        // If Hackatime lookup fails, let it through — reviewer will verify
+        this.logger.warn(`Hackatime hours check failed for resubmit: ${err}`);
+      }
+    }
+
+    // Move project back to unreviewed, mark as update
+    project.status = 'unreviewed';
+    project.isUpdate = true;
+    await this.projectRepo.save(project);
+
+    // Create a submission record
+    const submission = this.submissionRepo.create({
+      projectId: project.id,
+      userId,
+      changeDescription: cleanDesc,
+      minHoursConfirmed: true,
+      status: 'unreviewed',
+    });
+    await this.submissionRepo.save(submission);
+
+    await this.auditLogService.log(
+      userId,
+      'project_submitted',
+      `Resubmitted "${project.name}" for review`,
+      impersonatorName,
+    );
+
+    return { success: true, submissionId: submission.id };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Submissions for a project                                          */
+  /* ------------------------------------------------------------------ */
+
+  async getSubmissions(projectId: string, userId: string) {
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId, userId },
+      select: ['id'],
+    });
+    if (!project) throw new NotFoundException('Project not found');
+
+    return this.submissionRepo.find({
+      where: { projectId },
+      order: { createdAt: 'DESC' },
+      select: ['id', 'changeDescription', 'minHoursConfirmed', 'status', 'createdAt'],
+    });
   }
 
   /* ------------------------------------------------------------------ */

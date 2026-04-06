@@ -136,6 +136,11 @@
   let reviewSubmitted = $state(false);
   let reviewSubmittedName = $state('');
 
+  // Resubmit state (approved projects)
+  let resubmitChangeDesc = $state('');
+  let resubmitMinHours = $state(false);
+  let resubmitLoading = $state(false);
+
   // Shipping eligibility
   let shippingCheck = $state<{ hasAddress: boolean; hasBirthdate: boolean; eligible: boolean; addressPortalUrl: string } | null>(null);
   let shippingCheckLoading = $state(false);
@@ -170,6 +175,49 @@
     checkReadme = false;
     checkHackatime = false;
     checkStartedOrUpdated = false;
+    resubmitChangeDesc = '';
+    resubmitMinHours = false;
+    resubmitLoading = false;
+  }
+
+  async function resubmitProject() {
+    if (!editingProject || !resubmitChangeDesc.trim() || !resubmitMinHours || resubmitLoading) return;
+    resubmitLoading = true;
+    formError = '';
+
+    // Check shipping eligibility before proceeding
+    const eligible = await checkShippingEligibility();
+    if (!eligible) {
+      resubmitLoading = false;
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/projects/${editingProject.id}/resubmit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          changeDescription: resubmitChangeDesc.trim(),
+          minHoursConfirmed: resubmitMinHours,
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        formError = Array.isArray(data.message) ? data.message.join(', ') : data.message || `Server error (${res.status})`;
+        resubmitLoading = false;
+        return;
+      }
+      reviewSubmittedName = editingProject.name;
+      reviewSubmitted = true;
+      resetForm();
+      launchConfetti();
+      fetchProjects();
+      fetchAuditLog();
+      fetchProjectHours();
+    } catch {
+      formError = 'Something went wrong. Please try again.';
+    }
+    resubmitLoading = false;
   }
 
   function launchConfetti() {
@@ -220,9 +268,7 @@
     aiUseDescription = project.aiUse ?? '';
   }
 
-  function cancelCreateProject() {
-    resetForm();
-  }
+
 
   function handleScreenshot(e: Event) {
     const input = e.target as HTMLInputElement;
@@ -434,12 +480,16 @@
         otherHcProgram: otherHcProgram ? otherHcProgramName || null : null,
         aiUse: usedAi ? aiUseDescription || null : null,
       };
-      if (screenshots.length) {
+      // Only send screenshots if the user uploaded new files.
+      // When editing, screenshotFiles are null for existing URLs — don't wipe them.
+      const hasNewFiles = screenshotFiles.some(f => f !== null);
+      if (hasNewFiles) {
         body.screenshots = screenshots;
-      } else if (isEdit) {
-        // Send empty array to clear deleted screenshots
+      } else if (!isEdit) {
+        // New project with no screenshots — send empty array
         body.screenshots = [];
       }
+      // When editing with no new files: omit screenshots entirely to preserve existing ones
 
       const res = await fetch(url, {
         method,
@@ -513,10 +563,10 @@
         otherHcProgram: otherHcProgram ? otherHcProgramName || null : null,
         aiUse: usedAi ? aiUseDescription || null : null,
       };
-      if (screenshots.length) {
+      // Only send screenshots if the user uploaded new files — preserve existing ones otherwise
+      const hasNewFiles = screenshotFiles.some(f => f !== null);
+      if (hasNewFiles) {
         body.screenshots = screenshots;
-      } else {
-        body.screenshots = [];
       }
 
       const res = await fetch(`/api/projects/${editingProject.id}`, {
@@ -637,8 +687,7 @@
 
   function navigate(id: string) {
     if (id === 'tutorial') { window.location.href = '/tutorial'; return; }
-    if (creatingProject) cancelCreateProject();
-    if (reviewProject) resetForm();
+    if (creatingProject || editingProject || reviewProject) resetForm();
     activeSection = id;
     if (id === 'shop') { fetchShopItems(); fetchPipes(); }
     if (id === 'me') { fetchFulfillmentUpdates(); markFulfillmentRead(); }
@@ -822,7 +871,71 @@
   <!-- Main content -->
   <main class="main">
 
-    {#if creatingProject || editingProject}
+    {#if editingProject?.status === 'approved'}
+    <!-- Approved project: read-only summary + resubmit form -->
+    <section class="section section-resubmit">
+      <div class="section-inner">
+        <button class="form-cancel" onclick={resetForm}>&times;</button>
+
+        <div class="approved-summary">
+          <div class="approved-summary-row">
+            {#if editingProject.screenshot1Url}
+              <img class="approved-summary-thumb" src={editingProject.screenshot1Url} alt="Screenshot" />
+            {/if}
+            <div class="approved-summary-info">
+              <h3 class="approved-summary-title">{editingProject.name}</h3>
+              <span class="project-status-badge approved">approved</span>
+              <p class="approved-summary-desc">{editingProject.description}</p>
+              <div class="approved-summary-meta">
+                <span>{editingProject.projectType}</span>
+                {#if editingProject.codeUrl}<a href={editingProject.codeUrl} target="_blank" rel="noopener">Code</a>{/if}
+                {#if editingProject.demoUrl}<a href={editingProject.demoUrl} target="_blank" rel="noopener">Demo</a>{/if}
+                {#if editingProject.readmeUrl}<a href={editingProject.readmeUrl} target="_blank" rel="noopener">README</a>{/if}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="resubmit-section">
+          <h2 class="section-title">Resubmit for Review</h2>
+          <p class="section-subtitle">Ship an update to this approved project to earn more Pipes.</p>
+
+          <div class="resubmit-form">
+            <label class="resubmit-label" for="resubmit-desc">Describe changes made since last approval <span class="required">*</span></label>
+            <textarea
+              id="resubmit-desc"
+              class="form-input form-textarea resubmit-textarea"
+              maxlength={500}
+              placeholder="What did you build or improve?"
+              bind:value={resubmitChangeDesc}
+            ></textarea>
+            <div class="form-caption-row">
+              <span class="form-caption">Be specific about what changed</span>
+              <span class="form-charcount" class:over={resubmitChangeDesc.length >= 500}>{resubmitChangeDesc.length}/500</span>
+            </div>
+
+            <label class="review-check resubmit-check">
+              <input type="checkbox" bind:checked={resubmitMinHours} />
+              <span>I have worked for at least 3 hours since the last ship</span>
+            </label>
+
+            {#if formError}
+              <p class="form-error">{formError}</p>
+            {/if}
+
+            <button
+              class="form-btn-review resubmit-btn"
+              class:ready={resubmitChangeDesc.trim() && resubmitMinHours}
+              disabled={!resubmitChangeDesc.trim() || !resubmitMinHours || resubmitLoading}
+              onclick={resubmitProject}
+            >
+              {resubmitLoading ? 'Resubmitting...' : 'Resubmit'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+    {:else if creatingProject || editingProject}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="create-project-form" onkeydown={() => keystrokes++}>
       <div class="form-header">
@@ -1007,7 +1120,7 @@
           </div>
         {/if}
         <div class="form-actions">
-          {#if editingProject}
+          {#if editingProject && editingProject.status !== 'approved'}
             <button class="form-btn-delete" onclick={() => deleteProject(editingProject.id)}>Delete</button>
           {/if}
           <button class="form-btn-submit" disabled={!canSubmit || editingProject?.status === 'unreviewed'} onclick={submitProject}>
@@ -1265,13 +1378,11 @@
                 <h2 class="section-title">Earn Prizes</h2>
                 <p class="section-subtitle">Build projects, earn hours, unlock rewards.</p>
               </div>
-              <div class="shoppable-pill">
-                <div class="shoppable-pill-icon">
-                  <img src="/images/pipes.png" alt="Pipes" class="pipe-img" />
-                </div>
-                <div class="shoppable-pill-text">
-                  <span class="shoppable-label">Pipes</span>
-                  <span class="shoppable-value">{userPipes}</span>
+              <div class="pipes-box">
+                <img src="/images/pipes.png" alt="Pipes" class="pipe-img" />
+                <div class="pipes-box-text">
+                  <span class="pipes-box-label">Pipes</span>
+                  <span class="pipes-box-value">{userPipes}</span>
                 </div>
               </div>
             </div>
@@ -1279,7 +1390,7 @@
           <div class="shop-warning-banner">
             <div class="shop-warning-track">
               {#each {length: 8} as _}
-                <span class="shop-warning-text">Earn Pipes by getting projects approved. Spend Pipes on prizes!&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;</span>
+                <span class="shop-warning-text">1 approved hour = 1 pipe, spend pipes on prizes&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;</span>
               {/each}
             </div>
           </div>
@@ -1382,7 +1493,6 @@
             {:else if userPipes >= selectedShopItem.priceHours * shopQuantity}
               <button class="shop-modal-buy" type="button" onclick={purchaseItem} disabled={purchaseLoading}>
                 <span class="buy-text">{purchaseLoading ? 'Ordering...' : 'Redeem'}</span>
-                <span class="buy-sparkle">&#10024;</span>
               </button>
               {#if purchaseError}
                 <p class="shop-modal-error">{purchaseError}</p>
@@ -1662,6 +1772,9 @@
               </a>
             </div>
 
+          </div>
+
+          <div class="me-right">
             <div class="account-card">
               <h3 class="account-card-heading">Preferences</h3>
               <label class="pref-toggle">
@@ -1716,9 +1829,6 @@
                 </div>
               </div>
             </div>
-          </div>
-
-          <div class="me-right">
             <div class="account-card fulfillment-card">
               <h3 class="account-card-heading">Fulfillment Updates</h3>
               {#if fulfillmentLoading}
@@ -2065,6 +2175,7 @@
 
   .tile-loaded .section-projects::after,
   .tile-loaded .section-settings::after,
+  .tile-loaded .section-resubmit::after,
   .tile-loaded .section-faq::after,
   .tile-loaded .create-project-form::after {
     background-image: url('/images/tile.webp');
@@ -2798,6 +2909,106 @@
     box-shadow: 2px 1px 0 #3a3832;
   }
 
+  /* ── Resubmit section ─────────────────────────── */
+  .section-resubmit {
+    background: #4b4840;
+  }
+
+  .approved-summary {
+    padding: 24px 28px;
+    background: rgba(0, 0, 0, 0.25);
+    clip-path: polygon(0% 2%, 2% 0%, 98% 1%, 100% 3%, 99% 97%, 97% 100%, 3% 99%, 0% 96%);
+    margin-bottom: 40px;
+  }
+
+  .approved-summary-row {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+  }
+
+  .approved-summary-thumb {
+    width: 140px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 4px;
+    opacity: 0.85;
+    flex-shrink: 0;
+  }
+
+  .approved-summary-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .approved-summary-title {
+    margin: 0 12px 0 0;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 32px;
+    color: #e6f4fe;
+    display: inline;
+    vertical-align: middle;
+  }
+
+  .approved-summary-desc {
+    margin: 10px 0 8px;
+    font-family: "Courier New", monospace;
+    font-size: 16px;
+    color: #cbc1ae;
+    line-height: 1.4;
+  }
+
+  .approved-summary-meta {
+    display: flex;
+    gap: 14px;
+    font-family: "Courier New", monospace;
+    font-size: 14px;
+    color: #7f796d;
+    flex-wrap: wrap;
+  }
+
+  .approved-summary-meta a {
+    color: #93b4cd;
+    text-decoration: none;
+  }
+
+  .approved-summary-meta a:hover {
+    text-decoration: underline;
+  }
+
+  .resubmit-section {
+    margin-bottom: 24px;
+  }
+
+  .resubmit-form {
+    margin-top: 24px;
+    max-width: 600px;
+  }
+
+  .resubmit-label {
+    display: block;
+    margin-bottom: 10px;
+    font-family: "Courier New", monospace;
+    font-size: 17px;
+    color: #93b4cd;
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+  }
+
+  .resubmit-textarea {
+    font-size: 16px;
+    min-height: 100px;
+  }
+
+  .resubmit-check {
+    margin: 20px 0;
+    font-size: 16px;
+  }
+
+  .resubmit-btn {
+    font-size: 18px;
+    padding: 14px 36px;
+  }
+
   .review-tooltip {
     display: none;
     position: absolute;
@@ -3013,61 +3224,44 @@
     padding: 24px 28px;
   }
 
-  .shoppable-pill {
+  .pipes-box {
     display: flex;
     align-items: center;
-    gap: 0;
-    background: #4b4840;
-    border: 2px solid #1a1a1a;
-    border-radius: 999px;
-    padding: 0 20px 0 0;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 10px 18px;
     flex-shrink: 0;
-    box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.3);
-  }
-
-  .shoppable-pill-icon {
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: #6c6659;
-    border: 2px solid #1a1a1a;
-    margin: -2px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    flex-shrink: 0;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+    clip-path: polygon(0% 3%, 2% 0%, 98% 1%, 100% 4%, 99% 96%, 97% 100%, 3% 99%, 0% 95%);
   }
 
   .pipe-img {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     object-fit: contain;
+    flex-shrink: 0;
   }
 
-  .shoppable-pill-text {
+  .pipes-box-text {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    padding: 6px 0 6px 14px;
   }
 
-  .shoppable-label {
-    font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 12px;
-    color: #cbc1ae;
+  .pipes-box-label {
+    font-family: "Courier New", monospace;
+    font-size: 11px;
+    color: #7f796d;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    margin-bottom: 2px;
   }
 
-  .shoppable-value {
+  .pipes-box-value {
     font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: clamp(24px, 2.5vw, 34px);
+    font-size: 28px;
     color: #e6f4fe;
     letter-spacing: 0.04em;
     line-height: 1;
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
   }
 
   .shop-warning-banner {
