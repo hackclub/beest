@@ -10,13 +10,27 @@ export const load: PageServerLoad = async ({ cookies }) => {
 	if (!user) redirect(302, '/');
 
 	const token = cookies.get('auth_token');
-	const scopeRes = await fetch(`${BACKEND_URL}/api/auth/scope?scope=admin`, {
+
+	// Try admin scope first, fall back to reviewer scope
+	let role: string | null = null;
+	const adminRes = await fetch(`${BACKEND_URL}/api/auth/scope?scope=admin`, {
 		headers: { Authorization: `Bearer ${token}` }
 	});
 
-	if (scopeRes.status !== 200) {
-		redirect(302, '/home');
+	if (adminRes.ok) {
+		const data = await adminRes.json();
+		role = data.perms;
+	} else {
+		const reviewerRes = await fetch(`${BACKEND_URL}/api/auth/scope?scope=reviewer`, {
+			headers: { Authorization: `Bearer ${token}` }
+		});
+		if (reviewerRes.ok) {
+			const data = await reviewerRes.json();
+			role = data.perms;
+		} else {
+			redirect(302, '/home');
+		}
 	}
 
-	return { user };
+	return { user, role };
 };

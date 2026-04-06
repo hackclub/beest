@@ -17,8 +17,10 @@
 		twoEmails: boolean;
 		updatedAt: string;
 		perms: string | null;
+		pipes: number;
 		activeSessions: number;
 		projects: { id: string; name: string; status: string; projectType: string; createdAt: string }[];
+		orders: { id: string; itemName: string; quantity: number; pipesSpent: number; status: string; createdAt: string }[];
 		auditLogs: { id: string; action: string; label: string; createdAt: string }[];
 	}
 
@@ -28,6 +30,7 @@
 		displayDate: string;
 	}
 
+	const isReviewer = $derived(data.role === 'Reviewer' || data.role === 'Fraud Reviewer');
 	let activeTab = $state('users');
 	let users: UserSummary[] = $state([]);
 	let loading = $state(true);
@@ -38,6 +41,7 @@
 	let detailLoading = $state(false);
 	let showPermsDropdown = $state(false);
 	let actionLoading = $state('');
+	let lightMode = $state(false);
 
 	// News state
 	let newsItems: NewsItem[] = $state([]);
@@ -101,6 +105,7 @@
 	let userFacingHours = $state(0);
 
 	let selectedProject = $derived(allProjects.find(p => p.id === expandedProjectId) ?? null);
+	let projScreenIdx = $state(0);
 
 	interface ReviewRecord {
 		id: string;
@@ -182,6 +187,7 @@
 			return;
 		}
 		expandedProjectId = projectId;
+		projScreenIdx = 0;
 		hackatimeData = null;
 		userFeedback = '';
 		internalNote = '';
@@ -280,6 +286,23 @@
 			if (res.ok) userDetail = await res.json();
 		} finally {
 			detailLoading = false;
+		}
+	}
+
+	async function impersonateUser() {
+		if (!selectedUser || !confirm(`Impersonate ${selectedUser.name ?? selectedUser.hcaSub}? You will browse the site as this user.`)) return;
+		actionLoading = 'impersonate';
+		try {
+			const res = await fetch(`/api/admin/users/${selectedUser.id}/impersonate`, { method: 'POST' });
+			if (res.ok) {
+				// Full page navigation to pick up the new cookies
+				window.location.replace('/home');
+				return;
+			}
+			const err = await res.json().catch(() => ({}));
+			alert(`Impersonation failed: ${res.status} ${err.error ?? ''}`);
+		} finally {
+			actionLoading = '';
 		}
 	}
 
@@ -399,24 +422,266 @@
 		}
 	}
 
+	// Shop state
+	interface ShopItemAdmin {
+		id: string;
+		name: string;
+		description: string;
+		imageUrl: string;
+		priceHours: number;
+		stock: number | null;
+		sortOrder: number;
+		isActive: boolean;
+		estimatedShip: string | null;
+	}
+	let shopItemsList: ShopItemAdmin[] = $state([]);
+	let shopLoading = $state(false);
+	let shopSaving = $state(false);
+	let editingShop: ShopItemAdmin | null = $state(null);
+	let newShopName = $state('');
+	let newShopDesc = $state('');
+	let newShopImage = $state('');
+	let newShopPrice = $state(0);
+	let newShopStock = $state('');
+	let newShopShip = $state('');
+	let newShopActive = $state(true);
+	let dragIdx: number | null = $state(null);
+	let dragOverIdx: number | null = $state(null);
+
+	async function loadShop() {
+		shopLoading = true;
+		try {
+			const res = await fetch('/api/admin/shop');
+			if (res.ok) shopItemsList = await res.json();
+		} finally {
+			shopLoading = false;
+		}
+	}
+
+	async function createShopItem() {
+		if (!newShopName.trim() || !newShopDesc.trim() || !newShopImage.trim() || !newShopPrice) return;
+		shopSaving = true;
+		try {
+			const res = await fetch('/api/admin/shop', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name: newShopName,
+					description: newShopDesc,
+					imageUrl: newShopImage,
+					priceHours: newShopPrice,
+					stock: newShopStock.trim() === '' ? null : parseInt(newShopStock),
+					estimatedShip: newShopShip.trim() || null,
+					isActive: newShopActive
+				})
+			});
+			if (res.ok) {
+				newShopName = '';
+				newShopDesc = '';
+				newShopImage = '';
+				newShopPrice = 0;
+				newShopStock = '';
+				newShopShip = '';
+				newShopActive = true;
+				await loadShop();
+			}
+		} finally {
+			shopSaving = false;
+		}
+	}
+
+	async function saveShopEdit() {
+		if (!editingShop) return;
+		shopSaving = true;
+		try {
+			const res = await fetch(`/api/admin/shop/${editingShop.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name: editingShop.name,
+					description: editingShop.description,
+					imageUrl: editingShop.imageUrl,
+					priceHours: editingShop.priceHours,
+					stock: editingShop.stock,
+					estimatedShip: editingShop.estimatedShip,
+					isActive: editingShop.isActive
+				})
+			});
+			if (res.ok) {
+				editingShop = null;
+				await loadShop();
+			}
+		} finally {
+			shopSaving = false;
+		}
+	}
+
+	async function deleteShopItem(id: string) {
+		if (!confirm('Delete this shop item?')) return;
+		shopSaving = true;
+		try {
+			const res = await fetch(`/api/admin/shop/${id}`, { method: 'DELETE' });
+			if (res.ok) await loadShop();
+		} finally {
+			shopSaving = false;
+		}
+	}
+
+	function handleDragStart(idx: number) {
+		dragIdx = idx;
+	}
+
+	function handleDragOver(e: DragEvent, idx: number) {
+		e.preventDefault();
+		dragOverIdx = idx;
+	}
+
+	async function handleDrop(idx: number) {
+		if (dragIdx === null || dragIdx === idx) {
+			dragIdx = null;
+			dragOverIdx = null;
+			return;
+		}
+		const items = [...shopItemsList];
+		const [moved] = items.splice(dragIdx, 1);
+		items.splice(idx, 0, moved);
+		shopItemsList = items;
+		dragIdx = null;
+		dragOverIdx = null;
+
+		const reorderPayload = items.map((item, i) => ({ id: item.id, sortOrder: i }));
+		try {
+			await fetch('/api/admin/shop/reorder', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ items: reorderPayload })
+			});
+		} catch { /* silent */ }
+	}
+
+	function handleDragEnd() {
+		dragIdx = null;
+		dragOverIdx = null;
+	}
+
+	// Fulfillment state
+	interface AdminOrder {
+		id: string;
+		userId: string;
+		shopItemId: string;
+		itemName: string;
+		quantity: number;
+		pipesSpent: number;
+		status: string;
+		createdAt: string;
+		updatedAt: string;
+		userName: string;
+		userSlackId: string | null;
+		pendingSince: number | null;
+	}
+	let fulfillmentOrders: AdminOrder[] = $state([]);
+	let fulfillmentLoading = $state(false);
+	let fulfillmentItemFilter = $state('');
+	let fulfillmentStatusFilter = $state('pending');
+	let fulfillmentSortBy = $state<'oldest' | 'newest'>('oldest');
+	let fulfillmentMsg = $state<Record<string, string>>({});
+	let fulfillmentActionLoading = $state('');
+
+	let fulfillmentItemOptions = $derived([...new Set(fulfillmentOrders.map(o => o.itemName))].sort());
+
+	let filteredFulfillment = $derived.by(() => {
+		let result = fulfillmentOrders;
+		if (fulfillmentStatusFilter) {
+			result = result.filter(o => o.status === fulfillmentStatusFilter);
+		}
+		if (fulfillmentItemFilter) {
+			result = result.filter(o => o.itemName === fulfillmentItemFilter);
+		}
+		return result;
+	});
+
+	async function loadFulfillment() {
+		fulfillmentLoading = true;
+		try {
+			const params = new URLSearchParams();
+			if (fulfillmentStatusFilter) params.set('status', fulfillmentStatusFilter);
+			params.set('sortBy', fulfillmentSortBy);
+			const qs = params.toString();
+			const res = await fetch(`/api/admin/orders${qs ? `?${qs}` : ''}`);
+			if (res.ok) fulfillmentOrders = await res.json();
+		} finally {
+			fulfillmentLoading = false;
+		}
+	}
+
+	async function fulfillOrder(orderId: string) {
+		if (!confirm('Mark this order as fulfilled? The user will be notified.')) return;
+		fulfillmentActionLoading = orderId;
+		try {
+			const res = await fetch(`/api/admin/orders/${orderId}/fulfill`, { method: 'POST' });
+			if (res.ok) await loadFulfillment();
+		} finally {
+			fulfillmentActionLoading = '';
+		}
+	}
+
+	async function sendOrderMessage(orderId: string) {
+		const msg = fulfillmentMsg[orderId]?.trim();
+		if (!msg) return;
+		fulfillmentActionLoading = orderId;
+		try {
+			const res = await fetch(`/api/admin/orders/${orderId}/message`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ message: msg })
+			});
+			if (res.ok) {
+				fulfillmentMsg[orderId] = '';
+			}
+		} finally {
+			fulfillmentActionLoading = '';
+		}
+	}
+
+	function formatPendingTime(hours: number | null): string {
+		if (hours === null) return '';
+		if (hours < 1) return 'just now';
+		if (hours < 24) return `${hours}h`;
+		const days = Math.floor(hours / 24);
+		return `${days}d ${hours % 24}h`;
+	}
+
 	$effect(() => {
+		if (isReviewer && activeTab === 'users') {
+			activeTab = 'projects';
+			return;
+		}
 		if (activeTab === 'users') loadUsers();
 		if (activeTab === 'news') loadNews();
 		if (activeTab === 'projects') loadProjects();
+		if (activeTab === 'shop') loadShop();
+		if (activeTab === 'fulfillment') loadFulfillment();
 	});
 </script>
 
-<div class="admin-shell">
+<div class="admin-shell" class:light={lightMode}>
 	<header class="admin-header">
-		<h1>Admin Panel</h1>
-		<span class="admin-user">Logged in as {data.user.name}</span>
+		<h1>{isReviewer ? 'Review Panel' : 'Admin Panel'}</h1>
+		<div style="display:flex;align-items:center;gap:0.75rem;">
+			<button class="theme-toggle" onclick={() => lightMode = !lightMode}>{lightMode ? 'Dark' : 'Light'}</button>
+			<span class="admin-user">Logged in as {data.user.name}</span>
+		</div>
 	</header>
 
 	<nav class="admin-tabs">
-		<button class="tab" class:active={activeTab === 'users'} onclick={() => { activeTab = 'users'; closeDetail(); }}>Users</button>
-		<button class="tab" class:active={activeTab === 'news'} onclick={() => activeTab = 'news'}>News</button>
-		<button class="tab" class:active={activeTab === 'fulfillment'} onclick={() => activeTab = 'fulfillment'}>Fulfillment</button>
+		{#if !isReviewer}
+			<button class="tab" class:active={activeTab === 'users'} onclick={() => { activeTab = 'users'; closeDetail(); }}>Users</button>
+			<button class="tab" class:active={activeTab === 'news'} onclick={() => activeTab = 'news'}>News</button>
+			<button class="tab" class:active={activeTab === 'shop'} onclick={() => activeTab = 'shop'}>Shop</button>
+			<button class="tab" class:active={activeTab === 'fulfillment'} onclick={() => activeTab = 'fulfillment'}>Fulfillment</button>
+		{/if}
 		<button class="tab" class:active={activeTab === 'projects'} onclick={() => activeTab = 'projects'}>Projects</button>
+		<a href="/home" class="tab tab-home">Home</a>
 	</nav>
 
 	<main class="admin-content">
@@ -521,6 +786,10 @@
 										<button class="btn btn-ban" onclick={banUser} disabled={actionLoading !== '' || userDetail.perms === 'Banned'}>
 											{actionLoading === 'ban' ? 'Banning...' : 'Ban User'}
 										</button>
+
+										<button class="btn btn-impersonate" onclick={impersonateUser} disabled={actionLoading !== '' || userDetail.perms === 'Banned'}>
+											{actionLoading === 'impersonate' ? 'Starting...' : 'Impersonate'}
+										</button>
 									</div>
 								</section>
 
@@ -536,6 +805,30 @@
 														<td>{project.projectType}</td>
 														<td><span class="badge badge-{project.status}">{project.status}</span></td>
 														<td>{formatDate(project.createdAt)}</td>
+													</tr>
+												{/each}
+											</tbody>
+										</table>
+									</section>
+								{/if}
+
+								<section class="detail-section">
+									<h3>Pipes Balance: {userDetail.pipes ?? 0}</h3>
+								</section>
+
+								{#if userDetail.orders?.length > 0}
+									<section class="detail-section">
+										<h3>Orders</h3>
+										<table class="mini-table">
+											<thead><tr><th>Item</th><th>Qty</th><th>Pipes</th><th>Status</th><th>When</th></tr></thead>
+											<tbody>
+												{#each userDetail.orders as order}
+													<tr>
+														<td>{order.itemName}</td>
+														<td>{order.quantity}</td>
+														<td>{order.pipesSpent}</td>
+														<td><span class="status-badge" class:status-pending={order.status === 'pending'} class:status-fulfilled={order.status === 'fulfilled'}>{order.status}</span></td>
+														<td>{formatDate(order.createdAt)}</td>
 													</tr>
 												{/each}
 											</tbody>
@@ -619,7 +912,180 @@
 				{/if}
 			</div>
 		{:else if activeTab === 'fulfillment'}
-			<p class="placeholder">Fulfillment — coming soon.</p>
+			<div class="fulfillment-admin">
+				<div class="fulfillment-toolbar">
+					<select bind:value={fulfillmentStatusFilter} class="users-perms-filter" onchange={() => loadFulfillment()}>
+						<option value="">All Statuses</option>
+						<option value="pending">Pending</option>
+						<option value="fulfilled">Fulfilled</option>
+					</select>
+					<select bind:value={fulfillmentItemFilter} class="users-perms-filter">
+						<option value="">All Items</option>
+						{#each fulfillmentItemOptions as item}
+							<option value={item}>{item}</option>
+						{/each}
+					</select>
+					<select bind:value={fulfillmentSortBy} class="users-perms-filter" onchange={() => loadFulfillment()}>
+						<option value="oldest">Oldest First</option>
+						<option value="newest">Newest First</option>
+					</select>
+				</div>
+
+				{#if fulfillmentLoading}
+					<p class="placeholder">Loading orders...</p>
+				{:else if filteredFulfillment.length === 0}
+					<p class="placeholder">No orders found.</p>
+				{:else}
+					<table class="admin-table">
+						<thead>
+							<tr>
+								<th>Item</th>
+								<th>User</th>
+								<th>Qty</th>
+								<th>Pipes</th>
+								<th>Status</th>
+								<th>Waiting</th>
+								<th>Actions</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each filteredFulfillment as order}
+								<tr class:fulfilled={order.status === 'fulfilled'}>
+									<td>{order.itemName}</td>
+									<td>{order.userName}{order.userSlackId ? ` (${order.userSlackId})` : ''}</td>
+									<td>{order.quantity}</td>
+									<td>{order.pipesSpent}</td>
+									<td><span class="status-badge" class:status-pending={order.status === 'pending'} class:status-fulfilled={order.status === 'fulfilled'}>{order.status}</span></td>
+									<td>{order.pendingSince !== null ? formatPendingTime(order.pendingSince) : '—'}</td>
+									<td class="fulfillment-actions">
+										{#if order.status === 'pending'}
+											<button class="btn btn-sm btn-primary" onclick={() => fulfillOrder(order.id)} disabled={fulfillmentActionLoading === order.id}>
+												{fulfillmentActionLoading === order.id ? '...' : 'Fulfill'}
+											</button>
+										{/if}
+										<div class="fulfillment-msg-row">
+											<input
+												type="text"
+												placeholder="Custom message..."
+												bind:value={fulfillmentMsg[order.id]}
+												class="fulfillment-msg-input"
+												maxlength="500"
+											/>
+											<button
+												class="btn btn-sm"
+												onclick={() => sendOrderMessage(order.id)}
+												disabled={!fulfillmentMsg[order.id]?.trim() || fulfillmentActionLoading === order.id}
+											>Send</button>
+										</div>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{/if}
+			</div>
+		{:else if activeTab === 'shop'}
+			<div class="shop-admin">
+				<div class="shop-form">
+					<h3>Add Shop Item</h3>
+					<div class="shop-form-grid">
+						<input type="text" placeholder="Name" bind:value={newShopName} class="shop-input" />
+						<input type="text" placeholder="Image URL (e.g. /images/shop/item.webp)" bind:value={newShopImage} class="shop-input" />
+						<textarea placeholder="Description" bind:value={newShopDesc} class="shop-input shop-textarea" rows="2"></textarea>
+						<div class="shop-form-row">
+							<label class="shop-field">
+								<span>Price (hours)</span>
+								<input type="number" min="1" bind:value={newShopPrice} class="shop-input shop-input-sm" />
+							</label>
+							<label class="shop-field">
+								<span>Stock (blank = infinite)</span>
+								<input type="text" placeholder="∞" bind:value={newShopStock} class="shop-input shop-input-sm" />
+							</label>
+							<label class="shop-field">
+								<span>Est. shipping</span>
+								<input type="text" placeholder="e.g. 2-3 weeks" bind:value={newShopShip} class="shop-input shop-input-sm" />
+							</label>
+						</div>
+						<div class="shop-form-row">
+							<label class="shop-checkbox">
+								<input type="checkbox" bind:checked={newShopActive} />
+								<span>Active (visible to users)</span>
+							</label>
+							<button class="btn btn-add-shop" onclick={createShopItem} disabled={shopSaving || !newShopName.trim() || !newShopImage.trim() || !newShopPrice}>
+								{shopSaving ? 'Saving...' : 'Add Item'}
+							</button>
+						</div>
+					</div>
+				</div>
+
+				{#if shopLoading}
+					<p class="loading">Loading shop items...</p>
+				{:else if shopItemsList.length === 0}
+					<p class="empty">No shop items yet.</p>
+				{:else}
+					<div class="shop-items-list">
+						{#each shopItemsList as item, idx}
+							<div
+								class="shop-item-row"
+								class:dragging={dragIdx === idx}
+								class:drag-over={dragOverIdx === idx}
+								class:inactive={!item.isActive}
+								draggable="true"
+								role="listitem"
+								ondragstart={() => handleDragStart(idx)}
+								ondragover={(e) => handleDragOver(e, idx)}
+								ondrop={() => handleDrop(idx)}
+								ondragend={handleDragEnd}
+							>
+								<div class="shop-item-drag-handle" title="Drag to reorder">&#x2630;</div>
+								{#if editingShop?.id === item.id}
+									<div class="shop-item-edit">
+										<input type="text" bind:value={editingShop.name} class="shop-input" />
+										<input type="text" bind:value={editingShop.imageUrl} class="shop-input" placeholder="Image URL" />
+										<textarea bind:value={editingShop.description} class="shop-input shop-textarea" rows="2"></textarea>
+										<div class="shop-form-row">
+											<label class="shop-field">
+												<span>Price (h)</span>
+												<input type="number" min="1" bind:value={editingShop.priceHours} class="shop-input shop-input-sm" />
+											</label>
+											<label class="shop-field">
+												<span>Stock</span>
+												<input type="number" min="0" value={editingShop.stock ?? ''} oninput={(e) => { const v = (e.target as HTMLInputElement).value; editingShop!.stock = v === '' ? null : parseInt(v); }} class="shop-input shop-input-sm" placeholder="∞" />
+											</label>
+											<label class="shop-field">
+												<span>Est. ship</span>
+												<input type="text" bind:value={editingShop.estimatedShip} class="shop-input shop-input-sm" placeholder="e.g. 2-3 weeks" />
+											</label>
+										</div>
+										<div class="shop-form-row">
+											<label class="shop-checkbox">
+												<input type="checkbox" bind:checked={editingShop.isActive} />
+												<span>Active</span>
+											</label>
+											<div class="shop-edit-actions">
+												<button class="btn btn-save" onclick={saveShopEdit} disabled={shopSaving}>Save</button>
+												<button class="btn btn-cancel" onclick={() => editingShop = null}>Cancel</button>
+											</div>
+										</div>
+									</div>
+								{:else}
+									<div class="shop-item-preview">
+										<img src={item.imageUrl} alt={item.name} class="shop-item-thumb" />
+										<div class="shop-item-info">
+											<strong>{item.name}</strong>
+											<span class="shop-item-meta">{item.priceHours}h · {item.stock === null ? '∞' : item.stock} stock{item.estimatedShip ? ` · ${item.estimatedShip}` : ''}{!item.isActive ? ' · HIDDEN' : ''}</span>
+										</div>
+									</div>
+									<div class="shop-item-actions">
+										<button class="btn btn-edit" onclick={() => editingShop = { ...item }}>Edit</button>
+										<button class="btn btn-delete" onclick={() => deleteShopItem(item.id)} disabled={shopSaving}>Delete</button>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
 		{:else if activeTab === 'projects'}
 			<div class="projects-admin">
 				<div class="status-pills">
@@ -713,12 +1179,21 @@
 
 									{#if selectedProject.screenshot1Url || selectedProject.screenshot2Url}
 										<div class="proj-screenshots">
-											{#if selectedProject.screenshot1Url}
-												<img src={selectedProject.screenshot1Url} alt="Screenshot 1" class="proj-screenshot" />
-											{/if}
-											{#if selectedProject.screenshot2Url}
-												<img src={selectedProject.screenshot2Url} alt="Screenshot 2" class="proj-screenshot" />
-											{/if}
+											<div class="proj-screenshot-viewer">
+												<img
+													src={projScreenIdx === 0 ? (selectedProject.screenshot1Url ?? selectedProject.screenshot2Url) : selectedProject.screenshot2Url}
+													alt="Screenshot {projScreenIdx + 1}"
+													class="proj-screenshot"
+												/>
+												{#if selectedProject.screenshot1Url && selectedProject.screenshot2Url}
+													<button class="proj-screen-arrow proj-screen-arrow-left" type="button" onclick={() => projScreenIdx = 0} disabled={projScreenIdx === 0}>&#8249;</button>
+													<button class="proj-screen-arrow proj-screen-arrow-right" type="button" onclick={() => projScreenIdx = 1} disabled={projScreenIdx === 1}>&#8250;</button>
+													<div class="proj-screen-dots">
+														<span class="proj-screen-dot" class:active={projScreenIdx === 0}></span>
+														<span class="proj-screen-dot" class:active={projScreenIdx === 1}></span>
+													</div>
+												{/if}
+											</div>
 										</div>
 									{/if}
 								</div>
@@ -919,6 +1394,11 @@
 
 	.tab:hover { color: #ccc; }
 	.tab.active { color: #fff; border-bottom-color: #5b9bd5; }
+
+	.tab-home {
+		margin-left: auto;
+		text-decoration: none;
+	}
 
 	.admin-content {
 		padding: 1rem 1.5rem;
@@ -1141,6 +1621,13 @@
 	}
 
 	.btn-ban:hover:not(:disabled) { background: #3a1a1a; }
+
+	.btn-impersonate {
+		background: #1a1a2a;
+		color: #55a0e0;
+		border-color: #20204a;
+	}
+	.btn-impersonate:hover:not(:disabled) { background: #1a1a3a; }
 
 	.perms-action { position: relative; }
 
@@ -1469,18 +1956,79 @@
 	}
 
 	.proj-screenshots {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
 		flex-shrink: 0;
 	}
 
+	.proj-screenshot-viewer {
+		position: relative;
+		display: inline-block;
+	}
+
 	.proj-screenshot {
-		max-width: 180px;
-		max-height: 130px;
+		max-width: 320px;
+		max-height: 220px;
 		border: 2px solid #555;
 		border-radius: 6px;
 		object-fit: cover;
+		display: block;
+	}
+
+	.proj-screen-arrow {
+		position: absolute;
+		top: 50%;
+		transform: translateY(-50%);
+		background: rgba(0, 0, 0, 0.55);
+		border: none;
+		color: #eee;
+		font-size: 20px;
+		width: 26px;
+		height: 34px;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		opacity: 0;
+		transition: opacity 150ms;
+	}
+
+	.proj-screenshot-viewer:hover .proj-screen-arrow {
+		opacity: 1;
+	}
+
+	.proj-screen-arrow:disabled {
+		opacity: 0 !important;
+		cursor: default;
+	}
+
+	.proj-screen-arrow-left {
+		left: 0;
+		border-radius: 0 4px 4px 0;
+	}
+
+	.proj-screen-arrow-right {
+		right: 0;
+		border-radius: 4px 0 0 4px;
+	}
+
+	.proj-screen-dots {
+		position: absolute;
+		bottom: 8px;
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		gap: 5px;
+	}
+
+	.proj-screen-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.35);
+	}
+
+	.proj-screen-dot.active {
+		background: #fff;
 	}
 
 	.proj-info-row {
@@ -1907,4 +2455,543 @@
 		outline: none;
 		border-color: #5b9bd5;
 	}
+
+	/* ── Shop Admin ── */
+	.shop-admin {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
+
+	.shop-form {
+		background: #2a2a2a;
+		border: 2px solid #555;
+		border-radius: 8px;
+		padding: 1.25rem;
+	}
+
+	.shop-form h3 {
+		margin: 0 0 1rem;
+		color: #e0e0e0;
+		font-size: 1rem;
+	}
+
+	.shop-form-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.shop-input {
+		background: #1e1e1e;
+		border: 2px solid #555;
+		border-radius: 4px;
+		color: #e0e0e0;
+		padding: 0.4rem 0.6rem;
+		font-size: 0.85rem;
+		font-family: inherit;
+		width: 100%;
+		box-sizing: border-box;
+	}
+
+	.shop-input:focus {
+		outline: none;
+		border-color: #5b9bd5;
+	}
+
+	.shop-textarea {
+		resize: vertical;
+	}
+
+	.shop-input-sm {
+		max-width: 140px;
+	}
+
+	.shop-form-row {
+		display: flex;
+		align-items: flex-end;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+
+	.shop-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		font-size: 0.8rem;
+		color: #aaa;
+	}
+
+	.shop-checkbox {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: 0.85rem;
+		color: #ccc;
+		cursor: pointer;
+	}
+
+	.btn-add-shop {
+		margin-left: auto;
+		background: #5b9bd5;
+		color: #111;
+		font-weight: 600;
+	}
+
+	.shop-items-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+	}
+
+	.shop-item-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.6rem 0.75rem;
+		background: #2a2a2a;
+		border: 2px solid #444;
+		border-bottom: none;
+		transition: background 120ms ease;
+		cursor: grab;
+	}
+
+	.shop-item-row:last-child {
+		border-bottom: 2px solid #444;
+		border-radius: 0 0 6px 6px;
+	}
+
+	.shop-item-row:first-child {
+		border-radius: 6px 6px 0 0;
+	}
+
+	.shop-item-row.dragging {
+		opacity: 0.4;
+	}
+
+	.shop-item-row.drag-over {
+		border-top: 3px solid #5b9bd5;
+	}
+
+	.shop-item-row.inactive {
+		opacity: 0.5;
+	}
+
+	.shop-item-drag-handle {
+		font-size: 1.1rem;
+		color: #666;
+		cursor: grab;
+		user-select: none;
+		flex-shrink: 0;
+		padding: 0 4px;
+	}
+
+	.shop-item-drag-handle:active {
+		cursor: grabbing;
+	}
+
+	.shop-item-preview {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.shop-item-thumb {
+		width: 48px;
+		height: 48px;
+		object-fit: cover;
+		border: 1px solid #555;
+		border-radius: 4px;
+		flex-shrink: 0;
+		background: #1a1a1a;
+	}
+
+	.shop-item-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		min-width: 0;
+		color: #e0e0e0;
+		font-size: 0.85rem;
+	}
+
+	.shop-item-info strong {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.shop-item-meta {
+		color: #888;
+		font-size: 0.75rem;
+	}
+
+	.shop-item-actions {
+		display: flex;
+		gap: 0.4rem;
+		flex-shrink: 0;
+	}
+
+	.shop-item-edit {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+
+	.shop-edit-actions {
+		display: flex;
+		gap: 0.4rem;
+		margin-left: auto;
+	}
+
+	/* Theme toggle button */
+	.theme-toggle {
+		background: #333;
+		color: #ccc;
+		border: 1px solid #555;
+		border-radius: 4px;
+		padding: 0.3rem 0.7rem;
+		font-size: 0.75rem;
+		font-family: inherit;
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s;
+	}
+	.theme-toggle:hover { background: #444; color: #fff; }
+
+	/* ── Light Mode ── */
+	.admin-shell.light {
+		background: #f5f4f1;
+		color: #1a1a1a;
+	}
+
+	.admin-shell.light .theme-toggle {
+		background: #e8e6e1;
+		color: #333;
+		border-color: #666;
+	}
+	.admin-shell.light .theme-toggle:hover { background: #ddd; color: #111; }
+
+	.admin-shell.light .admin-header {
+		background: #eae8e3;
+		border-bottom-color: #666;
+	}
+
+	.admin-shell.light .admin-header h1 { color: #1a1a1a; }
+	.admin-shell.light .admin-user { color: #555; }
+
+	.admin-shell.light .admin-tabs {
+		background: #eae8e3;
+		border-bottom-color: #666;
+	}
+
+	.admin-shell.light .tab { color: #666; }
+	.admin-shell.light .tab:hover { color: #222; }
+	.admin-shell.light .tab.active { color: #1a1a1a; border-bottom-color: #3b7bb5; }
+
+	/* Inputs & selects */
+	.admin-shell.light .users-search,
+	.admin-shell.light .type-filter-select {
+		background: #fff;
+		border-color: #555;
+		color: #1a1a1a;
+	}
+	.admin-shell.light .users-search:focus,
+	.admin-shell.light .type-filter-select:focus {
+		border-color: #3b7bb5;
+	}
+
+	.admin-shell.light .users-perms-filter {
+		background: #f5f4f1;
+		border-color: #555;
+		color: #1a1a1a;
+	}
+	.admin-shell.light .users-perms-filter:focus { border-color: #3b7bb5; }
+
+	/* Tables */
+	.admin-shell.light .users-table th,
+	.admin-shell.light .mini-table th {
+		color: #555;
+	}
+
+	.admin-shell.light .users-table td,
+	.admin-shell.light .mini-table td {
+		border-bottom-color: #999;
+	}
+
+	.admin-shell.light .users-table th,
+	.admin-shell.light .mini-table th {
+		border-bottom-color: #666;
+	}
+
+	.admin-shell.light .users-table tbody tr:hover { background: #eae8e3; }
+	.admin-shell.light .users-table tbody tr.selected { background: #d8e6f3; }
+
+	/* Detail panel */
+	.admin-shell.light .detail-panel {
+		background: #fff;
+		border-color: #666;
+	}
+
+	.admin-shell.light .detail-header {
+		background: #fff;
+		border-bottom-color: #666;
+	}
+
+	.admin-shell.light .detail-header h2 { color: #1a1a1a; }
+	.admin-shell.light .close-btn { color: #777; }
+	.admin-shell.light .close-btn:hover { color: #222; }
+
+	.admin-shell.light .detail-section h3 { color: #555; }
+	.admin-shell.light dt { color: #555; }
+	.admin-shell.light dd { color: #1a1a1a; }
+
+	/* Badges */
+	.admin-shell.light .badge { background: #d4edda; color: #2d6a3f; }
+	.admin-shell.light .badge.banned { background: #f5d5d5; color: #c02020; }
+	.admin-shell.light .badge-approved { background: #d0e4f5; color: #2a6699; }
+	.admin-shell.light .badge-unreviewed { background: #f5ecd0; color: #8a7020; }
+	.admin-shell.light .badge-changes_needed { background: #f5dcc8; color: #9a5520; }
+	.admin-shell.light .badge-unshipped { background: #e8e6e1; color: #555; }
+
+	/* Buttons */
+	.admin-shell.light .btn { border-color: #555; }
+
+	.admin-shell.light .btn-promote { background: #d0e4f5; color: #2a6699; border-color: #5588aa; }
+	.admin-shell.light .btn-promote:hover:not(:disabled) { background: #bdd8f0; }
+
+	.admin-shell.light .btn-ban { background: #f5d5d5; color: #c02020; border-color: #aa5050; }
+	.admin-shell.light .btn-ban:hover:not(:disabled) { background: #f0c0c0; }
+
+	.admin-shell.light .btn-impersonate { background: #d0dff5; color: #2255a0; border-color: #5577aa; }
+	.admin-shell.light .btn-impersonate:hover:not(:disabled) { background: #c0d0f0; }
+
+	/* Perms dropdown */
+	.admin-shell.light .perms-dropdown { background: #fff; border-color: #666; }
+	.admin-shell.light .perms-option { color: #1a1a1a; }
+	.admin-shell.light .perms-option:hover:not(:disabled) { background: #f0efe8; }
+	.admin-shell.light .perms-option.current { color: #3b7bb5; }
+
+	.admin-shell.light .loading,
+	.admin-shell.light .empty,
+	.admin-shell.light .placeholder { color: #777; }
+
+	/* News */
+	.admin-shell.light .news-form { background: #fff; border-color: #666; }
+	.admin-shell.light .news-form h3 { color: #555; }
+	.admin-shell.light .news-input,
+	.admin-shell.light .news-edit-input { background: #f5f4f1; border-color: #555; color: #1a1a1a; }
+	.admin-shell.light .news-input:focus,
+	.admin-shell.light .news-edit-input:focus { border-color: #3b7bb5; }
+
+	.admin-shell.light .btn-now { background: #e8e6e1; color: #333; border-color: #555; }
+	.admin-shell.light .btn-now:hover:not(:disabled) { background: #ddd; }
+	.admin-shell.light .btn-add-news { background: #d4edda; color: #2d6a3f; border-color: #508850; }
+	.admin-shell.light .btn-add-news:hover:not(:disabled) { background: #c0e0c0; }
+	.admin-shell.light .btn-edit { background: #d0e4f5; color: #2a6699; border-color: #5588aa; }
+	.admin-shell.light .btn-edit:hover:not(:disabled) { background: #bdd8f0; }
+	.admin-shell.light .btn-delete { background: #f5d5d5; color: #c02020; border-color: #aa5050; }
+	.admin-shell.light .btn-delete:hover:not(:disabled) { background: #f0c0c0; }
+	.admin-shell.light .btn-save { background: #d4edda; color: #2d6a3f; border-color: #508850; }
+	.admin-shell.light .btn-save:hover:not(:disabled) { background: #c0e0c0; }
+	.admin-shell.light .btn-cancel { background: #e8e6e1; color: #555; border-color: #555; }
+	.admin-shell.light .btn-cancel:hover:not(:disabled) { background: #ddd; }
+
+	/* Projects tab */
+	.admin-shell.light .pill { background: #e8e6e1; border-color: #555; color: #444; }
+	.admin-shell.light .pill:hover { background: #ddd; color: #222; }
+	.admin-shell.light .pill-count { background: #999; color: #333; }
+	.admin-shell.light .pill.active .pill-count { background: rgba(0,0,0,0.2); }
+
+	.admin-shell.light .pill-unshipped { background: #f0c8c7; border-color: #996060; color: #6a2020; }
+	.admin-shell.light .pill-unshipped.active { background: #e8b5b4; border-color: #885050; }
+	.admin-shell.light .pill-unreviewed { background: #ebe3d0; border-color: #908060; color: #5a4820; }
+	.admin-shell.light .pill-unreviewed.active { background: #e0d8c0; border-color: #807050; }
+	.admin-shell.light .pill-changes_needed { background: #f5dca0; border-color: #998040; color: #6a4a10; }
+	.admin-shell.light .pill-changes_needed.active { background: #f0d490; border-color: #887030; }
+	.admin-shell.light .pill-approved { background: #c0d8ee; border-color: #6088aa; color: #1a4a70; }
+	.admin-shell.light .pill-approved.active { background: #b0cce8; border-color: #507899; }
+
+	.admin-shell.light .proj-split { background: #666; border-color: #666; }
+	.admin-shell.light .proj-sidebar { background: #f5f4f1; }
+	.admin-shell.light .proj-sidebar-item { color: #444; border-bottom-color: #999; }
+	.admin-shell.light .proj-sidebar-item:hover { background: #eae8e3; }
+	.admin-shell.light .proj-sidebar-item.active { background: #e0dee8; border-left-color: #3b7bb5; }
+	.admin-shell.light .proj-sidebar-name { color: #1a1a1a; }
+	.admin-shell.light .proj-sidebar-meta { color: #666; }
+
+	.admin-shell.light .proj-main { background: #fff; }
+	.admin-shell.light .proj-main-empty { color: #888; }
+	.admin-shell.light .proj-main-title { color: #1a1a1a; }
+	.admin-shell.light .proj-main-desc { color: #333; }
+	.admin-shell.light .proj-main-meta { color: #555; }
+	.admin-shell.light .proj-main-meta strong { color: #1a1a1a; }
+
+	.admin-shell.light .proj-divider { border-top-color: #666; }
+	.admin-shell.light .proj-screenshot { border-color: #555; }
+	.admin-shell.light .proj-info-label { color: #555; }
+	.admin-shell.light .proj-info-value { color: #1a1a1a; }
+
+	/* Hackatime detail */
+	.admin-shell.light .ht-header { color: #333; }
+	.admin-shell.light .ht-total { color: #2a6699; }
+	.admin-shell.light .ht-project { background: #f5f4f1; border-color: #555; color: #333; }
+	.admin-shell.light .ht-project-name { color: #1a1a1a; }
+	.admin-shell.light .ht-project-hours { color: #2a6699; }
+	.admin-shell.light .ht-project-langs { color: #666; }
+	.admin-shell.light .ht-loading { color: #777; }
+	.admin-shell.light .ht-empty { color: #888; }
+
+	/* Feedback / justification textareas */
+	.admin-shell.light .user-feedback,
+	.admin-shell.light .ht-justification {
+		background: #f5f4f1;
+		border-color: #555;
+		color: #1a1a1a;
+	}
+	.admin-shell.light .user-feedback:focus,
+	.admin-shell.light .ht-justification:focus { border-color: #3b7bb5; }
+	.admin-shell.light .user-feedback-label,
+	.admin-shell.light .ht-justification-label { color: #555; }
+
+	/* Hours adjust */
+	.admin-shell.light .hours-adjust-label { color: #555; }
+	.admin-shell.light .hours-btn { background: #e8e6e1; border-color: #555; color: #1a1a1a; }
+	.admin-shell.light .hours-btn:hover { background: #ddd; }
+	.admin-shell.light .hours-tick { background: #e8e6e1; border-color: #555; color: #1a1a1a; }
+	.admin-shell.light .hours-tick:hover { background: #ddd; }
+	.admin-shell.light .hours-input { background: #fff; border-color: #555; color: #1a1a1a; }
+	.admin-shell.light .hours-input:focus { border-color: #3b7bb5; }
+
+	/* Review buttons */
+	.admin-shell.light .review-btn-approve { background: #3a8a4a; }
+	.admin-shell.light .review-btn-reject { background: #b83030; }
+	.admin-shell.light .review-btn-ban { background: #fff; border-color: #b83030; color: #b83030; }
+
+	/* Review cards */
+	.admin-shell.light .reviews-heading { color: #333; }
+	.admin-shell.light .review-card { background: #f5f4f1; border-color: #666; }
+	.admin-shell.light .review-card-reviewer { color: #222; }
+	.admin-shell.light .review-card-date { color: #777; }
+	.admin-shell.light .review-card-label { color: #666; }
+	.admin-shell.light .review-card-text { color: #333; }
+	.admin-shell.light .review-card-internal { background: rgba(180, 140, 50, 0.08); }
+
+	/* Alerts */
+	.admin-shell.light .unified-duplicate-alert { background: rgba(220, 50, 50, 0.08); }
+	.admin-shell.light .unified-error-alert { background: rgba(180, 140, 50, 0.08); }
+
+	/* Shop */
+	.admin-shell.light .shop-form { background: #fff; border-color: #666; }
+	.admin-shell.light .shop-form h3 { color: #1a1a1a; }
+	.admin-shell.light .shop-input { background: #f5f4f1; border-color: #555; color: #1a1a1a; }
+	.admin-shell.light .shop-input:focus { border-color: #3b7bb5; }
+	.admin-shell.light .shop-checkbox { color: #333; }
+	.admin-shell.light .btn-add-shop { background: #3b7bb5; color: #fff; }
+	.admin-shell.light .shop-item-row { background: #fff; border-color: #666; }
+	.admin-shell.light .shop-item-row.drag-over { border-top-color: #3b7bb5; }
+	.admin-shell.light .shop-item-drag-handle { color: #666; }
+	.admin-shell.light .shop-item-thumb { border-color: #555; background: #f5f4f1; }
+	.admin-shell.light .shop-item-info { color: #1a1a1a; }
+	.admin-shell.light .shop-item-meta { color: #666; }
+	.admin-shell.light .shop-field { color: #555; }
+
+	/* Links */
+	.admin-shell.light .ht-btn-docs { background: #f5f4f1; color: #1a1a1a; border-color: #555; }
+
+	.admin-shell.light .mono { color: #1a1a1a; }
+
+	/* ── Fulfillment ─────────────────────────────────── */
+	.fulfillment-admin { padding: 0; }
+
+	.fulfillment-toolbar {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.admin-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.85rem;
+	}
+
+	.admin-table th,
+	.admin-table td {
+		padding: 0.5rem 0.75rem;
+		text-align: left;
+		border-bottom: 1px solid rgba(255,255,255,0.08);
+	}
+
+	.admin-table th {
+		color: #93b4cd;
+		font-weight: 600;
+		font-size: 0.8rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.admin-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+	.admin-table tbody tr.fulfilled { opacity: 0.55; }
+
+	.status-badge {
+		display: inline-block;
+		padding: 0.15rem 0.5rem;
+		border-radius: 4px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+	}
+	.status-pending { background: rgba(196, 131, 130, 0.25); color: #c48382; }
+	.status-fulfilled { background: rgba(147, 180, 205, 0.25); color: #93b4cd; }
+
+	.fulfillment-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		min-width: 220px;
+	}
+
+	.fulfillment-msg-row {
+		display: flex;
+		gap: 0.25rem;
+	}
+
+	.fulfillment-msg-input {
+		flex: 1;
+		font-size: 0.8rem;
+		padding: 0.25rem 0.5rem;
+		background: rgba(0,0,0,0.3);
+		border: 1px solid rgba(255,255,255,0.15);
+		color: inherit;
+		border-radius: 3px;
+	}
+
+	.fulfillment-msg-input:focus {
+		outline: none;
+		border-color: #93b4cd;
+	}
+
+	.btn-sm {
+		font-size: 0.75rem;
+		padding: 0.25rem 0.6rem;
+	}
+
+	.btn-primary {
+		background: rgba(147, 180, 205, 0.3);
+		border-color: #93b4cd;
+		color: #e6f4fe;
+	}
+	.btn-primary:hover { background: rgba(147, 180, 205, 0.5); }
+
+	/* light mode overrides */
+	.admin-shell.light .admin-table th { color: #333; }
+	.admin-shell.light .admin-table td { border-color: #ddd; }
+	.admin-shell.light .admin-table tbody tr:hover { background: rgba(0,0,0,0.03); }
+	.admin-shell.light .fulfillment-msg-input { background: #fff; border-color: #ccc; color: #1a1a1a; }
+	.admin-shell.light .status-pending { background: rgba(196, 131, 130, 0.15); }
+	.admin-shell.light .status-fulfilled { background: rgba(147, 180, 205, 0.15); }
 </style>

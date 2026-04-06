@@ -10,11 +10,12 @@ export class AuditLogService {
     private auditLogRepo: Repository<AuditLog>,
   ) {}
 
-  async log(userId: string, action: AuditAction, label: string): Promise<void> {
+  async log(userId: string, action: AuditAction, label: string, impersonatorName?: string): Promise<void> {
+    const prefix = impersonatorName ? `[${impersonatorName} performed an action on your behalf] ` : '';
     const entry = this.auditLogRepo.create({
       userId,
       action,
-      label: label.replace(/[<>"'`&\\]/g, '').replace(/\0/g, '').trim().slice(0, 255),
+      label: (prefix + label).replace(/[<>"'`&\\]/g, '').replace(/\0/g, '').trim().slice(0, 255),
     });
     await this.auditLogRepo.save(entry);
   }

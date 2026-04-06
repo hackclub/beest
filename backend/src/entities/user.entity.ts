@@ -30,6 +30,12 @@ export class User {
   @Column({ name: 'two_emails', default: false })
   twoEmails: boolean;
 
+  @Column({ name: 'has_address', default: false })
+  hasAddress: boolean;
+
+  @Column({ name: 'has_birthdate', default: false })
+  hasBirthdate: boolean;
+
   @Column({ nullable: true, name: 'hackatime_user_id' })
   hackatimeUserId: string;
 
@@ -40,6 +46,9 @@ export class User {
     transformer: encryptedTransformer,
   })
   hackatimeToken: string;
+
+  @Column({ type: 'integer', default: 0 })
+  pipes: number;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

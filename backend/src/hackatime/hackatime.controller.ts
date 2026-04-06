@@ -51,7 +51,8 @@ export class HackatimeController {
       throw new BadRequestException('State parameters are required');
     }
 
-    const userId = (req as any).user?.sub;
+    const user = (req as any).user;
+    const userId = user?.sub;
     if (!userId) {
       throw new UnauthorizedException('No user identity');
     }
@@ -62,6 +63,7 @@ export class HackatimeController {
         body.state,
         body.storedState,
         userId,
+        user.impersonator_name,
       );
     } catch {
       throw new UnauthorizedException('Hackatime authentication failed');

@@ -13,6 +13,8 @@ import { Project } from '../entities/project.entity';
 import { AuditLog } from '../entities/audit-log.entity';
 import { NewsItem } from '../entities/news-item.entity';
 import { ProjectReview } from '../entities/project-review.entity';
+import { ShopItem } from '../entities/shop-item.entity';
+import { Order } from '../entities/order.entity';
 import { RsvpService } from '../rsvp/rsvp.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { fetchWithTimeout } from '../fetch.util';
@@ -42,6 +44,8 @@ export class AdminService {
     @InjectRepository(AuditLog) private readonly auditLogRepo: Repository<AuditLog>,
     @InjectRepository(NewsItem) private readonly newsRepo: Repository<NewsItem>,
     @InjectRepository(ProjectReview) private readonly reviewRepo: Repository<ProjectReview>,
+    @InjectRepository(ShopItem) private readonly shopRepo: Repository<ShopItem>,
+    @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
     private readonly rsvpService: RsvpService,
     private readonly auditLogService: AuditLogService,
   ) {
@@ -86,6 +90,12 @@ export class AdminService {
       select: ['id', 'name', 'status', 'projectType', 'createdAt'],
     });
 
+    const orders = await this.orderRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+      select: ['id', 'itemName', 'quantity', 'pipesSpent', 'status', 'createdAt'],
+    });
+
     const sessions = await this.sessionRepo.count({ where: { userId } });
 
     const auditLogs = await this.auditLogRepo.find({
@@ -115,14 +125,16 @@ export class AdminService {
       twoEmails: user.twoEmails,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
+      pipes: user.pipes ?? 0,
       perms,
       projects,
+      orders,
       activeSessions: sessions,
       auditLogs,
     };
   }
 
-  async banUser(userId: string): Promise<void> {
+  async banUser(userId: string, adminId?: string): Promise<void> {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -131,6 +143,15 @@ export class AdminService {
 
     // 2. Revoke all sessions for this user
     await this.sessionRepo.delete({ userId });
+
+    // 3. Audit log on the banned user's record
+    const identifier = user.name || user.slackId || user.hcaSub;
+    await this.auditLogService.log(userId, 'admin_ban', `Banned user ${identifier}`);
+
+    // 4. Audit log on the admin's record
+    if (adminId) {
+      await this.auditLogService.log(adminId, 'admin_ban', `Banned user ${identifier}`);
+    }
   }
 
   async banAndRejectProject(
@@ -171,7 +192,7 @@ export class AdminService {
     return { success: true };
   }
 
-  async updatePerms(userId: string, perms: string): Promise<void> {
+  async updatePerms(userId: string, perms: string, adminId?: string): Promise<void> {
     if (!VALID_PERMS.includes(perms as any)) {
       throw new BadRequestException(
         `Invalid perms value. Must be one of: ${VALID_PERMS.join(', ')}`,
@@ -182,6 +203,13 @@ export class AdminService {
     if (!user) throw new NotFoundException('User not found');
 
     await this.rsvpService.updatePerms(user.email, perms);
+
+    const identifier = user.name || user.slackId || user.hcaSub;
+    await this.auditLogService.log(userId, 'admin_perms_change', `Changed ${identifier} perms to ${perms}`);
+
+    if (adminId) {
+      await this.auditLogService.log(adminId, 'admin_perms_change', `Changed ${identifier} perms to ${perms}`);
+    }
   }
 
   // ── Projects ──
@@ -257,7 +285,21 @@ export class AdminService {
     }
     await this.projectRepo.save(project);
 
-    // 2. Save the review record
+    // 2. Grant pipes when approving (user-facing hours = overrideHours)
+    //    Uses atomic increment to prevent race conditions.
+    //    Only grants the delta if project was previously approved (re-approval case).
+    if (status === 'approved' && project.overrideHours != null && project.overrideHours > 0) {
+      const pipesToGrant = Math.floor(project.overrideHours);
+      const previouslyGranted = project.pipesGranted ?? 0;
+      const delta = pipesToGrant - previouslyGranted;
+      if (delta > 0) {
+        await this.userRepo.increment({ id: project.userId }, 'pipes', delta);
+        project.pipesGranted = pipesToGrant;
+        await this.projectRepo.save(project);
+      }
+    }
+
+    // 3. Save the review record
     const review = this.reviewRepo.create({
       projectId,
       reviewerId,
@@ -268,7 +310,7 @@ export class AdminService {
     });
     await this.reviewRepo.save(review);
 
-    // 3. Audit log to the project owner (not the reviewer)
+    // 4. Audit log to the project owner (not the reviewer)
     const label =
       status === 'approved'
         ? `Project "${project.name}" was approved`
@@ -477,5 +519,72 @@ export class AdminService {
     const item = await this.newsRepo.findOne({ where: { id } });
     if (!item) throw new NotFoundException('News item not found');
     await this.newsRepo.remove(item);
+  }
+
+  // ── Shop CRUD ──
+
+  async listShopItems(): Promise<ShopItem[]> {
+    return this.shopRepo.find({ order: { sortOrder: 'ASC' } });
+  }
+
+  async createShopItem(data: {
+    name: string;
+    description: string;
+    imageUrl: string;
+    priceHours: number;
+    stock?: number | null;
+    estimatedShip?: string | null;
+    isActive?: boolean;
+  }): Promise<ShopItem> {
+    const maxOrder = await this.shopRepo
+      .createQueryBuilder('s')
+      .select('MAX(s.sortOrder)', 'max')
+      .getRawOne();
+    const sortOrder = (maxOrder?.max ?? -1) + 1;
+
+    const item = this.shopRepo.create({
+      name: data.name,
+      description: data.description,
+      imageUrl: data.imageUrl,
+      priceHours: data.priceHours,
+      stock: data.stock ?? null,
+      estimatedShip: data.estimatedShip ?? null,
+      isActive: data.isActive ?? true,
+      sortOrder,
+    });
+    return this.shopRepo.save(item);
+  }
+
+  async updateShopItem(id: string, data: {
+    name?: string;
+    description?: string;
+    imageUrl?: string;
+    priceHours?: number;
+    stock?: number | null;
+    estimatedShip?: string | null;
+    isActive?: boolean;
+  }): Promise<ShopItem> {
+    const item = await this.shopRepo.findOne({ where: { id } });
+    if (!item) throw new NotFoundException('Shop item not found');
+    if (data.name !== undefined) item.name = data.name;
+    if (data.description !== undefined) item.description = data.description;
+    if (data.imageUrl !== undefined) item.imageUrl = data.imageUrl;
+    if (data.priceHours !== undefined) item.priceHours = data.priceHours;
+    if (data.stock !== undefined) item.stock = data.stock;
+    if (data.estimatedShip !== undefined) item.estimatedShip = data.estimatedShip;
+    if (data.isActive !== undefined) item.isActive = data.isActive;
+    return this.shopRepo.save(item);
+  }
+
+  async deleteShopItem(id: string): Promise<void> {
+    const item = await this.shopRepo.findOne({ where: { id } });
+    if (!item) throw new NotFoundException('Shop item not found');
+    await this.shopRepo.remove(item);
+  }
+
+  async reorderShopItems(items: { id: string; sortOrder: number }[]): Promise<void> {
+    await Promise.all(
+      items.map((i) => this.shopRepo.update(i.id, { sortOrder: i.sortOrder })),
+    );
   }
 }

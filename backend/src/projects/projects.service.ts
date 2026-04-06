@@ -1,11 +1,13 @@
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Project, VALID_PROJECT_TYPES } from '../entities/project.entity';
+import { Comment } from '../entities/comment.entity';
 import { fetchWithTimeout } from '../fetch.util';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { HackatimeService } from '../hackatime/hackatime.service';
+import { RsvpService } from '../rsvp/rsvp.service';
 import { CreateProjectDto } from './create-project.dto';
 import { UpdateProjectDto } from './update-project.dto';
 
@@ -36,8 +38,11 @@ export class ProjectsService {
     private configService: ConfigService,
     private auditLogService: AuditLogService,
     private hackatimeService: HackatimeService,
+    private rsvpService: RsvpService,
     @InjectRepository(Project)
     private projectRepo: Repository<Project>,
+    @InjectRepository(Comment)
+    private commentRepo: Repository<Comment>,
   ) {
     this.cdnApiKey = this.configService.getOrThrow('CDN_API_KEY');
   }
@@ -50,6 +55,7 @@ export class ProjectsService {
     dto: CreateProjectDto,
     userId: string,
     hcaSub: string,
+    impersonatorName?: string,
   ) {
     // --- required fields ---
     const name = this.requireString(dto.name, 'name', 50);
@@ -108,6 +114,7 @@ export class ProjectsService {
       userId,
       'project_created',
       `Created project "${name}"`,
+      impersonatorName,
     );
 
     // Strip internal fields before returning to frontend
@@ -139,6 +146,80 @@ export class ProjectsService {
       ],
     });
     return projects;
+  }
+
+  /**
+   * Returns all approved projects with public-safe fields + hours.
+   */
+  async findApprovedProjects(): Promise<
+    {
+      id: string;
+      name: string;
+      description: string;
+      projectType: string;
+      screenshot1Url: string | null;
+      screenshot2Url: string | null;
+      codeUrl: string | null;
+      demoUrl: string | null;
+      hours: number;
+      builderName: string;
+    }[]
+  > {
+    const projects = await this.projectRepo
+      .createQueryBuilder('project')
+      .innerJoinAndSelect('project.user', 'user')
+      .where('project.status = :status', { status: 'approved' })
+      .select([
+        'project.id',
+        'project.name',
+        'project.description',
+        'project.projectType',
+        'project.screenshot1Url',
+        'project.screenshot2Url',
+        'project.codeUrl',
+        'project.demoUrl',
+        'project.hackatimeProjectName',
+        'project.overrideHours',
+        'user.hcaSub',
+        'user.name',
+        'user.nickname',
+        'user.hackatimeToken',
+      ])
+      .getMany();
+
+    const results = await Promise.allSettled(
+      projects.map(async (p) => {
+        const names = (p.hackatimeProjectName ?? []).filter((n) => !!n);
+        let hours = 0;
+        if (p.overrideHours != null) {
+          hours = p.overrideHours;
+        } else if (names.length > 0 && p.user.hackatimeToken) {
+          const result = await this.hackatimeService.getHoursForProjects(
+            p.user.hcaSub,
+            names,
+          );
+          hours = result.hours;
+        }
+        return {
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          projectType: p.projectType,
+          screenshot1Url: p.screenshot1Url,
+          screenshot2Url: p.screenshot2Url,
+          codeUrl: p.codeUrl,
+          demoUrl: p.demoUrl,
+          hours,
+          builderName: p.user.nickname || p.user.name || 'Anonymous',
+        };
+      }),
+    );
+
+    return results
+      .filter(
+        (r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled',
+      )
+      .map((r) => r.value);
   }
 
   async userHasProjects(userId: string): Promise<boolean> {
@@ -203,6 +284,7 @@ export class ProjectsService {
     dto: UpdateProjectDto,
     userId: string,
     hcaSub: string,
+    impersonatorName?: string,
   ) {
     const project = await this.projectRepo.findOne({
       where: { id: projectId, userId },
@@ -263,10 +345,18 @@ export class ProjectsService {
       project.aiUse = dto.aiUse === null ? null : this.validateOptionalString(dto.aiUse, 'aiUse', 200);
     }
     if (dto.status !== undefined) {
-      if (dto.status !== 'unreviewed') {
-        throw new BadRequestException('You can only submit a project for review');
+      if (dto.status === 'unreviewed') {
+        project.status = 'unreviewed';
+      } else if (
+        dto.status === 'unshipped' &&
+        project.status === 'unreviewed'
+      ) {
+        project.status = 'unshipped';
+      } else {
+        throw new BadRequestException(
+          'Invalid status transition',
+        );
       }
-      project.status = 'unreviewed';
     }
 
     const saved = await this.projectRepo.save(project);
@@ -276,12 +366,21 @@ export class ProjectsService {
         userId,
         'project_submitted',
         `Submitted "${project.name}" for review`,
+        impersonatorName,
+      );
+    } else if (dto.status === 'unshipped') {
+      await this.auditLogService.log(
+        userId,
+        'project_updated',
+        `Converted "${project.name}" back to draft`,
+        impersonatorName,
       );
     } else {
       await this.auditLogService.log(
         userId,
         'project_updated',
         `Updated project "${project.name}"`,
+        impersonatorName,
       );
     }
 
@@ -289,7 +388,7 @@ export class ProjectsService {
     return safe;
   }
 
-  async delete(projectId: string, userId: string) {
+  async delete(projectId: string, userId: string, impersonatorName?: string) {
     const project = await this.projectRepo.findOne({
       where: { id: projectId, userId },
     });
@@ -302,7 +401,136 @@ export class ProjectsService {
       userId,
       'project_deleted',
       `Deleted project "${name}"`,
+      impersonatorName,
     );
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Project detail (public, single approved project)                   */
+  /* ------------------------------------------------------------------ */
+
+  async findApprovedProjectById(projectId: string) {
+    const project = await this.projectRepo
+      .createQueryBuilder('project')
+      .innerJoinAndSelect('project.user', 'user')
+      .where('project.id = :id', { id: projectId })
+      .andWhere('project.status = :status', { status: 'approved' })
+      .select([
+        'project.id',
+        'project.name',
+        'project.description',
+        'project.projectType',
+        'project.screenshot1Url',
+        'project.screenshot2Url',
+        'project.codeUrl',
+        'project.demoUrl',
+        'project.hackatimeProjectName',
+        'project.overrideHours',
+        'user.id',
+        'user.hcaSub',
+        'user.name',
+        'user.nickname',
+        'user.hackatimeToken',
+      ])
+      .getOne();
+
+    if (!project) return null;
+
+    const names = (project.hackatimeProjectName ?? []).filter((n) => !!n);
+    let hours = 0;
+    if (project.overrideHours != null) {
+      hours = project.overrideHours;
+    } else if (names.length > 0 && project.user.hackatimeToken) {
+      try {
+        const result = await this.hackatimeService.getHoursForProjects(
+          project.user.hcaSub,
+          names,
+        );
+        hours = result.hours;
+      } catch { /* graceful fallback */ }
+    }
+
+    return {
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      projectType: project.projectType,
+      screenshot1Url: project.screenshot1Url,
+      screenshot2Url: project.screenshot2Url,
+      codeUrl: project.codeUrl,
+      demoUrl: project.demoUrl,
+      hours,
+      builderName: project.user.nickname || project.user.name || 'Anonymous',
+      ownerId: project.user.id,
+    };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Comments                                                           */
+  /* ------------------------------------------------------------------ */
+
+  async getComments(projectId: string) {
+    const comments = await this.commentRepo.find({
+      where: { projectId },
+      order: { createdAt: 'ASC' },
+      relations: ['user'],
+    });
+
+    return comments.map((c) => ({
+      id: c.id,
+      body: c.body,
+      authorName: c.user?.nickname || c.user?.name || 'Anonymous',
+      authorId: c.userId,
+      createdAt: c.createdAt,
+    }));
+  }
+
+  async addComment(projectId: string, userId: string, body: string) {
+    // Verify the project exists and is approved
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId, status: 'approved' },
+      select: ['id'],
+    });
+    if (!project) throw new NotFoundException('Project not found');
+
+    // Sanitize and validate
+    const clean = this.sanitize(body).slice(0, 500);
+    if (clean.length === 0) {
+      throw new BadRequestException('Comment cannot be empty');
+    }
+
+    const comment = this.commentRepo.create({
+      projectId,
+      userId,
+      body: clean,
+    });
+    const saved = await this.commentRepo.save(comment);
+
+    return { id: saved.id, body: saved.body, createdAt: saved.createdAt };
+  }
+
+  async deleteComment(commentId: string, userId: string, userEmail: string) {
+    const comment = await this.commentRepo.findOne({
+      where: { id: commentId },
+      relations: ['project'],
+    });
+    if (!comment) throw new NotFoundException('Comment not found');
+
+    // Allow deletion by: comment author, project owner, or admin
+    const isAuthor = comment.userId === userId;
+    const isProjectOwner = comment.project?.userId === userId;
+
+    if (!isAuthor && !isProjectOwner) {
+      // Check if user is admin
+      const perms = await this.rsvpService.getPerms(userEmail);
+      const isAdmin = perms && ['Super Admin', 'Reviewer', 'Fraud Reviewer'].includes(perms);
+      if (!isAdmin) {
+        throw new ForbiddenException('Not allowed to delete this comment');
+      }
+    }
+
+    await this.commentRepo.remove(comment);
+    return { deleted: true };
   }
 
   /* ------------------------------------------------------------------ */

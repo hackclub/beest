@@ -68,12 +68,60 @@ export class ProjectsController {
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @UseGuards(JwtAuthGuard)
+  @Get('explore')
+  async explore() {
+    return this.projectsService.findApprovedProjects();
+  }
+
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @Get('explore/:id')
+  async exploreDetail(@Param('id') id: string) {
+    const project = await this.projectsService.findApprovedProjectById(id);
+    if (!project) throw new UnauthorizedException('Project not found');
+    return project;
+  }
+
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @Get('explore/:id/comments')
+  async getComments(@Param('id') projectId: string) {
+    return this.projectsService.getComments(projectId);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @Post('explore/:id/comments')
+  async addComment(
+    @Param('id') projectId: string,
+    @Req() req: Request,
+    @Body() body: { body?: string },
+  ) {
+    const user = (req as any).user;
+    if (!user?.uid) throw new UnauthorizedException('No user identity');
+    return this.projectsService.addComment(projectId, user.uid, body.body ?? '');
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @Delete('explore/:id/comments/:commentId')
+  async deleteComment(
+    @Param('commentId') commentId: string,
+    @Req() req: Request,
+  ) {
+    const user = (req as any).user;
+    if (!user?.uid) throw new UnauthorizedException('No user identity');
+    return this.projectsService.deleteComment(commentId, user.uid, user.email);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
   @Post()
   async create(@Req() req: Request, @Body() dto: CreateProjectDto) {
     const user = (req as any).user;
     if (!user?.uid) throw new UnauthorizedException('No user identity');
 
-    return this.projectsService.create(dto, user.uid, user.sub);
+    return this.projectsService.create(dto, user.uid, user.sub, user.impersonator_name);
   }
 
   @Throttle({ default: { limit: 30, ttl: 60000 } })
@@ -97,7 +145,7 @@ export class ProjectsController {
     const user = (req as any).user;
     if (!user?.uid) throw new UnauthorizedException('No user identity');
 
-    return this.projectsService.update(id, dto, user.uid, user.sub);
+    return this.projectsService.update(id, dto, user.uid, user.sub, user.impersonator_name);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })
@@ -107,7 +155,7 @@ export class ProjectsController {
     const user = (req as any).user;
     if (!user?.uid) throw new UnauthorizedException('No user identity');
 
-    await this.projectsService.delete(id, user.uid);
+    await this.projectsService.delete(id, user.uid, user.impersonator_name);
     return { deleted: true };
   }
 

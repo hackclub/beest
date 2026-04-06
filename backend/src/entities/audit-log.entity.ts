@@ -18,6 +18,9 @@ export const AUDIT_ACTIONS = [
   'admin_ban',
   'admin_perms_change',
   'project_reviewed',
+  'admin_impersonate',
+  'shop_purchase',
+  'order_fulfilled',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

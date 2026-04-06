@@ -85,6 +85,7 @@ export class HackatimeService implements OnModuleInit {
     returnedSignedState: string,
     cookieState: string,
     userId: string,
+    impersonatorName?: string,
   ): Promise<{ success: boolean; redirectTo: string }> {
     this.assertConfigured();
 
@@ -180,7 +181,7 @@ export class HackatimeService implements OnModuleInit {
     await this.userRepo.save(user);
     this.logger.log(`Hackatime connected for user ${userId}`);
 
-    await this.auditLogService.log(user.id, 'hackatime_connected', 'Connected Hackatime');
+    await this.auditLogService.log(user.id, 'hackatime_connected', 'Connected Hackatime', impersonatorName);
 
     return { success: true, redirectTo: '/tutorial?stage=2' };
   }

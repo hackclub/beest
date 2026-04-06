@@ -74,9 +74,6 @@
     tileImg.src = '/images/tile.webp';
     tileImg.onload = () => document.documentElement.classList.add('tile-loaded');
 
-    // Lock scroll during hero animation
-    document.documentElement.style.overflow = 'hidden';
-
     // Hero entrance animation: 1s pause, then 2.5s parallax reveal, then auto-scroll
     let animRaf: number;
     const animDelay = setTimeout(() => {
@@ -89,8 +86,6 @@
         if (animValue < 1) {
           animRaf = requestAnimationFrame(tick);
         } else {
-          // Unlock scroll, then auto-scroll to sticker CTA section
-          document.documentElement.style.overflow = '';
           animPhase = 'scrolling';
           stickerCtaEl.scrollIntoView({ behavior: 'smooth' });
         }
@@ -104,7 +99,6 @@
       clearTimeout(hintTimer);
       clearTimeout(animDelay);
       cancelAnimationFrame(animRaf);
-      document.documentElement.style.overflow = '';
     };
   });
 
@@ -282,7 +276,7 @@
       { src: '/images/beest-cropped/8.webp', x: 0, rot: 0, scale: 0, drift: 0.08, crop: { left: 3.625, top: 79.1852, width: 25, height: 10.0741 } },
       { src: '/images/beest-cropped/9.webp', x: 0, rot: 0, scale: 0, drift: 0.08, crop: { left: 10.1667, top: 60.4444, width: 88.4375, height: 36.2593 } },
       { src: '/images/beest-cropped/10.webp', x: 0, rot: 0, scale: 0, drift: 0.16, crop: { left: 37.3333, top: 46.8519, width: 62.6667, height: 53.1481 } },
-      { src: '/images/beest-cropped/11.webp', x: 0, rot: 0, scale: 0, drift: 0.20, crop: { left: 65.625, top: 72.0741, width: 34.375, height: 27.9259 } },
+      { src: '/images/beest-cropped/11.webp', x: 0, rot: 0, scale: 0, drift: 0.20, offsetY: 10, crop: { left: 65.625, top: 72.0741, width: 34.375, height: 27.9259 } },
     ] as layer, i}
       {#if layer.isBg}
         <div
@@ -1524,6 +1518,7 @@
 
     .sticker-cta {
       flex-direction: column;
+      align-items: center;
       gap: 32px;
       padding: 100px 20px 60px;
     }
@@ -1564,8 +1559,18 @@
       transform: none !important;
     }
 
+    .cta-group {
+      align-self: center;
+      width: min(90vw, 700px);
+      box-sizing: border-box;
+      padding: 28px 32px;
+    }
+
     .rsvp-box {
       flex: 0 1 auto;
+      align-self: center;
+      max-width: 420px;
+      width: 100%;
     }
 
     .sticker {
@@ -1945,12 +1950,17 @@
 
     .cta-group {
       flex-direction: column;
+      align-items: center;
       gap: 20px;
-      padding: 16px;
+      padding: 20px;
       margin-left: 0;
       margin-right: 0;
       width: 100%;
       box-sizing: border-box;
+    }
+
+    .rsvp-box {
+      max-width: 360px;
     }
   }
 

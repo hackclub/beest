@@ -85,6 +85,12 @@ export async function proxyWithRefresh(
 	}
 
 	const data = await res.json().catch(() => ({}));
+
+	// If the backend issued a new JWT (e.g. after nickname update), persist it
+	if (res.ok && data.token) {
+		cookies.set('auth_token', data.token, { ...COOKIE_OPTS, maxAge: 3600 });
+	}
+
 	return new Response(JSON.stringify(data), {
 		status: res.status,
 		headers: { 'Content-Type': 'application/json' }

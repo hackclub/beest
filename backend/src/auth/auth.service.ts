@@ -205,6 +205,8 @@ export class AuthService {
       name: userinfo.name,
       nickname: userinfo.nickname,
       slack_id: userinfo.slack_id,
+      has_address: user.hasAddress,
+      has_birthdate: user.hasBirthdate,
     });
 
     return { token, refreshToken, redirectTo };
@@ -240,6 +242,8 @@ export class AuthService {
       name: user.name,
       nickname: user.nickname,
       slack_id: user.slackId,
+      has_address: user.hasAddress,
+      has_birthdate: user.hasBirthdate,
     });
 
     return { token, refreshToken: newRefreshToken };
@@ -257,7 +261,68 @@ export class AuthService {
     return this.jwtService.verify(token);
   }
 
+  /**
+   * Issues a JWT that lets an admin act as the target user.
+   * The token carries the target user's identity but includes
+   * impersonator_uid / impersonator_name so audit logs can attribute actions.
+   */
+  async issueImpersonationToken(
+    targetUserId: string,
+    adminUid: string,
+    adminName: string,
+  ): Promise<{ token: string }> {
+    const user = await this.userRepo.findOne({ where: { id: targetUserId } });
+    if (!user) throw new Error('User not found');
+
+    const token = this.jwtService.sign({
+      sub: user.hcaSub,
+      uid: user.id,
+      email: user.email,
+      name: user.name,
+      nickname: user.nickname,
+      slack_id: user.slackId,
+      has_address: user.hasAddress,
+      has_birthdate: user.hasBirthdate,
+      impersonator_uid: adminUid,
+      impersonator_name: adminName,
+    });
+
+    return { token };
+  }
+
+  async updateNickname(
+    userId: string,
+    nickname: string,
+  ): Promise<{ token: string }> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new Error('User not found');
+
+    user.nickname = nickname;
+    await this.userRepo.save(user);
+
+    const token = this.jwtService.sign({
+      sub: user.hcaSub,
+      uid: user.id,
+      email: user.email,
+      name: user.name,
+      nickname: user.nickname,
+      slack_id: user.slackId,
+      has_address: user.hasAddress,
+      has_birthdate: user.hasBirthdate,
+    });
+
+    return { token };
+  }
+
   private async upsertUser(userinfo: Record<string, any>): Promise<User> {
+    const hasAddress = !!(
+      userinfo.address ||
+      (Array.isArray(userinfo.addresses) && userinfo.addresses.length > 0)
+    );
+    const hasBirthdate = !!(
+      userinfo.birthdate && userinfo.birthdate.trim() !== ''
+    );
+
     let user = await this.userRepo.findOne({
       where: { hcaSub: userinfo.sub },
     });
@@ -267,6 +332,8 @@ export class AuthService {
       user.name = userinfo.name;
       user.nickname = userinfo.nickname;
       user.slackId = userinfo.slack_id;
+      user.hasAddress = hasAddress;
+      user.hasBirthdate = hasBirthdate;
       return this.userRepo.save(user);
     }
 
@@ -279,6 +346,8 @@ export class AuthService {
         name: userinfo.name,
         nickname: userinfo.nickname,
         slackId: userinfo.slack_id,
+        hasAddress,
+        hasBirthdate,
       });
       return await this.userRepo.save(user);
     } catch (err: any) {
@@ -292,6 +361,8 @@ export class AuthService {
         user.name = userinfo.name;
         user.nickname = userinfo.nickname;
         user.slackId = userinfo.slack_id;
+        user.hasAddress = hasAddress;
+        user.hasBirthdate = hasBirthdate;
         return this.userRepo.save(user);
       }
       throw err;

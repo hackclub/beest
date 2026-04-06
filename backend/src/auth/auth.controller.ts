@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Req,
   Query,
@@ -86,7 +87,25 @@ export class AuthController {
       if (err instanceof UnauthorizedException) throw err;
       // Airtable lookup failed — don't block the response
     }
-    return user;
+    // Include impersonation context if present so the frontend can show it
+    const result: Record<string, any> = { ...user };
+    if (user.impersonator_uid) {
+      result.impersonator_uid = user.impersonator_uid;
+      result.impersonator_name = user.impersonator_name;
+    }
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('shipping-eligibility')
+  async shippingEligibility(@Req() req: Request) {
+    const user = (req as any).user;
+    return {
+      hasAddress: !!user.has_address,
+      hasBirthdate: !!user.has_birthdate,
+      eligible: !!user.has_address && !!user.has_birthdate,
+      addressPortalUrl: 'https://auth.hackclub.com/portal/address',
+    };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -110,16 +129,33 @@ export class AuthController {
 
     const perms = await this.rsvpService.getPerms(email);
 
-    const scopeRequirements: Record<string, string> = {
-      admin: 'Super Admin',
+    const scopeRequirements: Record<string, string[]> = {
+      admin: ['Super Admin'],
+      reviewer: ['Super Admin', 'Reviewer', 'Fraud Reviewer'],
     };
 
-    const required = scopeRequirements[scope];
-    if (!required || perms !== required) {
+    const allowed = scopeRequirements[scope];
+    if (!allowed || !perms || !allowed.includes(perms)) {
       throw new ForbiddenException();
     }
 
-    return { allowed: true };
+    return { allowed: true, perms };
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @Patch('nickname')
+  async updateNickname(
+    @Req() req: Request,
+    @Body() body: { nickname?: string },
+  ) {
+    const uid = (req as any).user?.uid;
+    if (!uid) throw new UnauthorizedException();
+    const nickname = (body.nickname ?? '').trim();
+    if (!nickname || nickname.length > 50) {
+      throw new BadRequestException('Nickname must be 1–50 characters');
+    }
+    return this.authService.updateNickname(uid, nickname);
   }
 
   /**

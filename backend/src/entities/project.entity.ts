@@ -95,6 +95,9 @@ export class Project {
   @Column({ type: 'varchar', name: 'ai_use', length: 200, nullable: true })
   aiUse: string | null;
 
+  @Column({ type: 'integer', name: 'pipes_granted', default: 0 })
+  pipesGranted: number;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
