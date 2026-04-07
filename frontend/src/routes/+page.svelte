@@ -1138,6 +1138,7 @@
     position: relative;
     width: min(980px, 100%);
     min-height: 460px;
+    container-type: inline-size;
   }
 
   .rsvp-box {
@@ -1275,8 +1276,8 @@
 
   .sticker {
     position: relative;
-    width: 480px;
-    height: 480px;
+    width: 49%;
+    aspect-ratio: 1;
   }
 
   .sticker img {
@@ -1289,10 +1290,10 @@
 
   .callout {
     position: absolute;
-    max-width: 340px;
+    max-width: 35cqi;
     color: #e6f4fe;
     font-family: "Courier New", monospace;
-    font-size: 18px;
+    font-size: clamp(14px, 1.8cqi, 18px);
     letter-spacing: 0.03em;
     line-height: 1.35;
     opacity: 0;
@@ -1331,12 +1332,12 @@
   }
 
   .c1 {
-    left: 600px;
-    top: 34px;
+    left: 61%;
+    top: 7%;
   }
 
   .c1::before {
-    width: 190px;
+    width: calc(61cqi - 49cqi - 100%);
     right: 100%;
     top: 18px;
     background: linear-gradient(90deg, #93b4cd, #e6f4fe);
@@ -1344,29 +1345,29 @@
 
   .c1::after {
     height: 70px;
-    right: calc(100% + 190px);
+    right: calc(100% + 61cqi - 49cqi - 100%);
     top: 18px;
     background: linear-gradient(180deg, #93b4cd, rgba(147, 180, 205, 0));
   }
 
   .c2 {
-    left: 640px;
-    top: 204px;
+    left: 65%;
+    top: 43%;
   }
 
   .c2::before {
-    width: 230px;
-    right: 100%;  
+    width: calc(65cqi - 49cqi - 100%);
+    right: 100%;
     top: 20px;
   }
 
   .c3 {
-    left: 600px;
-    top: 365px;
+    left: 61%;
+    top: 76%;
   }
 
   .c3::before {
-    width: 190px;
+    width: calc(61cqi - 49cqi - 100%);
     right: 100%;
     top: 19px;
     background: linear-gradient(90deg, #93b4cd, #e6f4fe);
@@ -1374,7 +1375,7 @@
 
   .c3::after {
     height: 70px;
-    right: calc(100% + 190px);
+    right: calc(100% + 61cqi - 49cqi - 100%);
     bottom: calc(100% - 20px);
     background: linear-gradient(180deg, rgba(147, 180, 205, 0), #93b4cd);
   }
@@ -1535,15 +1536,8 @@
 
     .diagram {
       min-height: 0;
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .callout {
-      opacity: 1 !important;
-      transform: none !important;
+      width: min(700px, 100%);
+      margin: 0 auto;
     }
 
     .cta-group {
@@ -1558,25 +1552,6 @@
       align-self: center;
       max-width: 420px;
       width: 100%;
-    }
-
-    .sticker {
-      width: min(78vw, 400px);
-      height: min(78vw, 400px);
-    }
-
-    .callout {
-      position: static;
-      max-width: 100%;
-      margin-top: 14px;
-    }
-
-    .callout::before {
-      width: 38px;
-      right: auto;
-      left: -44px;
-      top: 50%;
-      transform: translateY(-50%);
     }
 
     .info-section {
@@ -1929,6 +1904,36 @@
     .photo-frame {
       width: 300px;
       height: 220px;
+    }
+
+    .diagram {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .sticker {
+      width: min(78vw, 400px);
+    }
+
+    .callout {
+      position: static;
+      max-width: 100%;
+      margin-top: 14px;
+      opacity: 1 !important;
+      transform: none !important;
+    }
+
+    .callout::before {
+      width: 38px;
+      right: auto;
+      left: -44px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    .callout::after {
+      display: none;
     }
 
     .bottom-rsvp {
