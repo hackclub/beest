@@ -396,7 +396,7 @@
 <section class="sticker-row">
   <div class="diagram" bind:this={diagramEl} style="--r:{annotate}">
     <div class="sticker">
-      <img src="/images/beest.webp" alt="Strandbeest animation" loading="lazy" decoding="async" />
+      <img src="/images/beest.gif" alt="Strandbeest animation" loading="lazy" decoding="async" />
     </div>
 
     <div class="callout c1" class:visible={showA}>
