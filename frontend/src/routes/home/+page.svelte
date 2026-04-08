@@ -2214,9 +2214,11 @@
   .section {
     position: relative;
     padding: 48px 48px 32px 150px;
-    height: 100vh;
+    min-height: 100dvh;
     box-sizing: border-box;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .section::after {
@@ -2251,7 +2253,8 @@
     z-index: 1;
     max-width: 1600px;
     margin: 0 auto;
-    height: 100%;
+    min-height: 0;
+    flex: 1;
     display: flex;
     flex-direction: column;
   }
@@ -2293,8 +2296,7 @@
     border: 1px solid rgba(230, 244, 254, 0.1);
     border-radius: 8px;
     background: rgba(0, 0, 0, 0.15);
-    min-height: 0;
-    max-height: 100%;
+    min-height: 200px;
     overflow: hidden;
   }
 
@@ -2303,8 +2305,8 @@
     overflow-y: auto;
     min-height: 0;
     flex: 1;
-    -webkit-mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
-    mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
   }
 
   .action-log-title,
