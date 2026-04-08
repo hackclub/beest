@@ -17,6 +17,7 @@
 
   let { data } = $props();
 
+  let mobileWarningDismissed = $state(false);
   let activeSection = $state('projects');
   let tileLoaded = $state(false);
   let customCursorEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('customCursor') !== 'off' : true);
@@ -821,6 +822,7 @@
 <div class="home" class:tile-loaded={tileLoaded}>
 
   <!-- Mobile warning -->
+  {#if !mobileWarningDismissed}
   <div class="mobile-warning">
     <div class="mobile-warning-inner">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mobile-warning-icon">
@@ -831,8 +833,10 @@
       <p class="mobile-warning-text">
         <strong>#BEEST</strong> is built for desktop. For the best experience, please visit on a computer.
       </p>
+      <button class="mobile-warning-dismiss" onclick={() => mobileWarningDismissed = true}>Continue anyway</button>
     </div>
   </div>
+  {/if}
 
   <!-- Sidebar -->
   <nav class="sidebar pinned" aria-label="Home navigation">
@@ -5487,8 +5491,8 @@
   }
 
   .mobile-warning-text {
-    font-family: "Courier New", monospace;
-    font-size: 16px;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 18px;
     color: #cbc1ae;
     line-height: 1.5;
     margin: 0;
@@ -5498,6 +5502,18 @@
     font-family: "Stone Breaker", "Courier New", monospace;
     font-size: 20px;
     color: #e6f4fe;
+  }
+
+  .mobile-warning-dismiss {
+    margin-top: 24px;
+    padding: 10px 28px;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 16px;
+    color: #e6f4fe;
+    background: rgba(230, 244, 254, 0.1);
+    border: 1px solid rgba(230, 244, 254, 0.25);
+    border-radius: 6px;
+    cursor: pointer;
   }
 
   @media (max-width: 600px) {

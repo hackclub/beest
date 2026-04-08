@@ -1040,4 +1040,10 @@
   .section-tab:hover:not(.active) {
     background: #f0f0f0;
   }
+
+  @media (max-width: 600px) {
+    .section-tabs {
+      display: none;
+    }
+  }
 </style>
