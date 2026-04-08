@@ -212,7 +212,7 @@
   const shopItems = [
     { src: '/images/shop/blahaj.webp', caption: 'Blåhaj Plush' },
     { src: '/images/shop/flight-stipend.webp', caption: 'Flight Stipend' },
-    { src: '/images/shop/framework.webp', caption: 'Framework Laptop' },
+    { src: '/images/shop/thinkpad.webp', caption: 'Thinkpad Laptop' },
     { src: '/images/shop/headphones.webp', caption: 'Headphones' },
     { src: '/images/shop/polaroid.webp', caption: 'Polaroid Camera' },
     { src: '/images/shop/poster.webp', caption: 'Beest Poster' },
