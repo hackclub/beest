@@ -2283,6 +2283,7 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    flex: 1;
   }
 
   .section::after {
