@@ -2214,7 +2214,6 @@
   .section {
     position: relative;
     padding: 48px 48px 32px 150px;
-    min-height: 100dvh;
     box-sizing: border-box;
     overflow: hidden;
     display: flex;
@@ -2251,10 +2250,9 @@
   .section-inner {
     position: relative;
     z-index: 1;
+    width: 100%;
     max-width: 1600px;
     margin: 0 auto;
-    min-height: 0;
-    flex: 1;
     display: flex;
     flex-direction: column;
   }
@@ -2280,12 +2278,9 @@
   .bottom-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    grid-template-rows: 1fr;
+    align-items: start;
     gap: 28px;
     margin-top: 24px;
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
   }
 
   .action-log,
@@ -2296,7 +2291,7 @@
     border: 1px solid rgba(230, 244, 254, 0.1);
     border-radius: 8px;
     background: rgba(0, 0, 0, 0.15);
-    min-height: 200px;
+    max-height: 420px;
     overflow: hidden;
   }
 
@@ -3887,7 +3882,7 @@
     border: 4px dashed rgba(230, 244, 254, 0.2);
     border-radius: 8px;
     text-align: center;
-    flex: 1;
+    min-height: 240px;
     gap: 16px;
   }
 
@@ -3896,11 +3891,7 @@
     grid-template-columns: repeat(var(--cols, 1), 1fr);
     align-items: stretch;
     justify-content: start;
-    max-height: none;
-    flex: 1;
     min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
   }
 
   .empty-text {
