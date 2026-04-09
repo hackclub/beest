@@ -23,6 +23,9 @@
   let customCursorEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('customCursor') !== 'off' : true);
   let creatingProject = $state(false);
   let editingProject = $state<any>(null);
+  type ProjectReview = { id: string; status: 'approved' | 'changes_needed'; feedback: string | null; reviewerName: string | null; createdAt: string };
+  let editingProjectReviews = $state<ProjectReview[]>([]);
+  let editingProjectReviewsLoading = $state(false);
 
   let projectName = $state('');
   let projectDesc = $state('');
@@ -179,6 +182,21 @@
     resubmitChangeDesc = '';
     resubmitMinHours = false;
     resubmitLoading = false;
+    editingProjectReviews = [];
+    editingProjectReviewsLoading = false;
+  }
+
+  async function fetchProjectReviews(projectId: string) {
+    editingProjectReviews = [];
+    editingProjectReviewsLoading = true;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/reviews`);
+      if (res.ok) {
+        const data = await res.json();
+        editingProjectReviews = Array.isArray(data) ? data : [];
+      }
+    } catch { /* silent */ }
+    editingProjectReviewsLoading = false;
   }
 
   async function resubmitProject() {
@@ -254,6 +272,7 @@
   function openEditProject(project: any) {
     resetForm();
     editingProject = project;
+    fetchProjectReviews(project.id);
     projectName = project.name ?? '';
     projectDesc = project.description ?? '';
     projectType = project.projectType ?? '';
@@ -913,6 +932,28 @@
           </div>
         </div>
 
+        {#if editingProjectReviews.length > 0}
+          <div class="review-feedback-list">
+            <h3 class="review-feedback-heading">Review history</h3>
+            {#each editingProjectReviews as review}
+              <div class="review-feedback-card review-feedback-{review.status}">
+                <div class="review-feedback-header">
+                  <span class="review-feedback-badge {review.status}">{review.status === 'changes_needed' ? 'Changes Needed' : 'Approved'}</span>
+                  {#if review.reviewerName}
+                    <span class="review-feedback-reviewer">by {review.reviewerName}</span>
+                  {/if}
+                  <span class="review-feedback-date">{new Date(review.createdAt).toLocaleDateString()}</span>
+                </div>
+                {#if review.feedback}
+                  <p class="review-feedback-text">{review.feedback}</p>
+                {:else}
+                  <p class="review-feedback-text review-feedback-empty">No feedback provided.</p>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
+
         <div class="resubmit-section">
           <h2 class="section-title">Resubmit for Review</h2>
           <p class="section-subtitle">Ship an update to this approved project to earn more Pipes.</p>
@@ -958,6 +999,30 @@
       <div class="form-header">
         <button class="form-cancel" onclick={resetForm}>&times;</button>
       </div>
+
+      {#if editingProject && editingProjectReviews.length > 0}
+        <div class="review-feedback-list">
+          <h3 class="review-feedback-heading">
+            {#if editingProject.status === 'changes_needed'}Reviewer requested changes{:else}Review history{/if}
+          </h3>
+          {#each editingProjectReviews as review}
+            <div class="review-feedback-card review-feedback-{review.status}">
+              <div class="review-feedback-header">
+                <span class="review-feedback-badge {review.status}">{review.status === 'changes_needed' ? 'Changes Needed' : 'Approved'}</span>
+                {#if review.reviewerName}
+                  <span class="review-feedback-reviewer">by {review.reviewerName}</span>
+                {/if}
+                <span class="review-feedback-date">{new Date(review.createdAt).toLocaleDateString()}</span>
+              </div>
+              {#if review.feedback}
+                <p class="review-feedback-text">{review.feedback}</p>
+              {:else}
+                <p class="review-feedback-text review-feedback-empty">No feedback provided.</p>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
 
       <div class="form-grid">
         <div class="form-group">
@@ -3030,6 +3095,88 @@
 
   .approved-summary-meta a:hover {
     text-decoration: underline;
+  }
+
+  .review-feedback-list {
+    margin: 0 0 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 720px;
+  }
+
+  .review-feedback-heading {
+    margin: 0 0 4px;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 22px;
+    color: #e6f4fe;
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+  }
+
+  .review-feedback-card {
+    padding: 16px 20px;
+    background: rgba(0, 0, 0, 0.3);
+    border-left: 4px solid #7f796d;
+    clip-path: polygon(0% 3%, 2% 0%, 98% 2%, 100% 5%, 99% 96%, 97% 100%, 3% 99%, 0% 95%);
+  }
+
+  .review-feedback-changes_needed {
+    border-left-color: #d4a55a;
+  }
+
+  .review-feedback-approved {
+    border-left-color: #5a9e6f;
+  }
+
+  .review-feedback-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+
+  .review-feedback-badge {
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 3px 10px;
+    border-radius: 3px;
+    background: rgba(212, 165, 90, 0.2);
+    color: #d4a55a;
+  }
+
+  .review-feedback-badge.approved {
+    background: rgba(90, 158, 111, 0.2);
+    color: #5a9e6f;
+  }
+
+  .review-feedback-reviewer {
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+    color: #cbc1ae;
+  }
+
+  .review-feedback-date {
+    font-family: "Courier New", monospace;
+    font-size: 12px;
+    color: #7f796d;
+    margin-left: auto;
+  }
+
+  .review-feedback-text {
+    margin: 0;
+    font-family: "Courier New", monospace;
+    font-size: 15px;
+    color: #e6f4fe;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+
+  .review-feedback-empty {
+    color: #7f796d;
+    font-style: italic;
   }
 
   .resubmit-section {
