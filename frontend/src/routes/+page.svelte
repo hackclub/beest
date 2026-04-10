@@ -30,18 +30,10 @@
   let animPhase = $state<'waiting' | 'animating' | 'done'>('waiting');
   let animValue = $state(0); // 0→1 during animation
 
-  const pxRemaining = $derived(
-    animPhase === 'done'
-      ? PARALLAX_TRAVEL * (1 - easedProgress)
-      : animPhase === 'animating'
-      ? PARALLAX_TRAVEL * (1 - animValue * (2 - animValue))
-      : PARALLAX_TRAVEL
-  );
-  const postScroll = $derived(
-    animPhase === 'done'
-      ? Math.max(scrollY - PARALLAX_TRAVEL, 0)
-      : 0
-  );
+  const animEased = $derived(animPhase === 'animating' ? animValue * (2 - animValue) : animPhase === 'done' ? 1 : 0);
+  const progress = $derived(Math.max(easedProgress, animEased));
+  const pxRemaining = $derived(PARALLAX_TRAVEL * (1 - progress));
+  const postScroll = $derived(Math.max(scrollY - PARALLAX_TRAVEL, 0));
   let heroHeight = $state(0);
   let dutch = $state(false);
   let freeVisible = $state(false);
@@ -698,7 +690,6 @@
   }
 
   .hero-scroll-space {
-    height: calc(100vh + 700px);
     position: relative;
   }
 
@@ -715,8 +706,7 @@
   }
 
   .hero-wrap {
-    position: sticky;
-    top: 0;
+    position: relative;
     line-height: 0;
     z-index: 1;
   }

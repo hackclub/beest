@@ -819,19 +819,21 @@
 								{#if userDetail.projects?.length > 0}
 									<section class="detail-section">
 										<h3>Projects ({userDetail.projects.length})</h3>
-										<table class="mini-table">
-											<thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Created</th></tr></thead>
-											<tbody>
-												{#each userDetail.projects as project}
-													<tr>
-														<td>{project.name}</td>
-														<td>{project.projectType}</td>
-														<td><span class="badge badge-{project.status}">{project.status}</span></td>
-														<td>{formatDate(project.createdAt)}</td>
-													</tr>
-												{/each}
-											</tbody>
-										</table>
+										<div class="scrollable-table">
+											<table class="mini-table">
+												<thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Created</th></tr></thead>
+												<tbody>
+													{#each userDetail.projects as project}
+														<tr>
+															<td>{project.name}</td>
+															<td>{project.projectType}</td>
+															<td><span class="badge badge-{project.status}">{project.status}</span></td>
+															<td>{formatDate(project.createdAt)}</td>
+														</tr>
+													{/each}
+												</tbody>
+											</table>
+										</div>
 									</section>
 								{/if}
 
@@ -1421,7 +1423,7 @@
 	}
 
 	.tab {
-		padding: 0.75rem 1.5rem;
+		padding: 0.4rem 0.75rem;
 		background: none;
 		border: none;
 		color: #888;
@@ -1614,6 +1616,18 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.25rem;
+	}
+
+	.scrollable-table {
+		max-height: 300px;
+		overflow-y: auto;
+	}
+
+	.scrollable-table thead {
+		position: sticky;
+		top: 0;
+		background: #222;
+		z-index: 1;
 	}
 
 	.detail-section h3 {
@@ -1922,9 +1936,9 @@
 	.proj-sidebar-item {
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
+		gap: 0.15rem;
 		width: 100%;
-		padding: 0.45rem 0.7rem;
+		padding: 0.3rem 0.7rem;
 		border: none;
 		border-bottom: 1px solid #333;
 		background: transparent;
@@ -1941,8 +1955,13 @@
 	}
 
 	.proj-sidebar-item.active {
-		background: #2e2e2e;
-		border-left: 4px solid #5b9bd5;
+		background: transparent;
+	}
+
+	.proj-sidebar-item.active .proj-sidebar-name {
+		text-decoration: underline;
+		text-decoration-color: #5b9bd5;
+		text-underline-offset: 3px;
 	}
 
 	.proj-sidebar-name {
@@ -2892,7 +2911,7 @@
 	.admin-shell.light .proj-sidebar { background: #f5f4f1; }
 	.admin-shell.light .proj-sidebar-item { color: #444; border-bottom-color: #999; }
 	.admin-shell.light .proj-sidebar-item:hover { background: #eae8e3; }
-	.admin-shell.light .proj-sidebar-item.active { background: #e0dee8; border-left-color: #3b7bb5; }
+	.admin-shell.light .proj-sidebar-item.active { background: transparent; }
 	.admin-shell.light .proj-sidebar-name { color: #1a1a1a; }
 	.admin-shell.light .proj-sidebar-meta { color: #666; }
 
