@@ -701,6 +701,7 @@
     { q: 'Who can participate?', a: 'Any teens 13-19 or in high school can participate. We can also provide flight stipends for international students to get to the event.' },
     { q: 'How much does it cost?', a: 'Beest is completely free to participate in! All costs for the event are covered, including food, accomodation, day-off travel and merchandise. Additionally participants can earn stipends for visa application fees and flight costs.' },
     { q: 'Where and when does Beest take place?', a: '[TBD]' },
+    { q: 'How will the event run?', a: 'Participants are invited to arrive on July 7th to watch the exhibition of the Beest - then in teams of three they will make walking mechanisms over a week, before exhibiting them on Scheveningen beach.' },
     { q: 'How do I qualify?', a: "Build an open source coding or hardware project! Anything you can dream up is possible, just make the project you want to exist. Please don't AI generate the project, instead focus on making something fun, silly, useful to you or a project that forces you to learn something new. 40 hours of tracked work will automatically qualify you, and working for additional hours will contribute $10/hr toward your flight cost or visa application fees." },
     { q: 'What should I bring?', a: 'A laptop, a sleeping bag, clothes, a charger, a mobile phone... A more conclusive list will be sent out closer to the event.' },
     { q: 'Do I need prior engineering or building experience?', a: 'No! Hack Club is all about learning by doing, so we welcome builders of all experience levels. We will provide resources and support to help you build your mechanical animal, and we can help you in the #beest channel on Slack!' },
@@ -2131,6 +2132,7 @@
     transform: translateX(-40px);
     transition: opacity 150ms ease, transform 250ms cubic-bezier(0.4, 0, 0.2, 1);
     overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .sidebar:hover .sidebar-content,

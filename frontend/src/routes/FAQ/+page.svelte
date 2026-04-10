@@ -41,6 +41,10 @@
       a: '[TBD]'
     },
     {
+      q: 'How will the event run?',
+      a: 'Participants are invited to arrive on July 7th to watch the exhibition of the Beest - then in teams of three they will make walking mechanisms over a week, before exhibiting them on Scheveningen beach.'
+    },
+    {
       q: 'How do I qualify?',
       a: 'Build an open source coding or hardware project! Anything you can dream up is possible, just make the project you want to exist. Please don\'t AI generate the project, instead focus on making something fun, silly, useful to you or a project that forces you to learn something new. 40 hours of tracked work will automatically qualify you, and working for additional hours will contribute $10/hr toward your flight cost or visa application fees.'
     },
