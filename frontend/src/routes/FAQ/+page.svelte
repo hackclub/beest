@@ -222,7 +222,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem 1.25rem;
+    padding: 1.25rem 3rem 1.25rem 5rem;
     font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 1.2rem;
     color: #e6e2da;
@@ -243,7 +243,7 @@
   }
 
   .faq-answer {
-    padding: 0 1.25rem 1rem;
+    padding: 0 3rem 1.25rem 5rem;
   }
 
   .faq-answer p {
@@ -336,11 +336,11 @@
 
     .faq-question {
       font-size: 1rem;
-      padding: 0.85rem 1rem;
+      padding: 1rem 1.5rem 1rem 2.5rem;
     }
 
     .faq-answer {
-      padding: 0 1rem 0.85rem;
+      padding: 0 1.5rem 1rem 2.5rem;
     }
 
     .faq-item {

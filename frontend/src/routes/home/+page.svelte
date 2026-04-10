@@ -891,9 +891,6 @@
           <span class="sticker-text">Get Stickers</span>
         </a>
         {/if}
-        <div class="sidebar-footer">
-          <a href="/api/auth/logout" class="logout-link">Log Out</a>
-        </div>
       </div>
     </div>
     <div class="teeth outer" aria-hidden="true"></div>
@@ -2014,6 +2011,7 @@
   .home {
     display: flex;
     min-height: 100vh;
+    background: #4b4840;
   }
 
 
@@ -2030,14 +2028,14 @@
 
   .sidebar:hover,
   .sidebar.pinned {
-    width: 280px;
+    width: 220px;
   }
 
   .sidebar-panel {
     position: absolute;
     top: 0;
     left: 0;
-    width: calc(100% - 70px);
+    width: calc(100% - 55px);
     max-width: 0;
     height: 100%;
     background: #4b4840;
@@ -2047,7 +2045,7 @@
 
   .sidebar:hover .sidebar-panel,
   .sidebar.pinned .sidebar-panel {
-    max-width: 280px;
+    max-width: 220px;
   }
 
   .teeth {
@@ -2059,7 +2057,7 @@
   }
 
   .teeth.inner {
-    width: 40px;
+    width: 30px;
     background: #6c6659;
     z-index: 3;
     clip-path: polygon(
@@ -2078,7 +2076,7 @@
   }
 
   .teeth.outer {
-    width: 80px;
+    width: 60px;
     background: #4b4840;
     z-index: 4;
     clip-path: polygon(
@@ -2172,8 +2170,7 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    flex: 1;
+    gap: 6px;
   }
 
   .nav-btn {
@@ -2181,14 +2178,14 @@
     align-items: center;
     gap: 12px;
     width: 100%;
-    padding: 14px 14px;
+    padding: 8px 14px;
     border: 3px solid transparent;
     border-bottom: 6px solid transparent;
     border-radius: 6px;
     background: transparent;
     color: #cbc1ae;
     font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: 24px;
+    font-size: 19px;
     letter-spacing: 0.04em;
     text-align: left;
     cursor: inherit;
@@ -2196,9 +2193,9 @@
   }
 
   .nav-btn:hover {
-    background: rgba(230, 244, 254, 0.08);
+    background: transparent;
     color: #e6f4fe;
-    border-color: rgba(230, 244, 254, 0.12);
+    border-color: transparent;
   }
 
   .nav-btn:active {
@@ -2207,10 +2204,12 @@
   }
 
   .nav-btn.active {
-    background: rgba(230, 244, 254, 0.12);
+    background: transparent;
     color: #e6f4fe;
-    border-color: rgba(230, 244, 254, 0.18);
-    border-bottom-color: #c48382;
+    border-color: transparent;
+    text-decoration: underline;
+    text-decoration-color: #c48382;
+    text-underline-offset: 4px;
   }
 
   .nav-link {
@@ -2221,10 +2220,10 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 16px;
+    gap: 8px;
     text-decoration: none;
-    margin-top: auto;
-    padding: 12px 0;
+    margin-top: 10px;
+    padding: 6px 0;
     transition: opacity 150ms ease;
   }
 
@@ -2233,46 +2232,24 @@
   }
 
   .sticker-img {
-    width: 150px;
+    width: 80px;
     height: auto;
-    border-radius: 16px;
+    border-radius: 10px;
   }
 
   .sticker-text {
     font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: 22px;
+    font-size: 14px;
     color: #cbc1ae;
     letter-spacing: 0.04em;
   }
 
-  .sidebar-footer {
-    margin-top: 0;
-    padding-top: 24px;
-  }
-
-  .logout-link {
-    display: block;
-    color: #c48382;
-    font-family: "Courier New", monospace;
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-decoration: none;
-    padding: 12px 14px;
-    text-align: center;
-    border-top: 1px solid rgba(196, 131, 130, 0.2);
-    transition: color 150ms ease;
-  }
-
-  .logout-link:hover {
-    color: #e6f4fe;
-  }
 
   /* ── main ────────────────────────────────────────── */
   .main {
     flex: 1;
-    margin-left: 210px;
-    max-width: calc(100vw - 210px);
+    margin-left: 170px;
+    max-width: calc(100vw - 170px);
     display: flex;
     flex-direction: column;
   }
@@ -3509,7 +3486,7 @@
 
   .shop-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 280px));
     gap: 28px;
   }
 
@@ -4028,12 +4005,12 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 24px 20px;
+    padding: 16px 16px;
     border: 4px dashed rgba(230, 244, 254, 0.2);
     border-radius: 8px;
     text-align: center;
-    min-height: 240px;
-    gap: 16px;
+    min-height: 160px;
+    gap: 12px;
   }
 
   .projects-box.has-projects {
@@ -4045,9 +4022,9 @@
   }
 
   .empty-text {
-    margin: 20px 0 32px;
+    margin: 10px 0 16px;
     font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 24px;
+    font-size: 18px;
     color: #cbc1ae;
     letter-spacing: 0.02em;
     text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
@@ -4055,11 +4032,11 @@
 
   .action-btn {
     display: inline-block;
-    padding: 10px 28px;
+    padding: 8px 22px;
     background: #c48382;
     color: #fff;
     font-family: "Courier New", monospace;
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-decoration: none;
@@ -5208,13 +5185,12 @@
   .section-faq {
     background: #4b4840;
     padding: 0;
-    overflow-y: auto;
   }
 
   .faq-page {
     background: #4b4840;
     min-height: 100%;
-    padding: 2rem 1.5rem;
+    padding: 2rem 3rem;
     position: relative;
     overflow-x: clip;
   }
@@ -5254,7 +5230,7 @@
   }
 
   .faq-list {
-    max-width: 720px;
+    max-width: 600px;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
