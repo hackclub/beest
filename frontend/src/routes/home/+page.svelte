@@ -5721,6 +5721,7 @@
 
     .main {
       margin-left: 0;
+      max-width: 100vw;
       padding-bottom: 72px;
       transition: none;
     }
