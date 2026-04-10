@@ -376,12 +376,13 @@
 <section class="what-is-this">
   <h2>What is this?</h2>
   <p>
-    Beest is a <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a> program.
-    A Beest (Strandbeest) is a sail powered mechanical animal constructed of just fabric, plastic pipes,
-    zip ties and recycled plastic bottles. I think they are the coolest thing ever, and if you agree,
-    you can join me in building one! Everything (including flights, food and accommodation) is totally
-    free for teenagers who qualify by building a project. In July, you and 30 teens will
-    fly to the Netherlands to build beach walking mechanisms and watch the strandbeest exhibit!
+    Beest is a <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a> Event.
+    We're flying 50 teens to the Netherlands to build walking mechanisms on the same beach the famous
+    Strandbeest was constructed. A strandbeest is a kinetic sculpture - a giant walking mechanism of
+    pipe and cloth (no motors), and we'll be able to go and watch the display of the strandbeests
+    before the event! Everything (including flights, food and accommodation) is totally free for
+    teenagers who qualify by building a project. Can't come? We're also providing funding and prizes
+    for every teen who ships a technical project.
   </p>
 </section>
 
