@@ -2017,6 +2017,7 @@
 
 	.proj-main {
 		flex: 1;
+		min-width: 0;
 		background: #252525;
 		padding: 0.85rem 1.1rem;
 	}
@@ -2251,8 +2252,9 @@
 
 	.hours-adjust {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.5rem 0.5rem;
 		margin-top: 0.5rem;
 	}
 
@@ -2351,13 +2353,15 @@
 
 	.review-actions {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 0.75rem;
 		margin-top: 1rem;
 	}
 
 	.review-btn {
-		flex: 1;
-		padding: 0.75rem 1.5rem;
+		flex: 1 1 140px;
+		min-width: 0;
+		padding: 0.75rem 1rem;
 		border: none;
 		border-radius: 8px;
 		font-size: 1rem;
@@ -2464,8 +2468,9 @@
 
 	.ht-header {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 1.5rem;
+		gap: 0.5rem 1.5rem;
 		font-size: 0.85rem;
 		color: #ccc;
 	}
