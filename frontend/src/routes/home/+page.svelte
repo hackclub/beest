@@ -5468,6 +5468,11 @@
     text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
   }
 
+  .settings-link-desc a {
+    color: #e6f4fe;
+    text-decoration: underline;
+  }
+
   .settings-link-logout .settings-link-title {
     color: #c48382;
   }
