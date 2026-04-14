@@ -3486,8 +3486,8 @@
 
   .shop-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 280px));
-    gap: 28px;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 200px));
+    gap: 20px;
   }
 
   .shop-card {
@@ -3505,7 +3505,7 @@
   }
 
   .shop-card-img {
-    padding: 16px 16px 0;
+    padding: 10px 10px 0;
   }
 
   .shop-card-img img {
@@ -3518,24 +3518,24 @@
   }
 
   .shop-card-body {
-    padding: 14px 18px 16px;
+    padding: 10px 12px 12px;
   }
 
   .shop-card-name {
-    margin: 0 0 4px;
+    margin: 0 0 3px;
     font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 20px;
+    font-size: 16px;
     color: #4b4840;
-    line-height: 1.3;
+    line-height: 1.25;
     font-weight: 600;
   }
 
   .shop-card-desc {
-    margin: 0 0 8px;
+    margin: 0 0 6px;
     font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 15px;
+    font-size: 12px;
     color: #1a1a1a;
-    line-height: 1.4;
+    line-height: 1.35;
   }
 
   .shop-card {
@@ -3557,16 +3557,16 @@
   .shop-card-cost {
     margin: 0;
     font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: 20px;
+    font-size: 16px;
     color: #c48382;
   }
 
   .shop-card-stock {
     font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 13px;
+    font-size: 11px;
     color: #6c6659;
     background: rgba(0,0,0,0.15);
-    padding: 2px 8px;
+    padding: 2px 6px;
     border-radius: 4px;
   }
 
