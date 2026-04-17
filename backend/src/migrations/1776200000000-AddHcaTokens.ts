@@ -10,6 +10,8 @@ export class AddHcaTokens1776200000000 implements MigrationInterface {
         await queryRunner.query(
             `ALTER TABLE "users" ADD "hca_refresh_token" text NULL`,
         );
+        // Force all users to re-auth via HCA so we capture their tokens
+        await queryRunner.query(`TRUNCATE TABLE "sessions"`);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
