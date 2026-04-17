@@ -13,6 +13,7 @@ import { ShopItem } from '../entities/shop-item.entity';
 import { Order } from '../entities/order.entity';
 import { Submission } from '../entities/submission.entity';
 import { ShopModule } from '../shop/shop.module';
+import { HcaModule } from '../hca/hca.module';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
 import { SuperAdminGuard } from './super-admin.guard';
@@ -25,6 +26,7 @@ import { ReviewerGuard } from './reviewer.guard';
     RsvpModule,
     AuditLogModule,
     ShopModule,
+    HcaModule,
   ],
   controllers: [AdminController],
   providers: [AdminService, SuperAdminGuard, ReviewerGuard],

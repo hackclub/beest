@@ -163,8 +163,8 @@ export class AuthService {
       throw new Error('Invalid userinfo response');
     }
 
-    // 4. Upsert user in DB
-    const user = await this.upsertUser(userinfo);
+    // 4. Upsert user in DB (pass HCA tokens so they're persisted encrypted)
+    const user = await this.upsertUser(userinfo, tokens.access_token, tokens.refresh_token);
 
     // 4b. Check if user is banned
     try {
@@ -315,7 +315,11 @@ export class AuthService {
     return { token };
   }
 
-  private async upsertUser(userinfo: Record<string, any>): Promise<User> {
+  private async upsertUser(
+    userinfo: Record<string, any>,
+    hcaAccessToken?: string,
+    hcaRefreshToken?: string,
+  ): Promise<User> {
     const hasAddress = !!(
       userinfo.address ||
       (Array.isArray(userinfo.addresses) && userinfo.addresses.length > 0)
@@ -335,6 +339,8 @@ export class AuthService {
       user.slackId = userinfo.slack_id;
       user.hasAddress = hasAddress;
       user.hasBirthdate = hasBirthdate;
+      if (hcaAccessToken) user.hcaAccessToken = hcaAccessToken;
+      if (hcaRefreshToken) user.hcaRefreshToken = hcaRefreshToken;
       return this.userRepo.save(user);
     }
 
@@ -349,6 +355,8 @@ export class AuthService {
         slackId: userinfo.slack_id,
         hasAddress,
         hasBirthdate,
+        hcaAccessToken: hcaAccessToken ?? undefined,
+        hcaRefreshToken: hcaRefreshToken ?? undefined,
       });
       return await this.userRepo.save(user);
     } catch (err: any) {
@@ -364,6 +372,8 @@ export class AuthService {
         user.slackId = userinfo.slack_id;
         user.hasAddress = hasAddress;
         user.hasBirthdate = hasBirthdate;
+        if (hcaAccessToken) user.hcaAccessToken = hcaAccessToken;
+        if (hcaRefreshToken) user.hcaRefreshToken = hcaRefreshToken;
         return this.userRepo.save(user);
       }
       throw err;

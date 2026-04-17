@@ -18,6 +18,7 @@ import { Order } from '../entities/order.entity';
 import { Submission } from '../entities/submission.entity';
 import { RsvpService } from '../rsvp/rsvp.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { HcaService } from '../hca/hca.service';
 import { fetchWithTimeout } from '../fetch.util';
 
 const VALID_PERMS = [
@@ -50,6 +51,7 @@ export class AdminService {
     @InjectRepository(Submission) private readonly submissionRepo: Repository<Submission>,
     private readonly rsvpService: RsvpService,
     private readonly auditLogService: AuditLogService,
+    private readonly hcaService: HcaService,
   ) {
     this.hackatimeBaseUrl = this.configService.get(
       'HACKATIME_BASE_URL',
@@ -365,7 +367,55 @@ export class AdminService {
       this.rsvpService.updateDateField(project.user.email, 'Loops - beestApprovedProject');
     }
 
+    // 7. Push the approved project + HCA address/birthday to the Airtable Projects table
+    if (status === 'approved' && project.user?.email) {
+      this.syncApprovedProjectToAirtable(project, review).catch((err) => {
+        this.logger.error(`Airtable Projects sync failed for ${project.id}: ${err}`);
+      });
+    }
+
     return { success: true };
+  }
+
+  private async syncApprovedProjectToAirtable(
+    project: Project,
+    review: ProjectReview,
+  ): Promise<void> {
+    const identity = await this.hcaService.getIdentity(project.user.hcaSub);
+    const address = identity?.address ?? {};
+    const streetLines = (address.street_address ?? '').split(/\r?\n/);
+
+    const screenshots = [project.screenshot1Url, project.screenshot2Url]
+      .filter((url): url is string => !!url)
+      .map((url) => ({ url }));
+
+    const fields: Record<string, any> = {
+      'Description': project.description,
+      'Email': project.user.email,
+      'Playable URL': project.demoUrl,
+      'Code URL': project.codeUrl,
+      'Screenshot': screenshots,
+      'Address (Line 1)': streetLines[0],
+      'Address (Line 2)': streetLines.slice(1).join(', '),
+      'City': address.locality,
+      'State / Province': address.region,
+      'Country': address.country,
+      'ZIP / Postal Code': address.postal_code,
+      'Birthday': identity?.birthdate,
+      'Override Hours Spent': project.internalHours,
+      'Override Hours Spent Justification': review.overrideJustification,
+    };
+
+    // Drop empty/null/undefined so Airtable doesn't reject the record
+    const cleanFields = Object.fromEntries(
+      Object.entries(fields).filter(([, v]) => {
+        if (v === null || v === undefined || v === '') return false;
+        if (Array.isArray(v) && v.length === 0) return false;
+        return true;
+      }),
+    );
+
+    await this.rsvpService.createApprovedProjectRecord(cleanFields);
   }
 
   async getProjectReviews(projectId: string, includeInternal: boolean) {
