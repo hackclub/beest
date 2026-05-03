@@ -404,6 +404,7 @@
       ]);
       if (projRes.ok) detailProject = await projRes.json();
       if (commRes.ok) detailComments = await commRes.json();
+      document.querySelector('.main').style.removeProperty('filter');
     } catch { /* silent */ }
     detailLoading = false;
     detailCommentsLoading = false;
@@ -413,6 +414,9 @@
     detailProject = null;
     detailComments = [];
     detailCommentText = '';
+    try {
+      document.querySelector('.main').style.filter = 'saturate(1.5)';
+    } catch { /* silent */ }
   }
 
   async function submitComment() {
