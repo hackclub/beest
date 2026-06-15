@@ -21,7 +21,7 @@
 		"@sveltejs/adapter-auto": "^7.0.0",
 		"@sveltejs/adapter-node": "^5.5.4",
 		"@sveltejs/kit": "^2.50.2",
-		"@sveltejs/vite-plugin-svelte": "^6.2.4",
+		"@sveltejs/vite-plugin-svelte": "^7.1.2",
 		"@types/canvas-confetti": "^1.9.0",
 		"@types/d3-scale": "^4.0.9",
 		"@types/d3-time-format": "^4.0.3",
@@ -30,7 +30,7 @@
 		"svelte": "^5.51.0",
 		"svelte-check": "^4.4.2",
 		"typescript": "^5.9.3",
-		"vite": "^7.3.2"
+		"vite": "^8.0.16"
 	},
 	"dependencies": {
 		"@fontsource/opendyslexic": "^5.2.5",
