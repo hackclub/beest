@@ -203,6 +203,13 @@ export class AdminController {
     return this.adminService.listAllProjects(isSuperAdmin);
   }
 
+
+  @UseGuards(ReviewerGuard)
+  @Get('projects/my-claims')
+  getMyClaims(@Req() req: Request){
+    return this.adminService.getMyClaims((req as any).user?.uid)
+  }
+
   @UseGuards(ReviewerGuard)
   @Get('projects/:id/hackatime')
   getProjectHackatime(
@@ -570,6 +577,20 @@ export class AdminController {
   ) {
     const adminId = (req as any).user?.uid;
     return this.shopService.mergeOrders(id, adminId);
+  }
+
+  @UseGuards(ReviewerGuard)
+  @Post('projects/:id/claim')
+  async claimProject(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    const user = (req as any).user;
+    return this.adminService.claimProject(id, user?.uid, user?.name ?? null);
+  }
+
+  @UseGuards(ReviewerGuard)
+  @Delete('projects/:id/claim')
+  async releaseProjectClaim(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    await this.adminService.releaseProjectClaim(id, (req as any).user?.uid);
+    return { success: true };
   }
 
   @UseGuards(SuperAdminGuard)

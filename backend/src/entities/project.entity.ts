@@ -71,6 +71,15 @@ export class Project {
   @Column({ type: 'varchar', name: 'screenshot_2_url', length: 2048, nullable: true })
   screenshot2Url: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  claimedByReviewerId: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  claimedByReviewerName: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  claimedAt: Date | null;
+
   @Column({ type: 'text', name: 'hackatime_project_name', nullable: true, transformer: {
     to: (value: string[] | null) => value && value.length > 0 ? JSON.stringify(value) : null,
     from: (value: string | null) => {

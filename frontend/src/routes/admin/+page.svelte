@@ -37,6 +37,18 @@
 		displayDate: string;
 	}
 
+	interface MyClaimItem {
+		id: string;
+		name: string;
+		status: string;
+		projectType: string;
+		claimedAt: string;
+		expiresAt: string;
+	}
+
+	let myClaims: MyClaimItem[] = $state([]);
+	let myClaimsLoading = $state(false);
+
 	const isReviewer = $derived(data.role === 'Reviewer' || data.role === 'Fraud Reviewer');
 	const isSuperAdmin = $derived(data.role === 'Super Admin');
 	const canBan = $derived(data.role === 'Super Admin' || data.role === 'Fraud Reviewer');
@@ -56,7 +68,12 @@
 	let actionLoading = $state('');
 	let lightMode = $state(false);
 	let showHackatimeFiles = $state(false);
-
+	const INTENT_LABELS: Record<string, string> = {
+		Hackathon: 'Hackathon',
+  		Shop:      'Shop',
+  		Browsing:  'Browsing',
+  		Both:      'Hackathon + Shop',
+	}
 	// News state
 	let newsItems: NewsItem[] = $state([]);
 	let newsLoading = $state(false);
@@ -156,8 +173,11 @@
 		aiUse: string | null;
 		createdAt: string;
 		updatedAt: string;
-		user: { id: string; name: string | null; slackId: string | null; reviewerUserNote: string | null };
+		user: { id: string; name: string | null; slackId: string | null; reviewerUserNote: string | null; intent: string | null; };
 		latestSubmission: { id: string; changeDescription: string | null; minHoursConfirmed: boolean; reviewerNote: string | null; status: string; createdAt: string } | null;
+		claimedByReviewerId: string | null;
+		claimedByReviewerName: string | null;
+		claimedAt: string | null;
 	}
 
 	interface StatusCounts {
@@ -510,6 +530,38 @@
 		lastAutoJustification = next;
 	}
 
+	async function claimProject(projectId: string): Promise<boolean> {
+		const res = await fetch(`/api/admin/projects/${projectId}/claim`, { method: 'POST' });
+		const body = await res.json();
+		if (!body.success) {
+			alert(`Already claimed by ${body.claimedBy}`);
+			return false;
+		}
+		const idx = allProjects.findIndex((p) => p.id === projectId);
+		if (idx !== -1) {
+			allProjects[idx] = {
+				...allProjects[idx],
+				claimedByReviewerId: data.user.uid,
+				claimedByReviewerName: body.reviewerName,
+				claimedAt: new Date().toISOString(),
+			};
+		}
+		return true;
+	}
+
+	async function releaseProjectClaim(projectId: string) {
+		await fetch(`/api/admin/projects/${projectId}/claim`, { method: 'DELETE' });
+		const idx = allProjects.findIndex((p) => p.id === projectId);
+		if (idx !== -1) {
+			allProjects[idx] = {
+				...allProjects[idx],
+				claimedByReviewerId: null,
+				claimedByReviewerName: null,
+				claimedAt: null,
+			};
+		}
+	}
+
 	async function selectProject(projectId: string) {
 		if (expandedProjectId === projectId) {
 			expandedProjectId = null;
@@ -578,6 +630,12 @@
 
 	const PROJECT_TYPES = ['web', 'windows', 'mac', 'linux', 'cross-platform', 'python', 'android', 'ios', 'other'];
 
+	let projectIntentFilter = $state('');
+	let projectDateOrder = $state<'newest' | 'oldest'>('newest');
+	let claimsDrawerOpen = $state(false);
+
+	const USER_INTENT_ORDER: Record<string, number> = { Both: 0, Hackathon: 1, Shop: 2, Browsing: 3 };
+
 	let filteredProjects = $derived.by(() => {
 		let result = allProjects;
 		if (projectStatusFilter) {
@@ -593,6 +651,14 @@
 				(p.user.name?.toLowerCase().includes(q)) ||
 				(p.user.slackId?.toLowerCase().includes(q))
 			);
+		}
+		result = [...result].sort((a, b) => {
+			const aT = new Date(a.createdAt).getTime();
+			const bT = new Date(b.createdAt).getTime();
+			return projectDateOrder === 'oldest' ? aT - bT : bT - aT;
+		});
+		if (projectIntentFilter) {
+			result = result.filter(p => p.user.intent === projectIntentFilter);
 		}
 		return result;
 	});
@@ -888,6 +954,14 @@
 		});
 	}
 
+	function formatTimeRemaining(expiresAt: string): string {
+		const ms = new Date(expiresAt).getTime() - Date.now();
+		if (ms <= 0) return 'expired';
+		const h = Math.floor(ms / 3_600_000);
+		const m = Math.floor(ms % 3_600_000 / 60_000);
+		return h > 0 ? ` in ${h}h ${m}m` : `in ${m}m`;
+	}
+
 	async function loadNews() {
 		newsLoading = true;
 		try {
@@ -1053,6 +1127,16 @@
 			}
 		} finally {
 			projectsLoading = false;
+		}
+		loadMyClaims();
+	}
+
+	async function loadMyClaims(){
+		try {
+			const res = await fetch('/api/admin/projects/my-claims');
+			if (res.ok) myClaims = await res.json();
+		}	finally {
+			myClaimsLoading = false;
 		}
 	}
 
@@ -1463,6 +1547,12 @@
 		<h1>{isReviewer ? 'Review Panel' : 'Admin Panel'}</h1>
 		<div style="display:flex;align-items:center;gap:0.75rem;">
 			<button class="theme-toggle" onclick={() => lightMode = !lightMode}>{lightMode ? 'Dark' : 'Light'}</button>
+			<button class="claims-drawer-btn" onclick={() => claimsDrawerOpen = true}>
+				My Claims
+				{#if myClaims.length > 0}
+					<span class="claims-drawer-count">{myClaims.length}</span>
+				{/if}
+			</button>
 			<span class="admin-user">Logged in as {data.user.name}</span>
 		</div>
 	</header>
@@ -2227,11 +2317,23 @@
 							<option value={t}>{t}</option>
 						{/each}
 					</select>
+					<select bind:value={projectIntentFilter} class="type-filter-select">
+    					<option value="">All Intents</option>
+    					<option value="Hackathon">Hackathon</option>
+    					<option value="Shop">Shop</option>
+    					<option value="Both">Hackathon + Shop</option>
+    					<option value="Browsing">Browsing</option>
+					</select>
+
+					<button class="sort-date-btn" onclick={() => projectDateOrder = projectDateOrder === 'newest' ? 'oldest' : 'newest'}>
+						{projectDateOrder === 'newest' ? '↓ Newest' : '↑ Oldest'}
+					</button>
 				</div>
 
 				{#if projectsLoading}
 					<p class="loading">Loading projects...</p>
 				{:else}
+
 					<div class="proj-split">
 						<div class="proj-sidebar">
 							{#if filteredProjects.length === 0}
@@ -2252,6 +2354,14 @@
 										<span class="proj-sidebar-meta">
 											{isSuperAdmin ? (project.user.name ?? '—') : (project.user.slackId ?? '—')}
 											<span class="badge badge-{project.status} badge-sm">{project.status}</span>
+											{#if project.user.intent}
+												<span class="user-intent-badge user-intent-badge--sm">{INTENT_LABELS[project.user.intent] ?? project.user.intent}</span>
+											{/if}
+											{#if project.claimedByReviewerId && project.claimedByReviewerId !== data.user.uid}
+												<span class="claim-badge">Claimed by {project.claimedByReviewerName ?? 'someone'}</span>
+											{:else if project.claimedByReviewerId === data.user.uid}
+												<span class="claim-badge claim-badge--mine">Claimed by you</span>
+											{/if}
 										</span>
 									</button>
 								{/each}
@@ -2286,6 +2396,34 @@
 											</span>
 											<span>Update: <strong>{selectedProject.isUpdate ? 'Yes' : 'No'}</strong></span>
 											<span>Created: <strong>{formatDate(selectedProject.createdAt)}</strong></span>
+											{#if selectedProject.user.intent}
+												<span>Intent: <span class="user-intent-badge">{INTENT_LABELS[selectedProject.user.intent] ?? selectedProject.user.intent}</span></span>
+											{/if}
+										</div>
+
+										<div class="proj-claim-bar">
+											{#if selectedProject.claimedByReviewerId === data.user.uid}
+												<span class="claim-status claim-status--mine">
+													Claimed by you · expires {formatTimeRemaining(selectedProject.claimedAt
+														? new Date(new Date(selectedProject.claimedAt).getTime() + 24*3600*1000).toISOString()
+														: '')}
+												</span>
+												<button class="btn-release-claim" onclick={() => releaseProjectClaim(selectedProject.id)}>
+													Release Claim
+												</button>
+											{:else if selectedProject.claimedByReviewerId}
+												<span class="claim-status claim-status--other">
+													Claimed by {selectedProject.claimedByReviewerName ?? 'another reviewer'}
+												</span>
+												<button class="btn-claim btn-claim--override" onclick={() => claimProject(selectedProject.id)}>
+													Claim Anyway
+												</button>
+											{:else}
+												<span class="claim-status claim-status--free">Unclaimed</span>
+												<button class="btn-claim" onclick={() => claimProject(selectedProject.id)}>
+													Claim Project
+												</button>
+											{/if}
 										</div>
 
 										<div class="ht-actions">
@@ -2754,6 +2892,52 @@
 		{/if}
 	</main>
 </div>
+
+{#if claimsDrawerOpen}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="drawer-backdrop" onclick={() => claimsDrawerOpen = false}></div>
+	<aside class="claims-drawer">
+		<div class="claims-drawer-header">
+			<h2>My Claimed Projects</h2>
+			<button class="claims-drawer-close" onclick={() => claimsDrawerOpen = false}>✕</button>
+		</div>
+		{#if myClaims.length === 0}
+			<p class="claims-drawer-empty">You haven't claimed any projects yet.</p>
+		{:else}
+			<ul class="claims-drawer-list">
+				{#each myClaims as claim}
+					<li class="claims-drawer-item">
+						<div class="claims-drawer-item-top">
+							<span class="claims-drawer-name">{claim.name}</span>
+							<span class="badge badge-{claim.status} badge-sm">{claim.status}</span>
+						</div>
+						<div class="claims-drawer-item-meta">
+							<span class="claims-drawer-type">{claim.projectType}</span>
+							<span class="claims-drawer-expires"
+								class:claims-drawer-expires--soon={new Date(claim.expiresAt).getTime() - Date.now() < 2 * 3_600_000}>
+								Expires {formatTimeRemaining(claim.expiresAt)}
+							</span>
+						</div>
+						<div class="claims-drawer-item-actions">
+							<button class="claims-drawer-go"
+								onclick={() => { claimsDrawerOpen = false; selectProject(claim.id); }}>
+								Go to project →
+							</button>
+							<button class="claims-drawer-release"
+								onclick={() => releaseProjectClaim(claim.id)}>
+								Release
+							</button>
+						</div>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+		<div class="claims-drawer-footer">
+			<p class="claims-drawer-hint">Claims expire after 24 hours of inactivity.</p>
+		</div>
+	</aside>
+{/if}
 
 <svelte:window onkeydown={onDevlogLightboxKey} />
 
@@ -3498,6 +3682,140 @@
 		padding: 0.1rem 0.35rem;
 	}
 
+	.claim-badge {
+		display: inline-block;
+		font-size: 0.6rem;
+		font-weight: 600;
+		padding: 0.1rem 0.4rem;
+		border-radius: 3px;
+		background: rgba(251, 191, 36, 0.15);
+		color: #d97706;
+		border: 1px solid rgba(251, 191, 36, 0.4);
+	}
+
+	.my-claims-section{
+		margin-bottom: 1.25rem;
+		border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 6px;
+  		padding: 0.75rem 1rem;
+  		background: rgba(255,255,255,0.03)
+
+	}
+
+	.claim-badge--mine {
+		background: rgba(59, 130, 246, 0.12);
+		color: #3b82f6;
+		border-color: rgba(59, 130, 246, 0.35);
+	}
+
+	.user-intent-badge {
+		display: inline-block;
+		font-size: 11px;
+		padding: 2px 7px;
+		border-radius: 10px;
+		background: rgba(139, 92, 246, 0.15);
+		color: #a78bfa;
+		border: 1px solid rgba(139, 92, 246, 0.35);
+		font-weight: 600;
+	}
+
+	.user-intent-badge--sm {
+		font-size: 10px;
+		padding: 1px 5px;
+	}
+
+	.sort-date-btn {
+		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		border: 2px solid #666;
+		background: transparent;
+		color: #e0e0e0;
+		cursor: pointer;
+		font-size: 0.85rem;
+		font-family: inherit;
+		white-space: nowrap;
+	}
+
+	.sort-date-btn:hover {
+		border-color: #999;
+		color: #fff;
+	}
+
+	.claims-drawer-btn {
+		position: relative;
+		padding: 6px 14px; border-radius: 6px;
+		border: 1px solid #555; background: transparent;
+		color: #e0e0e0; cursor: pointer; font-size: 13px;
+		font-family: inherit;
+	}
+	.claims-drawer-count {
+		display: inline-flex; align-items: center; justify-content: center;
+		width: 18px; height: 18px; border-radius: 50%;
+		background: #a78bfa; color: #fff; font-size: 11px; font-weight: 700;
+		margin-left: 6px;
+	}
+	.drawer-backdrop {
+		position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200;
+	}
+	.claims-drawer {
+		position: fixed; top: 0; right: 0; bottom: 0; width: 380px;
+		background: #1a1a1a; border-left: 1px solid #333;
+		z-index: 201; display: flex; flex-direction: column; overflow-y: auto;
+	}
+	.claims-drawer-header {
+		display: flex; align-items: center; justify-content: space-between;
+		padding: 20px 24px; border-bottom: 1px solid #333; flex-shrink: 0;
+	}
+	.claims-drawer-header h2 { font-size: 16px; font-weight: 700; margin: 0; }
+	.claims-drawer-close {
+		background: none; border: none; color: #888; cursor: pointer; font-size: 18px; line-height: 1;
+	}
+	.claims-drawer-list { list-style: none; padding: 0; margin: 0; }
+	.claims-drawer-item {
+		padding: 16px 24px; border-bottom: 1px solid #2a2a2a;
+		display: flex; flex-direction: column; gap: 8px;
+	}
+	.claims-drawer-item-top { display: flex; align-items: center; gap: 8px; }
+	.claims-drawer-name { font-weight: 600; font-size: 14px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.claims-drawer-item-meta { display: flex; justify-content: space-between; font-size: 12px; color: #888; }
+	.claims-drawer-expires--soon { color: #f59e0b !important; }
+	.claims-drawer-item-actions { display: flex; gap: 8px; }
+	.claims-drawer-go {
+		flex: 1; padding: 7px 12px; border-radius: 5px; border: 1px solid #555;
+		background: transparent; color: #e0e0e0; cursor: pointer; font-size: 12px; font-family: inherit;
+	}
+	.claims-drawer-go:hover { border-color: #a78bfa; color: #a78bfa; }
+	.claims-drawer-release {
+		padding: 7px 12px; border-radius: 5px; border: 1px solid #555;
+		background: transparent; color: #888; cursor: pointer; font-size: 12px; font-family: inherit;
+	}
+	.claims-drawer-release:hover { border-color: #ef4444; color: #ef4444; }
+	.claims-drawer-footer { padding: 16px 24px; margin-top: auto; }
+	.claims-drawer-hint { font-size: 12px; color: #555; margin: 0; }
+	.claims-drawer-empty { padding: 32px 24px; color: #666; text-align: center; }
+	.proj-claim-bar {
+		display: flex; align-items: center; gap: 12px;
+		padding: 10px 0; border-top: 1px solid #2a2a2a; margin-top: 8px;
+	}
+	.claim-status { font-size: 13px; flex: 1; }
+	.claim-status--mine  { color: #3b82f6; }
+	.claim-status--other { color: #f59e0b; }
+	.claim-status--free  { color: #666; }
+	.btn-claim {
+		padding: 7px 16px; border-radius: 6px; border: 1px solid #a78bfa;
+		background: rgba(139,92,246,0.15); color: #a78bfa;
+		cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
+	}
+	.btn-claim:hover { background: rgba(139,92,246,0.3); }
+	.btn-claim--override {
+		border-color: #f59e0b; background: rgba(245,158,11,0.1); color: #f59e0b;
+	}
+	.btn-release-claim {
+		padding: 7px 16px; border-radius: 6px; border: 1px solid #555;
+		background: transparent; color: #888; cursor: pointer; font-size: 13px; font-family: inherit;
+	}
+	.btn-release-claim:hover { border-color: #ef4444; color: #ef4444; }
+
 	.ht-pill {
 		display: inline-block;
 		margin-left: 0.35rem;
@@ -3748,6 +4066,11 @@
 		outline: none;
 		border-color: rgba(255, 180, 180, 0.55);
 		background: rgba(255, 255, 255, 0.09);
+	}
+
+	.quick-reject-select option {
+		background: #1e1e1e;
+		color: #e0e0e0;
 	}
 
 	.admin-shell.light .quick-reject-select {
