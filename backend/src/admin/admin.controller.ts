@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Param,
@@ -271,6 +272,32 @@ export class AdminController {
   async releaseProjectClaim(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
     await this.adminService.releaseProjectClaim(id, (req as any).user?.uid);
     return { success: true };
+  }
+
+  @UseGuards(ReviewerGuard)
+  @Get('projects/:id/review-draft')
+  getReviewDraft(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getReviewDraft(id);
+  }
+
+  @UseGuards(ReviewerGuard)
+  @Put('projects/:id/review-draft')
+  saveReviewDraft(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: {
+      justification?: string | null;
+      feedback?: string | null;
+      internalNote?: string | null;
+      userNote?: string | null;
+      hideReviewerName?: boolean;
+      overrideHours?: number | null;
+      internalHours?: number | null;
+      quickRejectReason?: string | null;
+    },
+    @Req() req: Request,
+  ) {
+    const user = (req as any).user;
+    return this.adminService.saveReviewDraft(id, user?.uid, user?.name ?? null, body);
   }
 
   @UseGuards(ReviewerGuard)

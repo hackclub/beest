@@ -17,6 +17,7 @@ import { ProjectReview } from '../entities/project-review.entity';
 import { ShopItem } from '../entities/shop-item.entity';
 import { Order } from '../entities/order.entity';
 import { Submission } from '../entities/submission.entity';
+import { ReviewDraft } from '../entities/review-draft.entity';
 import { Event } from '../entities/event.entity';
 import { RsvpService } from '../rsvp/rsvp.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -123,6 +124,7 @@ export class AdminService {
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
     @InjectRepository(Submission) private readonly submissionRepo: Repository<Submission>,
     @InjectRepository(Event) private readonly eventRepo: Repository<Event>,
+    @InjectRepository(ReviewDraft) private readonly reviewDraftRepo: Repository<ReviewDraft>,
     private readonly rsvpService: RsvpService,
     private readonly auditLogService: AuditLogService,
     private readonly hcaService: HcaService,
@@ -525,6 +527,7 @@ export class AdminService {
       claimedByReviewerName: null,
       claimedAt: null,
     });
+    await this.clearReviewDraft(projectId);
 
     return { success: true };
   }
@@ -967,12 +970,14 @@ export class AdminService {
           : `Project "${project.name}" received feedback`;
     await this.auditLogService.log(project.userId, 'project_reviewed', label);
 
-    // A decided project no longer needs to be claimed — free it.
+    // A decided project no longer needs to be claimed — free it, and drop any
+    // in-progress draft review.
     await this.projectRepo.update(projectId, {
       claimedByReviewerId: null,
       claimedByReviewerName: null,
       claimedAt: null,
     });
+    await this.clearReviewDraft(projectId);
 
     return { success: true };
   }
@@ -1028,6 +1033,76 @@ export class AdminService {
         claimedAt: null,
       });
     }
+  }
+
+  // ── Review drafts (auto-saved in-progress reviews) ──
+
+  async getReviewDraft(projectId: string) {
+    const draft = await this.reviewDraftRepo.findOneBy({ projectId });
+    if (!draft) return null;
+    return {
+      justification: draft.justification,
+      feedback: draft.feedback,
+      internalNote: draft.internalNote,
+      userNote: draft.userNote,
+      hideReviewerName: draft.hideReviewerName,
+      overrideHours: draft.overrideHours,
+      internalHours: draft.internalHours,
+      quickRejectReason: draft.quickRejectReason,
+      reviewerId: draft.reviewerId,
+      reviewerName: draft.reviewerName,
+      updatedAt: draft.updatedAt,
+    };
+  }
+
+  async saveReviewDraft(
+    projectId: string,
+    reviewerId: string,
+    reviewerName: string | null,
+    fields: {
+      justification?: string | null;
+      feedback?: string | null;
+      internalNote?: string | null;
+      userNote?: string | null;
+      hideReviewerName?: boolean;
+      overrideHours?: number | null;
+      internalHours?: number | null;
+      quickRejectReason?: string | null;
+    },
+  ) {
+    // The project must exist; ignore drafts for unknown ids.
+    const exists = await this.projectRepo.findOne({
+      where: { id: projectId },
+      select: ['id'],
+    });
+    if (!exists) throw new NotFoundException('Project not found');
+
+    const clampText = (v: string | null | undefined, max: number) =>
+      v == null ? null : String(v).slice(0, max);
+    const clampHours = (v: number | null | undefined) =>
+      v == null || !Number.isFinite(v) ? null : Math.min(500, Math.max(0, v));
+
+    const payload = {
+      projectId,
+      reviewerId,
+      reviewerName: reviewerName ?? null,
+      justification: clampText(fields.justification, 5000),
+      feedback: clampText(fields.feedback, 5000),
+      internalNote: clampText(fields.internalNote, 5000),
+      userNote: clampText(fields.userNote, 2000),
+      hideReviewerName: !!fields.hideReviewerName,
+      overrideHours: clampHours(fields.overrideHours),
+      internalHours: clampHours(fields.internalHours),
+      quickRejectReason: clampText(fields.quickRejectReason, 100),
+    };
+
+    // One draft per project — upsert on the unique project_id.
+    await this.reviewDraftRepo.upsert(payload, ['projectId']);
+    return { success: true };
+  }
+
+  private async clearReviewDraft(projectId: string) {
+    await this.reviewDraftRepo.delete({ projectId });
   }
 
   async resyncProjectToAirtable(projectId: string, reviewerId: string) {

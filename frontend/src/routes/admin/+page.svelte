@@ -271,6 +271,15 @@
 	let customHours = $state(0);
 	let userFacingHours = $state(0);
 
+	// Server-side review draft auto-save. draftReady gates the auto-save effect so
+	// it doesn't fire while we're programmatically populating fields on open.
+	// lastDraftSnapshot is the JSON we last persisted, so unchanged forms don't
+	// re-save and a restored draft doesn't immediately save itself back.
+	let draftReady = $state(false);
+	let draftStatus = $state<'idle' | 'unsaved' | 'saving' | 'saved'>('idle');
+	let lastDraftSnapshot = '';
+	let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
 	type QuickRejectReason = {
 		id: string;
 		label: string;
@@ -416,6 +425,12 @@
 				}),
 			});
 			if (res.ok) {
+				// The decision cleared the server draft — stop auto-save from
+				// recreating one for the now-decided project.
+				draftReady = false;
+				draftStatus = 'idle';
+				if (draftSaveTimer) clearTimeout(draftSaveTimer);
+				lastDraftSnapshot = serializeDraft();
 				const proj = allProjects.find(p => p.id === expandedProjectId);
 				if (proj) {
 					proj.status = status;
@@ -605,6 +620,74 @@
 		lastAutoJustification = next;
 	}
 
+	// Snapshot of the review form for draft persistence. Keys match the backend
+	// review-draft payload, so the serialized string IS the request body.
+	function serializeDraft(): string {
+		return JSON.stringify({
+			justification: overrideJustification,
+			feedback: userFeedback,
+			internalNote,
+			userNote: persistentUserNote,
+			hideReviewerName,
+			overrideHours: userFacingHours,
+			internalHours: customHours,
+			quickRejectReason: selectedQuickRejectReason,
+		});
+	}
+
+	// Load any saved draft for this project and overlay it on the computed
+	// defaults. Guarded against navigation races via the projectId check.
+	async function applyReviewDraft(projectId: string) {
+		try {
+			const res = await fetch(`/api/admin/projects/${projectId}/review-draft`);
+			if (!res.ok) return;
+			const d = await res.json();
+			if (!d || expandedProjectId !== projectId || typeof d !== 'object' || !('justification' in d)) return;
+			if (d.justification != null) overrideJustification = d.justification;
+			if (d.feedback != null) userFeedback = d.feedback;
+			if (d.internalNote != null) internalNote = d.internalNote;
+			if (d.userNote != null) persistentUserNote = d.userNote;
+			if (typeof d.hideReviewerName === 'boolean') hideReviewerName = d.hideReviewerName;
+			if (d.overrideHours != null) userFacingHours = d.overrideHours;
+			if (d.internalHours != null) customHours = d.internalHours;
+			if (d.quickRejectReason != null) selectedQuickRejectReason = d.quickRejectReason;
+		} catch {
+			/* no draft / fetch failed — keep computed defaults */
+		}
+	}
+
+	async function saveDraft() {
+		const pid = expandedProjectId;
+		if (!pid) return;
+		const snap = serializeDraft();
+		if (snap === lastDraftSnapshot) { draftStatus = 'saved'; return; }
+		draftStatus = 'saving';
+		try {
+			const res = await fetch(`/api/admin/projects/${pid}/review-draft`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: snap,
+			});
+			if (res.ok && expandedProjectId === pid) { lastDraftSnapshot = snap; draftStatus = 'saved'; }
+			else draftStatus = 'unsaved';
+		} catch {
+			draftStatus = 'unsaved';
+		}
+	}
+
+	// Debounced auto-save: any edit to a review field schedules a save 800ms later.
+	$effect(() => {
+		// Touch every field so the effect re-runs on any change.
+		void [overrideJustification, userFeedback, internalNote, persistentUserNote,
+			hideReviewerName, userFacingHours, customHours, selectedQuickRejectReason];
+		if (!expandedProjectId || !draftReady) return;
+		// Ignore re-runs where nothing actually changed (e.g. arming on open).
+		if (serializeDraft() === lastDraftSnapshot) return;
+		draftStatus = 'unsaved';
+		if (draftSaveTimer) clearTimeout(draftSaveTimer);
+		draftSaveTimer = setTimeout(saveDraft, 800);
+	});
+
 	async function selectProject(projectId: string) {
 		if (expandedProjectId === projectId) {
 			expandedProjectId = null;
@@ -617,10 +700,17 @@
 			lastQuickRejectInternalNote = '';
 			hideReviewerName = false;
 			projectDevlogs = [];
+			draftReady = false;
+			draftStatus = 'idle';
+			if (draftSaveTimer) clearTimeout(draftSaveTimer);
 			closeAuditEmbed();
 			syncProjectUrl(null);
 			return;
 		}
+		// Pause auto-save while we populate the form for the newly opened project.
+		draftReady = false;
+		draftStatus = 'idle';
+		if (draftSaveTimer) clearTimeout(draftSaveTimer);
 		closeAuditEmbed();
 		syncProjectUrl(projectId);
 		expandedProjectId = projectId;
@@ -666,6 +756,18 @@
 				buildInitialJustification(proj);
 			}
 		}
+
+		// Overlay any saved draft on top of the computed defaults, then arm
+		// auto-save. The guard inside applyReviewDraft + this check avoid a stale
+		// draft landing on a project the reviewer already navigated away from.
+		if (expandedProjectId !== projectId) return;
+		const hadDraft = serializeDraft();
+		await applyReviewDraft(projectId);
+		if (expandedProjectId !== projectId) return;
+		const restored = serializeDraft();
+		lastDraftSnapshot = restored;
+		draftStatus = restored !== hadDraft ? 'saved' : 'idle';
+		draftReady = true;
 	}
 
 	function todayDateStr(): string {
@@ -3024,6 +3126,13 @@
 										<span>Hide my name from the project owner</span>
 									</label>
 
+									<div class="draft-status draft-status-{draftStatus}">
+										{#if draftStatus === 'saving'}Saving draft…
+										{:else if draftStatus === 'saved'}Draft saved ✓
+										{:else if draftStatus === 'unsaved'}Unsaved changes…
+										{:else}Auto-saves as you type{/if}
+									</div>
+
 									<div class="review-actions">
 										<button class="review-btn review-btn-approve" onclick={() => reviewProject('approved')} disabled={reviewSubmitting || !justificationOk}>Approve</button>
 										<button class="review-btn review-btn-reject" onclick={() => reviewProject('changes_needed')} disabled={reviewSubmitting || !userFeedback.trim()}>Reject</button>
@@ -4734,6 +4843,16 @@
 	.review-btn-reopen {
 		background: #3a6a9a;
 	}
+
+	.draft-status {
+		font-size: 0.78rem;
+		margin: 0.25rem 0 0.5rem;
+		color: #888;
+		min-height: 1rem;
+	}
+	.draft-status-saving { color: #d5b85b; }
+	.draft-status-saved { color: #4a9a5a; }
+	.draft-status-unsaved { color: #d58b5b; }
 
 	.rejected-panel {
 		display: flex;

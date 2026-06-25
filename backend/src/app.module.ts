@@ -32,6 +32,7 @@ import { Devlog } from './entities/devlog.entity';
 import { Event } from './entities/event.entity';
 import { FraudReview } from './entities/fraud-review.entity';
 import { HcbCredential } from './entities/hcb-credential.entity';
+import { ReviewDraft } from './entities/review-draft.entity';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -45,7 +46,7 @@ import { HealthController } from './health.controller';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.getOrThrow('DATABASE_URL'),
-        entities: [User, Session, Project, AuditLog, NewsItem, ProjectReview, Comment, ShopItem, Order, FulfillmentUpdate, Submission, ShopSuggestion, ShopSuggestionVote, Devlog, Event, FraudReview, HcbCredential],
+        entities: [User, Session, Project, AuditLog, NewsItem, ProjectReview, Comment, ShopItem, Order, FulfillmentUpdate, Submission, ShopSuggestion, ShopSuggestionVote, Devlog, Event, FraudReview, HcbCredential, ReviewDraft],
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
         migrationsRun: true,
         synchronize: false,
