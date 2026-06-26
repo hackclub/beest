@@ -337,6 +337,12 @@
 		title: string;
 		text: string;
 		imageUrls: string[];
+		lookout: {
+			status: string;
+			trackedSeconds: number | null;
+			videoUrl: string | null;
+			thumbnailUrl: string | null;
+		} | null;
 		createdAt: string;
 	};
 	let projectDevlogs = $state<DevlogRecord[]>([]);
@@ -344,6 +350,13 @@
 	function openDevlogLightbox(url: string) { devlogLightbox = url; }
 	function closeDevlogLightbox() { devlogLightbox = null; }
 	function onDevlogLightboxKey(e: KeyboardEvent) { if (e.key === 'Escape') closeDevlogLightbox(); }
+
+	function fmtLookoutTracked(secs: number | null): string {
+		if (!secs || secs <= 0) return '';
+		const h = Math.floor(secs / 3600);
+		const m = Math.floor((secs % 3600) / 60);
+		return h > 0 ? `${h}h ${m}m tracked` : `${m}m tracked`;
+	}
 
 	async function loadProjectDevlogs(projectId: string) {
 		try {
@@ -2790,6 +2803,21 @@
 														{/each}
 													</div>
 												{/if}
+												{#if dl.lookout}
+													<div class="devlog-card-lookout">
+														<span class="devlog-lookout-status">{dl.lookout.status}</span>
+														{#if dl.lookout.trackedSeconds}
+															<span class="devlog-lookout-tracked"> · {fmtLookoutTracked(dl.lookout.trackedSeconds)}</span>
+														{/if}
+														{#if dl.lookout.status === 'complete' && dl.lookout.videoUrl}
+															<video controls preload="metadata" poster={dl.lookout.thumbnailUrl ?? undefined} src={dl.lookout.videoUrl}>
+																<track kind="captions" />
+															</video>
+														{:else}
+															<span class="devlog-lookout-pending"> · timelapse not finished yet</span>
+														{/if}
+													</div>
+												{/if}
 											</div>
 										{/each}
 									</div>
@@ -4509,6 +4537,27 @@
 		flex-wrap: wrap;
 		gap: 0.4rem;
 		margin-top: 0.5rem;
+	}
+
+	.devlog-card-lookout {
+		margin-top: 0.5rem;
+		font-size: 0.8rem;
+		color: #ddd;
+	}
+	.devlog-lookout-status {
+		text-transform: capitalize;
+	}
+	.devlog-lookout-tracked,
+	.devlog-lookout-pending {
+		opacity: 0.65;
+	}
+	.devlog-card-lookout video {
+		display: block;
+		width: 100%;
+		max-height: 360px;
+		margin-top: 0.35rem;
+		background: #000;
+		border-radius: 4px;
 	}
 
 	.devlog-card-image-btn {

@@ -12,6 +12,7 @@ import { Devlog } from '../entities/devlog.entity';
 import { Project } from '../entities/project.entity';
 import { fetchWithTimeout } from '../fetch.util';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { LookoutService, LookoutSessionDTO } from '../lookout/lookout.service';
 import { CreateDevlogDto } from './create-devlog.dto';
 
 const CDN_UPLOAD_URL = 'https://cdn.hackclub.com/api/v4/upload';
@@ -42,6 +43,7 @@ export class DevlogsService {
   constructor(
     private configService: ConfigService,
     private auditLogService: AuditLogService,
+    private lookoutService: LookoutService,
     @InjectRepository(Devlog) private devlogRepo: Repository<Devlog>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
   ) {
@@ -69,6 +71,15 @@ export class DevlogsService {
     });
     const saved = await this.devlogRepo.save(devlog);
 
+    if (dto.lookoutSessionId) {
+      await this.lookoutService.attachToDevlog(
+        dto.lookoutSessionId,
+        userId,
+        projectId,
+        saved.id,
+      );
+    }
+
     await this.auditLogService.log(
       userId,
       'devlog_created',
@@ -83,7 +94,10 @@ export class DevlogsService {
       where: { userId },
       order: { createdAt: 'DESC' },
     });
-    return rows.map((d) => this.toPublic(d));
+    const lookouts = await this.lookoutService.findForDevlogs(
+      rows.map((d) => d.id),
+    );
+    return rows.map((d) => this.toPublic(d, lookouts.get(d.id) ?? null));
   }
 
   async findByProject(projectId: string) {
@@ -92,6 +106,9 @@ export class DevlogsService {
       order: { createdAt: 'ASC' },
       relations: ['user'],
     });
+    const lookouts = await this.lookoutService.findForDevlogs(
+      rows.map((d) => d.id),
+    );
     return rows.map((d) => ({
       id: d.id,
       projectId: d.projectId,
@@ -100,6 +117,7 @@ export class DevlogsService {
       title: d.title,
       text: d.text,
       imageUrls: d.imageUrls ?? [],
+      lookout: lookouts.get(d.id) ?? null,
       createdAt: d.createdAt,
     }));
   }
@@ -125,7 +143,7 @@ export class DevlogsService {
    */
   private sanitize(raw: string): string {
     return String(raw)
-      .replace(/[<>"'`\\]/g, '') // strip injection-relevant chars (keep & for ampersand-using prose)
+      .replace(/[<>"`\\]/g, '') // strip injection-relevant chars (keep & and ' for prose — Svelte escapes on render)
       .replace(/\0/g, '') // strip null bytes
       .replace(/\r\n/g, '\n')
       .trim();
@@ -282,13 +300,14 @@ export class DevlogsService {
     return urls;
   }
 
-  private toPublic(d: Devlog) {
+  private toPublic(d: Devlog, lookout: LookoutSessionDTO | null = null) {
     return {
       id: d.id,
       projectId: d.projectId,
       title: d.title,
       text: d.text,
       imageUrls: d.imageUrls ?? [],
+      lookout,
       createdAt: d.createdAt,
     };
   }

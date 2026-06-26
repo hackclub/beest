@@ -854,7 +854,7 @@ export class ProjectsService {
    */
   private sanitize(raw: string): string {
     return String(raw)
-      .replace(/[<>"'`&\\]/g, '') // strip injection-relevant chars
+      .replace(/[<>"`&\\]/g, '') // strip injection-relevant chars (apostrophes kept — Svelte escapes on render, TypeORM params the queries)
       .replace(/\0/g, '') // strip null bytes
       .trim();
   }

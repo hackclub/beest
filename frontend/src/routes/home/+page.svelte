@@ -157,7 +157,22 @@
   let unreadCount = $state(0);
 
   // Devlogs state
-  type DevlogType = { id: string; projectId: string | null; title: string; text: string; imageUrls: string[]; createdAt: string };
+  type LookoutDevlog = {
+    status: string;
+    trackedSeconds: number | null;
+    videoUrl: string | null;
+    thumbnailUrl: string | null;
+  } | null;
+  type DevlogType = { id: string; projectId: string | null; title: string; text: string; imageUrls: string[]; lookout: LookoutDevlog; createdAt: string };
+  type LookoutSessionOption = {
+    id: string;
+    status: string;
+    trackedSeconds: number | null;
+    screenshotCount: number | null;
+    videoUrl: string | null;
+    thumbnailUrl: string | null;
+    createdAt: string | null;
+  };
   let devlogs = $state<DevlogType[]>([]);
   let devlogsLoading = $state(false);
   let devlogFormOpen = $state(false);
@@ -183,6 +198,119 @@
   let devlogPreviews = $state<string[]>(['', '', '', '']);
   let devlogSubmitting = $state(false);
   let devlogError = $state('');
+  // Lookout timelapse the user records (optionally) before posting a devlog.
+  let devlogLookoutSessionId = $state<string | null>(null);
+  let devlogLookoutSessions = $state<LookoutSessionOption[]>([]);
+  let devlogLookoutSessionsLoading = $state(false);
+  let devlogLookoutBusy = $state(false);
+  // Survives the redirect to the Lookout recorder so the half-written devlog
+  // (and its attached recording) is restored when the user comes back.
+  const DEVLOG_DRAFT_KEY = 'beest:devlog-lookout-draft';
+
+  function selectDefaultDevlogLookoutSession(sessions: LookoutSessionOption[]) {
+    const completeSession = sessions.find((session) => session.status === 'complete');
+    return completeSession?.id ?? sessions[0]?.id ?? null;
+  }
+
+  async function fetchDevlogLookoutSessions(projectId: string) {
+    if (!projectId) {
+      devlogLookoutSessions = [];
+      devlogLookoutSessionId = null;
+      devlogLookoutSessionsLoading = false;
+      return;
+    }
+
+    devlogLookoutSessionsLoading = true;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/lookout`);
+      if (!res.ok) {
+        devlogLookoutSessions = [];
+        devlogLookoutSessionId = null;
+        return;
+      }
+
+      const data = await res.json().catch(() => null);
+      const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+      devlogLookoutSessions = sessions;
+
+      if (!sessions.some((session: LookoutSessionOption) => session.id === devlogLookoutSessionId)) {
+        devlogLookoutSessionId = selectDefaultDevlogLookoutSession(sessions);
+      }
+    } catch {
+      devlogLookoutSessions = [];
+      devlogLookoutSessionId = null;
+    } finally {
+      devlogLookoutSessionsLoading = false;
+    }
+  }
+
+  $effect(() => {
+    const projectId = devlogProjectId.trim();
+    void fetchDevlogLookoutSessions(projectId);
+  });
+
+  async function startDevlogRecording() {
+    if (!devlogProjectId) {
+      devlogError = 'Pick a project before recording a timelapse';
+      return;
+    }
+    devlogLookoutBusy = true;
+    try {
+      const res = await fetch(`/api/projects/${devlogProjectId}/lookout/session`, {
+        method: 'POST'
+      });
+      if (!res.ok) {
+        devlogError = 'Could not start a timelapse recording right now.';
+        return;
+      }
+      const { id, token } = await res.json();
+      devlogLookoutSessionId = id;
+      if (!devlogLookoutSessions.some((session) => session.id === id)) {
+        devlogLookoutSessions = [
+          ...devlogLookoutSessions,
+          { id, status: 'pending', trackedSeconds: null, screenshotCount: null, videoUrl: null, thumbnailUrl: null, createdAt: null },
+        ];
+      }
+      // Stash the in-progress devlog so it (and this recording) survive the
+      // round-trip in case the browser navigates away to hand off the link.
+      try {
+        sessionStorage.setItem(
+          DEVLOG_DRAFT_KEY,
+          JSON.stringify({
+            title: devlogTitle,
+            text: devlogText,
+            projectId: devlogProjectId,
+            lookoutSessionId: id
+          })
+        );
+      } catch { /* private mode / quota — continue anyway */ }
+      // Deep-link into the Lookout desktop app (matches fallout's desktop mode).
+      window.location.href = `lookout://session?token=${token}`;
+    } catch {
+      devlogError = 'Could not start a timelapse recording right now.';
+    } finally {
+      devlogLookoutBusy = false;
+    }
+  }
+
+  function restoreDevlogDraft() {
+    let raw: string | null = null;
+    try {
+      raw = sessionStorage.getItem(DEVLOG_DRAFT_KEY);
+      sessionStorage.removeItem(DEVLOG_DRAFT_KEY);
+    } catch { return; }
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw);
+      devlogTitle = draft.title ?? '';
+      devlogText = draft.text ?? '';
+      devlogProjectId = draft.projectId ?? '';
+      devlogLookoutSessionId = draft.lookoutSessionId ?? null;
+      devlogFormOpen = true;
+      activeSection = 'devlogs';
+      fetchDevlogs();
+    } catch { /* malformed draft — ignore */ }
+  }
   const DEVLOG_TITLE_MAX = 120;
   const DEVLOG_TEXT_MAX = 5000;
   const DEVLOG_MAX_IMAGES = 4;
@@ -659,6 +787,13 @@
       }
     } catch { /* silently fail — dropdown stays empty */ }
     hackatimeLoading = false;
+  }
+
+  function fmtTrackedShort(secs: number | null): string {
+    if (!secs || secs <= 0) return '';
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
 
   async function submitProject() {
@@ -1256,6 +1391,8 @@
     devlogFiles = [null, null, null, null];
     devlogPreviews = ['', '', '', ''];
     devlogError = '';
+    devlogLookoutSessionId = null;
+    devlogLookoutSessions = [];
   }
 
   async function submitDevlog() {
@@ -1289,6 +1426,7 @@
           text: trimmed,
           projectId: devlogProjectId,
           images,
+          lookoutSessionId: devlogLookoutSessionId ?? undefined,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -1403,6 +1541,8 @@
     fetchPipes();
     fetchUnreadCount();
     loadSectionData(activeSection);
+    // Returning from the Lookout recorder? Re-open the devlog draft we stashed.
+    restoreDevlogDraft();
     updateEventCountdown();
     const countdownTimer = window.setInterval(updateEventCountdown, 1000);
 
@@ -2703,6 +2843,44 @@
               </div>
             </div>
 
+            <div class="devlog-field">
+              <span class="form-label">Timelapse (Lookout) <span class="optional">optional</span></span>
+              <div class="lookout-block">
+                <button
+                  type="button"
+                  class="lookout-record-btn"
+                  disabled={devlogLookoutBusy || !devlogProjectId}
+                  onclick={startDevlogRecording}
+                >
+                  {devlogLookoutBusy ? 'Opening Lookout…' : '🎥 Record a timelapse'}
+                </button>
+                {#if devlogLookoutSessionsLoading}
+                  <span class="lookout-hint">Checking for saved Lookout sessions…</span>
+                {:else if devlogLookoutSessions.length > 0}
+                  <label class="lookout-select-wrap" for="devlog-lookout-session">
+                    <span class="lookout-select-label">Attach an existing session</span>
+                    <select
+                      id="devlog-lookout-session"
+                      class="form-input form-select lookout-select"
+                      bind:value={devlogLookoutSessionId}
+                    >
+                      <option value="">None</option>
+                      {#each [...devlogLookoutSessions].sort((a, b) => Number(b.status === 'complete') - Number(a.status === 'complete')) as session (session.id)}
+                        <option value={session.id}>
+                          {session.status === 'complete' ? 'Complete' : session.status} · {session.createdAt ? formatLocal(session.createdAt) : 'recent'}
+                        </option>
+                      {/each}
+                    </select>
+                  </label>
+                {/if}
+                {#if devlogLookoutSessionId}
+                  <span class="lookout-attached">Recording attached — finish in the Lookout app; it'll appear on this devlog once it's done.</span>
+                {:else}
+                  <span class="lookout-hint">Opens the Lookout desktop app to record. <a href="https://lookout.hackclub.com" target="_blank" rel="noopener">Don't have it?</a></span>
+                {/if}
+              </div>
+            </div>
+
             {#if devlogError}
               <p class="form-error">{devlogError}</p>
             {/if}
@@ -2762,6 +2940,19 @@
                         <img src={url} alt="Devlog attachment" loading="lazy" />
                       </button>
                     {/each}
+                  </div>
+                {/if}
+                {#if dl.lookout}
+                  <div class="devlog-card-lookout">
+                    <span class="lookout-status">{dl.lookout.status}</span>
+                    {#if dl.lookout.trackedSeconds}
+                      <span class="lookout-tracked"> · {fmtTrackedShort(dl.lookout.trackedSeconds)}</span>
+                    {/if}
+                    {#if dl.lookout.status === 'complete' && dl.lookout.videoUrl}
+                      <video controls preload="metadata" poster={dl.lookout.thumbnailUrl ?? undefined} src={dl.lookout.videoUrl}>
+                        <track kind="captions" />
+                      </video>
+                    {/if}
                   </div>
                 {/if}
               </article>
@@ -4432,6 +4623,56 @@
 
   .hackatime-group {
     position: relative;
+  }
+
+  .lookout-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .lookout-record-btn {
+    align-self: flex-start;
+    padding: 0.5rem 0.9rem;
+    border-radius: 6px;
+    border: 1px solid currentColor;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+  }
+  .lookout-record-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .lookout-attached,
+  .lookout-hint {
+    font-size: 0.8rem;
+    opacity: 0.7;
+  }
+  .optional {
+    font-weight: 400;
+    font-size: 0.75rem;
+    opacity: 0.55;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .devlog-card-lookout {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .lookout-status {
+    text-transform: capitalize;
+  }
+  .lookout-tracked {
+    opacity: 0.65;
+  }
+  .devlog-card-lookout video {
+    display: block;
+    width: 100%;
+    max-height: 320px;
+    margin-top: 0.35rem;
+    background: #000;
+    border-radius: 4px;
   }
 
   .hackatime-row {
