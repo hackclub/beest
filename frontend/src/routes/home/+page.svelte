@@ -163,6 +163,17 @@
   let codeUrl = $state('');
   let demoUrl = $state('');
   let readmeUrl = $state('');
+
+  $effect(() => {
+    if (codeUrl && !readmeUrl) {
+      const githubMatch = codeUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
+      if (githubMatch) {
+        const owner = githubMatch[1];
+        const repo = githubMatch[2];
+        readmeUrl = `https://github.com/${owner}/${repo}/blob/main/README.md`;
+      }
+    }
+  });
   let screenshotFiles = $state<(File | null)[]>([null, null]);
   let screenshotPreviews = $state<string[]>(['', '']);
   let activeScreenshot = $state(0);
