@@ -314,6 +314,7 @@
     </svg>
   </div>
   <div class="hero-overlay">
+    <div class="hero-credit">from Euan Ripper</div>
     <h1 class="hero-title">{titleText}{#if !titleDone}<span class="cursor">|</span>{/if}</h1>
     <p class="hero-subtitle">{subtitleText}{#if titleDone}<span class="cursor">|</span>{/if}</p>
   </div>
@@ -838,6 +839,19 @@
     pointer-events: none;
     line-height: normal;
     flex-wrap: wrap;
+  }
+
+  /* signature credit — its own full-width row directly above #BEEST */
+  .hero-credit {
+    flex: 0 0 100%;
+    margin: 0;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: clamp(16px, 1.6vw, 24px);
+    color: #ffffff;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
   }
 
   .hero-subtitle {
