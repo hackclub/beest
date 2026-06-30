@@ -32,6 +32,9 @@ export const AUDIT_ACTIONS = [
   'devlog_deleted',
   'hcb_connected',
   'card_grant_issued',
+  'admin_shop_item_change',
+  'admin_event_change',
+  'admin_fulfillment_message',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

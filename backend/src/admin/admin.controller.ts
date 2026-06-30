@@ -190,8 +190,9 @@ export class AdminController {
       endAt?: string | null;
       url?: string | null;
     },
+    @Req() req: Request,
   ) {
-    return this.adminService.createEvent(body);
+    return this.adminService.createEvent(body, (req as any).user?.uid);
   }
 
   @UseGuards(SuperAdminGuard)
@@ -207,14 +208,15 @@ export class AdminController {
       endAt?: string | null;
       url?: string | null;
     },
+    @Req() req: Request,
   ) {
-    return this.adminService.updateEvent(id, body);
+    return this.adminService.updateEvent(id, body, (req as any).user?.uid);
   }
 
   @UseGuards(SuperAdminGuard)
   @Delete('events/:id')
-  deleteEvent(@Param('id', ParseUUIDPipe) id: string) {
-    return this.adminService.deleteEvent(id);
+  deleteEvent(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    return this.adminService.deleteEvent(id, (req as any).user?.uid);
   }
 
   @UseGuards(FulfillerGuard)
@@ -364,6 +366,7 @@ export class AdminController {
         body.userNote,
         body.hideReviewerName === true,
         body.overrideJustification ?? null,
+        isSuperAdmin,
       );
     }
 
@@ -540,7 +543,7 @@ export class AdminController {
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
-  }) {
+  }, @Req() req: Request) {
     if (!body.name || !body.description || !body.imageUrl || body.priceHours == null) {
       throw new BadRequestException('name, description, imageUrl, and priceHours are required');
     }
@@ -562,7 +565,7 @@ export class AdminController {
       estimatedShip: body.estimatedShip,
       isActive: body.isActive,
       isFeatured: body.isFeatured,
-    });
+    }, (req as any).user?.uid);
   }
 
   @UseGuards(FulfillerGuard)
@@ -595,6 +598,7 @@ export class AdminController {
       isActive?: boolean;
       isFeatured?: boolean;
     },
+    @Req() req: Request,
   ) {
     if (body.priceHours !== undefined) {
       if (!Number.isInteger(body.priceHours) || body.priceHours < 1) {
@@ -606,13 +610,13 @@ export class AdminController {
         throw new BadRequestException('stock must be a non-negative integer or null');
       }
     }
-    return this.adminService.updateShopItem(id, body);
+    return this.adminService.updateShopItem(id, body, (req as any).user?.uid);
   }
 
   @UseGuards(FulfillerGuard)
   @Delete('shop/:id')
-  async deleteShopItem(@Param('id', ParseUUIDPipe) id: string) {
-    await this.adminService.deleteShopItem(id);
+  async deleteShopItem(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request) {
+    await this.adminService.deleteShopItem(id, (req as any).user?.uid);
     return { success: true };
   }
 
@@ -666,10 +670,11 @@ export class AdminController {
   async sendFulfillmentMessage(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { message?: string },
+    @Req() req: Request,
   ) {
     if (!body.message || typeof body.message !== 'string') {
       throw new BadRequestException('message is required');
     }
-    return this.shopService.sendFulfillmentMessage(id, body.message);
+    return this.shopService.sendFulfillmentMessage(id, body.message, (req as any).user?.uid);
   }
 }

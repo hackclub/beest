@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -338,6 +339,12 @@ export class AuditService {
       relations: ['user'],
     });
     if (!project) throw new NotFoundException('Project not found');
+    // An auditor must never decide on their own project — matches the
+    // self-review guard the first-pass reviewProject/banAndRejectProject paths
+    // already enforce. Applies to every action (approve/reject/rereview/ban).
+    if (project.userId === superAdminId) {
+      throw new ForbiddenException('You cannot review or decide on your own project');
+    }
     if (project.status !== 'fraud_pending') {
       throw new BadRequestException(
         `Project is not awaiting second review (status: ${project.status}).`,
@@ -389,6 +396,8 @@ export class AuditService {
       null,
       false,
       null,
+      // This path is Super-Admin-only (dto.isSuperAdmin checked above).
+      true,
     );
     return { success: true };
   }

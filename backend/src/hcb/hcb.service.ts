@@ -449,6 +449,19 @@ export class HcbService {
             `could not be updated — money has moved. Reconcile in HCB before any retry. ` +
             `Cause: ${err instanceof Error ? err.message : String(err)}`,
         );
+        // Best-effort: stamp the grant id directly so the per-order idempotency
+        // guard blocks a retry from issuing a SECOND real grant. This is a
+        // separate, narrowly-scoped write — the transaction above already
+        // failed — so if it also fails we are no worse off than before (the
+        // loud log above stands and reconciliation is still manual).
+        try {
+          await this.orderRepo.update({ id: orderId }, { hcbCardGrantId: issuedGrantId });
+        } catch (stampErr) {
+          this.logger.error(
+            `Failed to stamp grant ${issuedGrantId} onto order ${orderId} for retry-safety: ` +
+              `${stampErr instanceof Error ? stampErr.message : String(stampErr)}`,
+          );
+        }
       }
       throw err;
     }

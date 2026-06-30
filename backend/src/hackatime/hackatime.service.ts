@@ -466,6 +466,7 @@ export class HackatimeService implements OnModuleInit {
     let reverted = 0;
     let stillBad = 0;
     let notBanned = 0;
+    let manualBan = 0;
     let skipped = 0;
 
     for (const userId of candidateUserIds) {
@@ -487,6 +488,15 @@ export class HackatimeService implements OnModuleInit {
       }
       if (currentPerms !== 'Banned') {
         notBanned += 1;
+        continue;
+      }
+
+      // Only auto-recover the automatic Hackatime ownership ban. If a manual /
+      // fraud ban (admin_ban) was applied after the most recent ownership-fail,
+      // the active ban is a deliberate human decision — never silently reverse
+      // it just because the linked Hackatime account now looks clean.
+      if (await this.auditLogService.hasManualBanAfterOwnershipFail(userId)) {
+        manualBan += 1;
         continue;
       }
 
@@ -527,7 +537,7 @@ export class HackatimeService implements OnModuleInit {
     }
 
     this.logger.log(
-      `hackatime-ownership-recovery done: reverted=${reverted} stillBad=${stillBad} notBanned=${notBanned} skipped=${skipped}`,
+      `hackatime-ownership-recovery done: reverted=${reverted} stillBad=${stillBad} notBanned=${notBanned} manualBan=${manualBan} skipped=${skipped}`,
     );
   }
 

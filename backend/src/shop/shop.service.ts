@@ -602,6 +602,19 @@ export class ShopService {
         throw new BadRequestException('No matching duplicate orders to merge');
       }
 
+      // Money-safety (mirrors refundOrder): never merge when any order in the
+      // set carries an HCB card grant. Merging deletes the merged-from rows and
+      // rewrites the target, which would destroy the grant↔order reconciliation
+      // link and leave the surviving order re-grantable — a double real-money
+      // payout, the same failure mode the refund guard prevents.
+      const granted = [target, ...others].find((o) => o.hcbCardGrantId);
+      if (granted) {
+        throw new ConflictException(
+          `Cannot merge: order ${granted.id} has an HCB card grant ` +
+            `(${granted.hcbCardGrantId}). Reconcile it in HCB instead.`,
+        );
+      }
+
       let addedQty = 0;
       let addedPipes = 0;
       for (const o of others) {
@@ -655,7 +668,7 @@ export class ShopService {
   }
 
   /** Send a custom fulfillment message */
-  async sendFulfillmentMessage(orderId: string, message: string) {
+  async sendFulfillmentMessage(orderId: string, message: string, adminId?: string) {
     const order = await this.orderRepo.findOne({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Order not found');
 
@@ -669,6 +682,14 @@ export class ShopService {
       isRead: false,
     });
     await this.fulfillmentRepo.save(update);
+
+    if (adminId) {
+      await this.auditLogService.log(
+        adminId,
+        'admin_fulfillment_message',
+        `Sent fulfillment message on order ${order.id} (${order.itemName})`,
+      );
+    }
 
     return { success: true };
   }

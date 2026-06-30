@@ -310,7 +310,7 @@ export class AdminService {
     startAt?: string;
     endAt?: string | null;
     url?: string | null;
-  }) {
+  }, adminId?: string) {
     const title = (body.title ?? '').trim();
     const hostedBy = (body.hostedBy ?? '').trim();
     const startAt = body.startAt ? new Date(body.startAt) : null;
@@ -341,6 +341,13 @@ export class AdminService {
       url: body.url?.trim() || null,
     });
     const saved = await this.eventRepo.save(event);
+    if (adminId) {
+      await this.auditLogService.log(
+        adminId,
+        'admin_event_change',
+        `Created event "${saved.title}"`,
+      );
+    }
     const [eventWithHost] = await this.withEventHosts([saved]);
     return eventWithHost;
   }
@@ -352,7 +359,7 @@ export class AdminService {
     startAt?: string;
     endAt?: string | null;
     url?: string | null;
-  }) {
+  }, adminId?: string) {
     const event = await this.eventRepo.findOne({ where: { id } });
     if (!event) {
       throw new NotFoundException('Event not found');
@@ -393,14 +400,29 @@ export class AdminService {
     }
 
     const saved = await this.eventRepo.save(event);
+    if (adminId) {
+      await this.auditLogService.log(
+        adminId,
+        'admin_event_change',
+        `Updated event "${saved.title}"`,
+      );
+    }
     const [eventWithHost] = await this.withEventHosts([saved]);
     return eventWithHost;
   }
 
-  async deleteEvent(id: string) {
-    const result = await this.eventRepo.delete({ id });
-    if (result.affected === 0) {
+  async deleteEvent(id: string, adminId?: string) {
+    const event = await this.eventRepo.findOne({ where: { id } });
+    if (!event) {
       throw new NotFoundException('Event not found');
+    }
+    await this.eventRepo.remove(event);
+    if (adminId) {
+      await this.auditLogService.log(
+        adminId,
+        'admin_event_change',
+        `Deleted event "${event.title}"`,
+      );
     }
     return { success: true };
   }
@@ -487,6 +509,7 @@ export class AdminService {
     userNote: string | null | undefined,
     hideReviewerName: boolean,
     overrideJustification: string | null,
+    requesterIsSuperAdmin: boolean,
   ) {
     const project = await this.projectRepo.findOne({
       where: { id: projectId },
@@ -518,8 +541,10 @@ export class AdminService {
     });
     await this.reviewRepo.save(review);
 
-    // 3. Ban the user
-    await this.banUser(project.userId);
+    // 3. Ban the user — pass the requester's tier so a non-Super-Admin (e.g. a
+    //    Fraud Reviewer) cannot ban a Fulfiller/Super Admin through the project
+    //    -review path, matching the direct /ban endpoint's elevated-target guard.
+    await this.banUser(project.userId, undefined, requesterIsSuperAdmin);
 
     // 4. Audit logs
     await this.auditLogService.log(project.userId, 'project_reviewed', `Project "${project.name}" was rejected`);
@@ -548,19 +573,35 @@ export class AdminService {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const current = user.pipes ?? 0;
-    const next = current + delta;
-    if (next < 0) {
+    // Apply the adjustment atomically. `delta` is a validated integer, so it is
+    // safe to inline into the SET expression. For revokes the WHERE clause
+    // enforces the floor (`pipes >= -delta`) in the same statement, closing the
+    // TOCTOU window where two concurrent revokes could each pass a read-time
+    // check and drive the balance negative.
+    const updateQb = this.userRepo
+      .createQueryBuilder()
+      .update(User)
+      .set({ pipes: () => `pipes + ${delta}` })
+      .where('id = :id', { id: userId });
+    if (delta < 0) {
+      updateQb.andWhere('pipes >= :min', { min: -delta });
+    }
+    const res = await updateQb.execute();
+    if (!res.affected) {
+      // Revoke rejected by the floor guard (grants always affect the row since
+      // the user was found above).
       throw new BadRequestException(
-        `Cannot revoke ${-delta} pipes — user only has ${current}`,
+        `Cannot revoke ${-delta} pipes — insufficient balance`,
       );
     }
 
-    if (delta > 0) {
-      await this.userRepo.increment({ id: userId }, 'pipes', delta);
-    } else {
-      await this.userRepo.decrement({ id: userId }, 'pipes', -delta);
-    }
+    // Re-read for an accurate audit label (the value moved under the lock).
+    const after = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['pipes'],
+    });
+    const next = after?.pipes ?? 0;
+    const current = next - delta;
 
     const identifier = user.name || user.slackId || user.hcaSub;
     const verb = delta > 0 ? 'Granted' : 'Revoked';
@@ -2265,7 +2306,7 @@ export class AdminService {
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
-  }): Promise<ShopItem> {
+  }, adminId?: string): Promise<ShopItem> {
     const maxOrder = await this.shopRepo
       .createQueryBuilder('s')
       .select('MAX(s.sortOrder)', 'max')
@@ -2284,7 +2325,15 @@ export class AdminService {
       isFeatured: data.isFeatured ?? false,
       sortOrder,
     });
-    return this.shopRepo.save(item);
+    const saved = await this.shopRepo.save(item);
+    if (adminId) {
+      await this.auditLogService.log(
+        adminId,
+        'admin_shop_item_change',
+        `Created shop item "${saved.name}" (${saved.priceHours} Pipes, stock ${saved.stock ?? '∞'})`,
+      );
+    }
+    return saved;
   }
 
   async updateShopItem(id: string, data: {
@@ -2297,9 +2346,22 @@ export class AdminService {
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
-  }): Promise<ShopItem> {
+  }, adminId?: string): Promise<ShopItem> {
     const item = await this.shopRepo.findOne({ where: { id } });
     if (!item) throw new NotFoundException('Shop item not found');
+    // Capture the economically-sensitive fields before mutating so the audit
+    // entry records what actually changed (price/stock edits are the collusion
+    // risk — edit price down, let a colluder buy cheap, edit it back).
+    const changes: string[] = [];
+    if (data.priceHours !== undefined && data.priceHours !== item.priceHours) {
+      changes.push(`price ${item.priceHours}→${data.priceHours}`);
+    }
+    if (data.stock !== undefined && data.stock !== item.stock) {
+      changes.push(`stock ${item.stock ?? '∞'}→${data.stock ?? '∞'}`);
+    }
+    if (data.isActive !== undefined && data.isActive !== item.isActive) {
+      changes.push(`active ${item.isActive}→${data.isActive}`);
+    }
     if (data.name !== undefined) item.name = data.name;
     if (data.description !== undefined) item.description = data.description;
     if (data.detailedDescription !== undefined) item.detailedDescription = data.detailedDescription;
@@ -2309,13 +2371,29 @@ export class AdminService {
     if (data.estimatedShip !== undefined) item.estimatedShip = data.estimatedShip;
     if (data.isActive !== undefined) item.isActive = data.isActive;
     if (data.isFeatured !== undefined) item.isFeatured = data.isFeatured;
-    return this.shopRepo.save(item);
+    const saved = await this.shopRepo.save(item);
+    if (adminId) {
+      const detail = changes.length ? ` [${changes.join(', ')}]` : '';
+      await this.auditLogService.log(
+        adminId,
+        'admin_shop_item_change',
+        `Updated shop item "${saved.name}"${detail}`,
+      );
+    }
+    return saved;
   }
 
-  async deleteShopItem(id: string): Promise<void> {
+  async deleteShopItem(id: string, adminId?: string): Promise<void> {
     const item = await this.shopRepo.findOne({ where: { id } });
     if (!item) throw new NotFoundException('Shop item not found');
     await this.shopRepo.remove(item);
+    if (adminId) {
+      await this.auditLogService.log(
+        adminId,
+        'admin_shop_item_change',
+        `Deleted shop item "${item.name}"`,
+      );
+    }
   }
 
   async reorderShopItems(items: { id: string; sortOrder: number }[]): Promise<void> {

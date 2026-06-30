@@ -20,6 +20,32 @@ export class AuditLogService {
     await this.auditLogRepo.save(entry);
   }
 
+  /**
+   * True if the user has an `admin_ban` entry newer than their most recent
+   * `hackatime_ownership_failed` entry — i.e. a manual/fraud ban was applied
+   * after (or without) the automatic Hackatime ownership ban. The auto-ban path
+   * writes only `hackatime_ownership_failed` (it flips perms directly, never via
+   * banUser), so an `admin_ban` is always a deliberate human action. The
+   * recovery cron uses this to avoid auto-reverting a manual ban.
+   */
+  async hasManualBanAfterOwnershipFail(userId: string): Promise<boolean> {
+    const [lastManualBan, lastOwnershipFail] = await Promise.all([
+      this.auditLogRepo.findOne({
+        where: { userId, action: 'admin_ban' },
+        order: { createdAt: 'DESC' },
+        select: ['createdAt'],
+      }),
+      this.auditLogRepo.findOne({
+        where: { userId, action: 'hackatime_ownership_failed' },
+        order: { createdAt: 'DESC' },
+        select: ['createdAt'],
+      }),
+    ]);
+    if (!lastManualBan) return false; // never manually banned
+    if (!lastOwnershipFail) return true; // manual ban with no ownership-fail context
+    return lastManualBan.createdAt.getTime() > lastOwnershipFail.createdAt.getTime();
+  }
+
   async getForUser(userId: string, limit = 50) {
     return this.auditLogRepo.find({
       where: { userId },
