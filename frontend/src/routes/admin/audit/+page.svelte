@@ -624,7 +624,8 @@
 					{/if}
 
 					<section class="sec">
-						<TimelapsePanel projectId={current.id} />
+						<!-- gated: confidential timelapse URLs load only on explicit reveal -->
+						<TimelapsePanel projectId={current.id} gated />
 					</section>
 
 					<section class="sec">

@@ -2924,7 +2924,8 @@
 									</section>
 								{/if}
 
-								<TimelapsePanel projectId={selectedProject.id} />
+								<!-- gated: confidential timelapse URLs load only on explicit reveal -->
+								<TimelapsePanel projectId={selectedProject.id} gated />
 
 								{#if selectedProject.status === 'unreviewed' || selectedProject.status === 'approved'}
 									<hr class="proj-divider" />

@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   UseGuards,
@@ -27,6 +28,11 @@ export class LapseController {
    */
   @UseGuards(ReviewerGuard)
   @Get(':id/lapse')
+  // Confidential: the DTO carries private timelapse playback/thumbnail URLs.
+  // Never let them sit in a shared/browser/proxy cache.
+  @Header('Cache-Control', 'no-store, max-age=0')
+  @Header('Pragma', 'no-cache')
+  @Header('Referrer-Policy', 'no-referrer')
   async getTimelapses(@Param('id', ParseUUIDPipe) id: string) {
     const project = await this.projectRepo.findOne({
       where: { id },

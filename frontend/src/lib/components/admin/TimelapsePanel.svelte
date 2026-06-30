@@ -16,11 +16,28 @@
 		visibility: string | null;
 	};
 
-	let { projectId }: { projectId: string } = $props();
+	// `gated`: don't auto-load. The playbackUrl/thumbnailUrl are confidential
+	// (anyone with the link can watch a builder's unlisted timelapse), so in the
+	// super-admin audit we hide them behind an explicit "View timelapses" click
+	// instead of fetching + embedding them for every queued project.
+	let { projectId, gated = false }: { projectId: string; gated?: boolean } = $props();
 
 	let timelapses = $state<Timelapse[]>([]);
 	let loaded = $state(false);
+	let revealed = $state(false);
 	let lastProjectId = $state<string | null>(null);
+
+	function reveal() {
+		revealed = true;
+		load(projectId);
+	}
+
+	// Block the browser's "Save video as…" context menu on the confidential
+	// streams. Cosmetic — not a real boundary — but keeps the URL from being
+	// one right-click away.
+	function blockContextMenu(e: Event) {
+		e.preventDefault();
+	}
 
 	async function load(id: string) {
 		loaded = false;
@@ -42,7 +59,12 @@
 	$effect(() => {
 		if (projectId && projectId !== lastProjectId) {
 			lastProjectId = projectId;
-			load(projectId);
+			// Re-conceal on navigation so each project needs a fresh, deliberate
+			// reveal — a confidential URL never lingers across queue items.
+			revealed = false;
+			loaded = false;
+			timelapses = [];
+			if (!gated) load(projectId);
 		}
 	});
 
@@ -64,9 +86,19 @@
 	}
 </script>
 
-{#if loaded && timelapses.length > 0}
+{#if gated && !revealed}
+	<section class="tl-section">
+		<button type="button" class="tl-reveal" onclick={reveal}>View timelapses</button>
+		<p class="tl-confidential">
+			Confidential — these are private video links. Don't copy, forward, or paste them anywhere.
+		</p>
+	</section>
+{:else if loaded && timelapses.length > 0}
 	<section class="tl-section">
 		<h3>Timelapses <span class="muted">({timelapses.length})</span></h3>
+		{#if gated}
+			<p class="tl-confidential">Confidential — do not share these links.</p>
+		{/if}
 		<ul class="tl-list">
 			{#each timelapses as t (t.id)}
 				<li class="tl-item">
@@ -82,9 +114,16 @@
 							<span class="muted"> · {fmtDate(t.createdAt)}</span>
 						{/if}
 					</div>
+					<!-- Hardened against casual exfiltration: no download button, no
+					     picture-in-picture pop-out, and the save-as context menu is
+					     suppressed. The src is still a confidential URL, so the whole panel
+					     is gated behind the reveal above. -->
 					<video
 						controls
-						preload="metadata"
+						controlsList="nodownload noplaybackrate noremoteplayback"
+						disablepictureinpicture
+						preload="none"
+						oncontextmenu={blockContextMenu}
 						poster={t.thumbnailUrl ?? undefined}
 						src={t.playbackUrl}
 					>
@@ -93,6 +132,10 @@
 				</li>
 			{/each}
 		</ul>
+	</section>
+{:else if gated && revealed}
+	<section class="tl-section">
+		<p class="muted">{loaded ? 'No timelapses for this project.' : 'Loading…'}</p>
 	</section>
 {/if}
 
@@ -131,6 +174,24 @@
 	}
 	.muted {
 		opacity: 0.65;
+	}
+	.tl-reveal {
+		font: inherit;
+		cursor: pointer;
+		padding: 0.45rem 0.9rem;
+		border: 1px solid currentColor;
+		border-radius: 5px;
+		background: transparent;
+		color: inherit;
+		opacity: 0.9;
+	}
+	.tl-reveal:hover {
+		opacity: 1;
+	}
+	.tl-confidential {
+		margin: 0.4rem 0 0;
+		font-size: 0.75rem;
+		opacity: 0.6;
 	}
 	video {
 		width: 100%;
