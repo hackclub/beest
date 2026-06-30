@@ -692,7 +692,9 @@
   /* ── decorative pipes ───────────────────────────── */
   .page-wrap {
     position: relative;
-    overflow-x: hidden;
+    /* clip, not hidden — see .carousel-section note; keeps overflow-y truly
+       visible instead of being promoted to auto. */
+    overflow-x: clip;
   }
 
   .pipe {
@@ -1602,7 +1604,10 @@
   .carousel-section {
     position: relative;
     z-index: 2;
-    overflow-x: hidden;
+    /* clip (not hidden): with overflow-y:visible, `hidden` would make the
+       browser compute overflow-y as `auto`, turning the rotated belts'
+       vertical overflow into an in-section scrollbar. `clip` avoids that. */
+    overflow-x: clip;
     overflow-y: visible;
     padding: 100px 0 100px;
     display: grid;
