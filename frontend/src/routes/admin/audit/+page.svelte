@@ -5,6 +5,10 @@
 
 	let { data } = $props<{ data: { role?: string; auditSvcUrl: string } }>();
 	const isSuperAdmin = $derived(data?.role === 'Super Admin');
+	// Second-pass audit actions (load-unreviewed, inline embed) are open to both
+	// audit roles; only ban stays Super-Admin-only. Mirrors the backend `audit`
+	// scope + FraudReviewerGuard allow-list.
+	const canAudit = $derived(data?.role === 'Super Admin' || data?.role === 'Fraud Reviewer');
 
 	// Private audit service — the heartbeat timeline + anomaly heuristics live in
 	// a separate (private) repo, embedded here as an iframe. We only ever hand it
@@ -485,7 +489,7 @@
 		<div class="state empty">
 			<h2>Queue clear</h2>
 			<p>No projects are awaiting second-pass review.</p>
-			{#if isSuperAdmin}
+			{#if canAudit}
 				<p class="muted">Pull in up to 10 of the oldest unreviewed projects as one-shot reviews — they skip the first-pass and are decided here, by you alone.</p>
 				<button class="navbtn primary" disabled={loadUnreviewedBusy} onclick={loadUnreviewed}>
 					{loadUnreviewedBusy ? 'Loading…' : 'Load 10 unreviewed projects'}

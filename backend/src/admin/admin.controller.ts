@@ -418,13 +418,14 @@ export class AdminController {
     return this.auditService.listQueue();
   }
 
-  // Super-admin-only escape hatch: when the audit queue is empty, pull up to
-  // 10 oldest unreviewed projects in as one-shot reviews (skips first-pass).
-  @UseGuards(SuperAdminGuard)
+  // Escape hatch for auditors: when the audit queue is empty, pull up to 10
+  // oldest unreviewed projects in as one-shot reviews (skips first-pass).
+  // Open to Super Admin and Fraud Reviewer, like the rest of the audit panel.
+  @UseGuards(FraudReviewerGuard)
   @Post('audit/load-unreviewed')
   async auditLoadUnreviewed(@Req() req: Request) {
-    const superAdminId = (req as any).user?.uid;
-    return this.auditService.loadUnreviewedIntoQueue(superAdminId);
+    const auditorId = (req as any).user?.uid;
+    return this.auditService.loadUnreviewedIntoQueue(auditorId);
   }
 
   // Mint an opaque, single-use context for the private audit iframe service.

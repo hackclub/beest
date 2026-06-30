@@ -66,6 +66,10 @@
 	);
 	const isSuperAdmin = $derived(data.role === 'Super Admin');
 	const canBan = $derived(data.role === 'Super Admin' || data.role === 'Fraud Reviewer');
+	// Audit panel (nav link + inline "View in audit" embed) is open to Super Admin
+	// and Fraud Reviewer — mirrors the backend `audit` scope allow-list
+	// (auth.controller scopeRequirements + FraudReviewerGuard).
+	const canAudit = $derived(data.role === 'Super Admin' || data.role === 'Fraud Reviewer');
 	const canFulfill = $derived(data.role === 'Super Admin' || data.role === 'Fulfiller');
 	let justificationEl = $state<HTMLTextAreaElement | null>(null);
 	let userFeedbackEl = $state<HTMLTextAreaElement | null>(null);
@@ -218,7 +222,8 @@
 	// selection is shareable.
 	let pendingDeepLinkProjectId = $state<string | null>(null);
 
-	// Inline "View in audit" embed (super admin only). Reuses the audit service's
+	// Inline "View in audit" embed (Super Admin + Fraud Reviewer, see canAudit).
+	// Reuses the audit service's
 	// /panel embed: we mint a single-use ctx server-side and POST it into a named
 	// iframe so the id never rides in a URL (mirrors the second-pass panel).
 	const auditSvcUrl = $derived(((data.auditSvcUrl as string | undefined) ?? '').replace(/\/+$/, ''));
@@ -1886,7 +1891,7 @@
 		{/if}
 		<button class="tab" class:active={activeTab === 'projects'} onclick={() => activeTab = 'projects'}>Projects</button>
 		<button class="tab" class:active={activeTab === 'leaderboard'} onclick={() => activeTab = 'leaderboard'}>Leaderboard</button>
-		{#if isSuperAdmin}
+		{#if canAudit}
 			<a href="/admin/audit" class="tab tab-audit">Audit</a>
 		{/if}
 		<a href="/home" class="tab tab-home">Home</a>
@@ -2772,7 +2777,7 @@
 											{#if selectedProject.status === 'unreviewed'}
 												<a href="https://hack-club-hq.gitbook.io/ysws-project-submission-guidelines/BLBRN8LIfoCZhFV6oMNR" target="_blank" rel="noopener" class="ht-btn ht-btn-docs">Open Docs</a>
 											{/if}
-											{#if isSuperAdmin && auditSvcUrl}
+											{#if canAudit && auditSvcUrl}
 												<button
 													type="button"
 													class="ht-btn ht-btn-audit"
@@ -2808,7 +2813,7 @@
 									{/if}
 								</div>
 
-								{#if isSuperAdmin && showAuditEmbed && auditEmbedProjectId === selectedProject.id}
+								{#if canAudit && showAuditEmbed && auditEmbedProjectId === selectedProject.id}
 									<section class="audit-embed">
 										<div class="audit-embed-head">
 											<span>Hackatime heartbeats &amp; anomaly signals</span>
