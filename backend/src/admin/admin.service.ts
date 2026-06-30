@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { Session } from '../entities/session.entity';
 import { Project } from '../entities/project.entity';
@@ -454,8 +454,11 @@ export class AdminService {
     // 4. Refund the user's pending shop orders so they drop out of the
     //    fulfilment queue. refundOrder restocks the item and cascade-deletes
     //    the order's fulfilment updates; already-fulfilled orders are left as-is.
+    //    Orders that already have an HCB card grant are excluded: refundOrder
+    //    rejects them (the grant link must be reconciled in HCB by hand), and
+    //    we must not let one such order abort the whole ban flow.
     const pendingOrders = await this.orderRepo.find({
-      where: { userId, status: 'pending' },
+      where: { userId, status: 'pending', hcbCardGrantId: IsNull() },
       select: ['id'],
     });
     for (const order of pendingOrders) {

@@ -504,6 +504,19 @@ export class ShopService {
           'Cannot refund an order that has already been fulfilled',
         );
       }
+      // Money-safety: once a card grant has been issued, real funds have been
+      // disbursed against this order. Refunding returns the pipes *and* deletes
+      // the order row — the only record linking the grant to the order — which
+      // both double-pays the recipient and breaks reconciliation. Block it for
+      // everyone (self-refund and admin alike); a granted order must be handled
+      // manually in HCB. This mirrors the same hcbCardGrantId lock that
+      // HcbService.createCardGrantForOrder uses to prevent a second grant.
+      if (order.hcbCardGrantId) {
+        throw new ConflictException(
+          `Cannot refund: an HCB card grant (${order.hcbCardGrantId}) has ` +
+            'already been issued for this order. Reconcile it in HCB instead.',
+        );
+      }
 
       const user = await manager.findOne(User, {
         where: { id: order.userId },
