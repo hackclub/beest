@@ -1023,6 +1023,25 @@
 		return result;
 	});
 
+	// Render the users table one page at a time — 3000 rows in the DOM janks the
+	// tab. Pagination runs *after* filtering, so search/perms still match across
+	// every loaded user (email is encrypted at rest, so it can't be searched in
+	// SQL — the full list has to live client-side for search to work anyway).
+	const USERS_PAGE_SIZE = 100;
+	let usersPage = $state(1);
+	// Any change to the search box or perms filter jumps back to the first page,
+	// so a narrowed result set never leaves you stranded on an empty later page.
+	$effect(() => {
+		userSearch;
+		permsFilter;
+		usersPage = 1;
+	});
+	const userPageCount = $derived(Math.max(1, Math.ceil(filteredUsers.length / USERS_PAGE_SIZE)));
+	const pagedUsers = $derived.by(() => {
+		const start = (usersPage - 1) * USERS_PAGE_SIZE;
+		return filteredUsers.slice(start, start + USERS_PAGE_SIZE);
+	});
+
 	async function loadUsers() {
 		loading = true;
 		try {
@@ -1925,7 +1944,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each filteredUsers as user}
+								{#each pagedUsers as user}
 									<tr
 										class:selected={selectedUser?.id === user.id}
 										onclick={() => selectUser(user)}
@@ -1948,6 +1967,23 @@
 						</table>
 						{#if filteredUsers.length === 0}
 							<p class="empty">No users found.</p>
+						{:else if userPageCount > 1}
+							<div class="users-pagination">
+								<button
+									class="page-btn"
+									disabled={usersPage <= 1}
+									onclick={() => (usersPage = Math.max(1, usersPage - 1))}
+								>Prev</button>
+								<span class="page-info">
+									{(usersPage - 1) * USERS_PAGE_SIZE + 1}–{Math.min(usersPage * USERS_PAGE_SIZE, filteredUsers.length)}
+									of {filteredUsers.length}
+								</span>
+								<button
+									class="page-btn"
+									disabled={usersPage >= userPageCount}
+									onclick={() => (usersPage = Math.min(userPageCount, usersPage + 1))}
+								>Next</button>
+							</div>
 						{/if}
 					{/if}
 				</div>
@@ -3495,6 +3531,40 @@
 	.users-search:focus {
 		outline: none;
 		border-color: #5b9bd5;
+	}
+
+	.users-pagination {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+		margin-top: 0.75rem;
+	}
+
+	.page-btn {
+		background: #1e1e1e;
+		border: 1px solid #444;
+		border-radius: 6px;
+		color: #e0e0e0;
+		padding: 0.4rem 0.9rem;
+		font-size: 0.82rem;
+		font-family: inherit;
+		cursor: pointer;
+	}
+
+	.page-btn:hover:not(:disabled) {
+		border-color: #5b9bd5;
+	}
+
+	.page-btn:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+
+	.page-info {
+		font-size: 0.8rem;
+		color: #999;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.users-perms-filter {
@@ -5721,6 +5791,14 @@
 		color: #1a1a1a;
 	}
 	.admin-shell.light .users-perms-filter:focus { border-color: #3b7bb5; }
+
+	.admin-shell.light .page-btn {
+		background: #fff;
+		border-color: #555;
+		color: #1a1a1a;
+	}
+	.admin-shell.light .page-btn:hover:not(:disabled) { border-color: #3b7bb5; }
+	.admin-shell.light .page-info { color: #666; }
 
 	/* Tables */
 	.admin-shell.light .users-table th,
