@@ -162,7 +162,23 @@ export class AdminService {
 
   async listUsers(): Promise<any[]> {
     const [users, permsMap] = await Promise.all([
-      this.userRepo.find({ order: { createdAt: 'DESC' } }),
+      // Only select the columns this listing uses. The default find() pulls every
+      // column, which for each row runs the encryptedTransformer over hca_access_token
+      // and hca_refresh_token (unused here) — decrypting two tokens per user across the
+      // whole table for nothing. Naming the columns skips that work and trims the payload.
+      this.userRepo.find({
+        select: {
+          id: true,
+          hcaSub: true,
+          name: true,
+          nickname: true,
+          slackId: true,
+          email: true,
+          hackatimeToken: true,
+          createdAt: true,
+        },
+        order: { createdAt: 'DESC' },
+      }),
       this.rsvpService.getAllPerms(),
     ]);
     return users.map((u) => ({
