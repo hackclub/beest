@@ -33,6 +33,7 @@ export const AUDIT_ACTIONS = [
   'devlog_reviewed',
   'hcb_connected',
   'card_grant_issued',
+  'silo_grant_issued',
   'admin_shop_item_change',
   'admin_event_change',
   'admin_fulfillment_message',

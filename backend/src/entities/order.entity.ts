@@ -58,6 +58,11 @@ export class Order {
   @Column({ name: 'hcb_card_grant_id', type: 'varchar', length: 64, nullable: true })
   hcbCardGrantId: string | null;
 
+  // SILO grant ID returned by the SILO API for this order, if any.
+  // Acts as a per-order idempotency lock: a non-null value blocks re-granting.
+  @Column({ name: 'silo_grant_id', type: 'varchar', length: 64, nullable: true })
+  siloGrantId: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
