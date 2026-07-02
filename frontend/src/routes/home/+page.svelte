@@ -90,6 +90,18 @@
   let codeUrl = $state('');
   let demoUrl = $state('');
   let readmeUrl = $state('');
+
+  // As the builder types a GitHub repo URL into Code URL, seed the README URL
+  // for them — but only while README is still blank, so we never clobber a
+  // manual entry or a value loaded from an existing project. Runs on input
+  // (not a reactive effect) so it won't re-fill after the user clears it or
+  // fire when editing an existing project. `HEAD` resolves to the repo's
+  // default branch, so this works for `master`/non-`main` repos too.
+  function autofillReadmeFromCode(code: string) {
+    if (readmeUrl.trim()) return;
+    const m = code.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i);
+    if (m) readmeUrl = `https://github.com/${m[1]}/${m[2]}/blob/HEAD/README.md`;
+  }
   let screenshotFiles = $state<(File | null)[]>([null, null]);
   let screenshotPreviews = $state<string[]>(['', '']);
   let activeScreenshot = $state(0);
@@ -1874,7 +1886,7 @@
         <div class="form-row">
           <div class="form-group">
             <label class="form-label" for="code-url">Code URL</label>
-            <input id="code-url" type="url" class="form-input" placeholder="https://github.com/hackclub/" bind:value={codeUrl} />
+            <input id="code-url" type="url" class="form-input" placeholder="https://github.com/hackclub/" bind:value={codeUrl} oninput={(e) => autofillReadmeFromCode(e.currentTarget.value)} />
             <span class="form-caption">Link to your source code (GitHub, GitLab, etc)</span>
           </div>
           <div class="form-group">
