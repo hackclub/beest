@@ -5,6 +5,7 @@
 	import ProjectHourBreakdown from '$lib/components/ProjectHourBreakdown.svelte';
 	import TimelapsePanel from '$lib/components/admin/TimelapsePanel.svelte';
 	import CardGrantModal from '$lib/components/admin/CardGrantModal.svelte';
+	import ItemBuyersModal from '$lib/components/admin/ItemBuyersModal.svelte';
 	import { onMount, tick } from 'svelte';
 	import { replaceState } from '$app/navigation';
 
@@ -1427,6 +1428,8 @@
 	let newShopFeatured = $state(false);
 	let dragIdx: number | null = $state(null);
 	let dragOverIdx: number | null = $state(null);
+	// Shop item whose buyer list is open in the ItemBuyersModal, if any.
+	let buyersModalItem = $state<{ id: string; name: string } | null>(null);
 
 	async function loadShop() {
 		shopLoading = true;
@@ -2530,6 +2533,7 @@
 										</div>
 									</div>
 									<div class="shop-item-actions">
+										<button class="btn btn-edit" onclick={() => buyersModalItem = { id: item.id, name: item.name }}>Buyers</button>
 										<button class="btn btn-edit" onclick={() => editingShop = { ...item }}>Edit</button>
 										<button class="btn btn-delete" onclick={() => deleteShopItem(item.id)} disabled={shopSaving}>Delete</button>
 									</div>
@@ -3273,6 +3277,10 @@
 		onClose={() => (grantModalOrder = null)}
 		onGranted={() => { grantModalOrder = null; onGrantIssued(); }}
 	/>
+{/if}
+
+{#if buyersModalItem}
+	<ItemBuyersModal item={buyersModalItem} onClose={() => (buyersModalItem = null)} />
 {/if}
 
 <style>

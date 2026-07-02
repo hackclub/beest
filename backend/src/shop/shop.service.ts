@@ -22,6 +22,21 @@ import {
   orderFulfilledDm,
 } from '../slack/slack-notify.templates';
 
+/** One aggregated row in the admin "buyers of an item" view. */
+export interface ItemBuyer {
+  userId: string;
+  userName: string;
+  userSlackId: string | null;
+  userEmail: string | null;
+  orderCount: number;
+  totalQuantity: number;
+  totalPipes: number;
+  pendingCount: number;
+  fulfilledCount: number;
+  firstOrderAt: Date;
+  lastOrderAt: Date;
+}
+
 @Injectable()
 export class ShopService {
   private readonly logger = new Logger(ShopService.name);
@@ -425,6 +440,89 @@ export class ShopService {
         ? Math.floor((Date.now() - new Date(o.createdAt).getTime()) / (1000 * 60 * 60))
         : null,
     }));
+  }
+
+  /**
+   * List everyone who has bought one specific shop item, aggregated to one row
+   * per buyer (order count, total quantity, pipes spent, pending/fulfilled
+   * breakdown, first/last order). Powers the admin "Buyers" view. Guarded at
+   * the controller by {@link FulfillerGuard} (Super Admin / Fulfiller).
+   *
+   * Matches on `shopItemId`, so orders whose item was later deleted (the FK is
+   * SET NULL) no longer appear here — that's intended, since those items can't
+   * be opened from the shop-management list anyway.
+   */
+  async listItemBuyers(shopItemId: string) {
+    const item = await this.shopRepo.findOne({
+      where: { id: shopItemId },
+      select: ['id', 'name'],
+    });
+    if (!item) throw new NotFoundException('Shop item not found');
+
+    const orders = await this.orderRepo
+      .createQueryBuilder('order')
+      .leftJoin('order.user', 'user')
+      .where('order.shopItemId = :shopItemId', { shopItemId })
+      .select([
+        'order.id',
+        'order.userId',
+        'order.quantity',
+        'order.pipesSpent',
+        'order.status',
+        'order.createdAt',
+        'user.id',
+        'user.name',
+        'user.nickname',
+        'user.slackId',
+        'user.email',
+      ])
+      .orderBy('order.createdAt', 'DESC')
+      .getMany();
+
+    const byUser = new Map<string, ItemBuyer>();
+    for (const o of orders) {
+      let b = byUser.get(o.userId);
+      if (!b) {
+        b = {
+          userId: o.userId,
+          userName: o.user?.nickname || o.user?.name || 'Unknown',
+          userSlackId: o.user?.slackId || null,
+          userEmail: o.user?.email || null,
+          orderCount: 0,
+          totalQuantity: 0,
+          totalPipes: 0,
+          pendingCount: 0,
+          fulfilledCount: 0,
+          firstOrderAt: o.createdAt,
+          lastOrderAt: o.createdAt,
+        };
+        byUser.set(o.userId, b);
+      }
+      b.orderCount += 1;
+      b.totalQuantity += o.quantity;
+      b.totalPipes += o.pipesSpent;
+      if (o.status === 'pending') b.pendingCount += 1;
+      else if (o.status === 'fulfilled') b.fulfilledCount += 1;
+      if (o.createdAt < b.firstOrderAt) b.firstOrderAt = o.createdAt;
+      if (o.createdAt > b.lastOrderAt) b.lastOrderAt = o.createdAt;
+    }
+
+    const buyers = [...byUser.values()].sort(
+      (a, b) =>
+        b.totalQuantity - a.totalQuantity ||
+        b.lastOrderAt.getTime() - a.lastOrderAt.getTime(),
+    );
+
+    return {
+      item: { id: item.id, name: item.name },
+      totals: {
+        buyerCount: buyers.length,
+        orderCount: orders.length,
+        totalQuantity: buyers.reduce((s, b) => s + b.totalQuantity, 0),
+        totalPipes: buyers.reduce((s, b) => s + b.totalPipes, 0),
+      },
+      buyers,
+    };
   }
 
   /** Mark an order as fulfilled — uses pessimistic lock to prevent double-fulfill */

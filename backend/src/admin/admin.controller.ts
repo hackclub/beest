@@ -592,6 +592,13 @@ export class AdminController {
     return { success: true };
   }
 
+  // Everyone who bought a specific item, aggregated one row per buyer.
+  @UseGuards(FulfillerGuard)
+  @Get('shop/:id/buyers')
+  listItemBuyers(@Param('id', ParseUUIDPipe) id: string) {
+    return this.shopService.listItemBuyers(id);
+  }
+
   // ── Orders / Fulfillment ──
 
   @UseGuards(FulfillerGuard)
