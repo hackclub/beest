@@ -213,7 +213,13 @@
   ];
 
   // Wall of Fame
-  const wallOfFameProjects = [
+  const wallOfFameProjects: {
+    title: string;
+    author: string;
+    description: string;
+    link: string;
+    tag?: string;
+  }[] = [
     {
       title: 'Seaward',
       author: 'moaaz',
