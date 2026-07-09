@@ -22,6 +22,7 @@ import { RsvpService } from '../rsvp/rsvp.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { HcaService } from '../hca/hca.service';
 import { fetchWithTimeout } from '../fetch.util';
+import { HACKATIME_EVENT_START } from '../hackatime/hackatime.constants';
 import { ProjectAirtableSyncService } from '../projects/project-airtable-sync.service';
 import { SlackService } from '../slack/slack.service';
 import { Cron } from '@nestjs/schedule';
@@ -106,10 +107,6 @@ export class AdminService {
   private readonly dauHistoryCache = new Map<string, number>();
   private dauHistoryInflight: Promise<void> | null = null;
   private static readonly DAU_HISTORY_START = '2026-04-03';
-  // Beest event start. Hackatime hours logged before this date should not
-  // count toward project review totals (admin /user/projects returns lifetime
-  // total_duration with no date filter, so we reconstruct from spans).
-  private static readonly HACKATIME_EVENT_START = '2026-04-02';
 
   constructor(
     private readonly configService: ConfigService,
@@ -1276,7 +1273,7 @@ export class AdminService {
       nonAiHours: 0,
       fileBreakdown: [],
       earliestHeartbeat: null,
-      startDate: AdminService.HACKATIME_EVENT_START,
+      startDate: HACKATIME_EVENT_START,
       previousApprovedHours: project?.overrideHours ?? 0,
       previousInternalHours: project?.internalHours ?? 0,
       trustLevel: null,
@@ -1460,6 +1457,45 @@ export class AdminService {
       .sort((a, b) => b.percent - a.percent);
   }
 
+  /**
+   * Facts for the auto-generated justification header that Beest's admin UI
+   * pre-fills client-side (buildJustification in the admin frontend). The
+   * Sidekick integration uses this to compose the same header server-side.
+   * Best-effort: a failed lookup resolves to null / false rather than
+   * throwing — a Hackatime or Airtable hiccup must never block an approval.
+   */
+  async getJustificationFacts(project: Project): Promise<{
+    trackedHours: number | null;
+    unifiedFirstSubmission: boolean;
+  }> {
+    const names = [...new Set((project.hackatimeProjectName ?? []).filter((n) => !!n))];
+    const user = project.user;
+
+    const [trackedHours, unified] = await Promise.all([
+      (async () => {
+        if (!user?.hackatimeUserId || names.length === 0) return null;
+        try {
+          const seconds = await this.fetchHackatimeStatsTotalSeconds(
+            user.hackatimeUserId,
+            names,
+            user.hackatimeToken ?? '',
+            new Date(`${HACKATIME_EVENT_START}T00:00:00.000Z`),
+          );
+          return Math.round((seconds / 3600) * 10) / 10;
+        } catch (err) {
+          this.logger.warn(`Justification Hackatime lookup failed for project ${project.id}: ${err}`);
+          return null;
+        }
+      })(),
+      this.checkUnifiedDuplicate(project.codeUrl ?? ''),
+    ]);
+
+    return {
+      trackedHours,
+      unifiedFirstSubmission: !unified.duplicate && !unified.error,
+    };
+  }
+
   async getProjectHackatime(projectId: string, isSuperAdmin: boolean) {
     if (!this.hackatimeAdminKey) {
       throw new BadRequestException('Hackatime admin API key not configured');
@@ -1577,7 +1613,7 @@ export class AdminService {
           const matchedRaw = allProjects.filter((p) => nameSet.has(p.name));
           const projectNames = matchedRaw.map((p) => p.name);
 
-          const hackatimeCutoffDate = new Date(`${AdminService.HACKATIME_EVENT_START}T00:00:00.000Z`);
+          const hackatimeCutoffDate = new Date(`${HACKATIME_EVENT_START}T00:00:00.000Z`);
           const [totalSeconds, aiSeconds, perProjectDurations, categoryBreakdown] = await Promise.all([
             this.fetchHackatimeStatsTotalSeconds(
               hackatimeUserId,
@@ -1614,7 +1650,7 @@ export class AdminService {
                 adminKey: this.hackatimeAdminKey!,
                 hackatimeUserId,
                 projectName,
-                startDate: AdminService.HACKATIME_EVENT_START,
+                startDate: HACKATIME_EVENT_START,
                 endDate,
                 debugLog: (message) => this.logger.warn(message),
               }),
@@ -1683,7 +1719,7 @@ export class AdminService {
             aiHours: aiRounded,
             nonAiHours: nonAiRounded,
             earliestHeartbeat,
-            startDate: AdminService.HACKATIME_EVENT_START,
+            startDate: HACKATIME_EVENT_START,
             previousApprovedHours,
             previousInternalHours,
             fileBreakdown,
@@ -1712,7 +1748,7 @@ export class AdminService {
         aiHours: 0,
         nonAiHours: 0,
         earliestHeartbeat: null,
-        startDate: AdminService.HACKATIME_EVENT_START,
+        startDate: HACKATIME_EVENT_START,
         previousApprovedHours,
         previousInternalHours,
         fileBreakdown: [],
@@ -1738,7 +1774,7 @@ export class AdminService {
         nonAiHours: 0,
         fileBreakdown: [],
         earliestHeartbeat: null,
-        startDate: AdminService.HACKATIME_EVENT_START,
+        startDate: HACKATIME_EVENT_START,
         previousApprovedHours: project.overrideHours ?? 0,
         previousInternalHours: project.internalHours ?? 0,
         trustLevel: null,
@@ -1843,7 +1879,7 @@ export class AdminService {
           try {
             const res = await this.hackatimeGet(
               `/api/v1/users/${encodeURIComponent(row.hackatimeUserId)}/heartbeats/spans` +
-                `?start_date=${AdminService.HACKATIME_EVENT_START}&end_date=${endDatePadded}` +
+                `?start_date=${HACKATIME_EVENT_START}&end_date=${endDatePadded}` +
                 `&project=${encodeURIComponent(row.projectName)}`,
             );
             if (!res.ok) return;

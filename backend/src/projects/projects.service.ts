@@ -503,6 +503,10 @@ export class ProjectsService {
     if (dto.status === 'unreviewed') {
       // Create a submission record for this review request
       const reviewerNote = this.validateOptionalString(dto.reviewerNote, 'reviewerNote', 1000);
+      const hoursSnapshot = await this.snapshotHackatimeHours(
+        hcaSub,
+        project.hackatimeProjectName,
+      );
       const submission = this.submissionRepo.create({
         projectId: project.id,
         userId,
@@ -510,6 +514,8 @@ export class ProjectsService {
         minHoursConfirmed: false,
         reviewerNote,
         status: 'unreviewed',
+        hoursSnapshot,
+        projectSnapshot: this.snapshotProjectFields(saved),
       });
       await this.submissionRepo.save(submission);
 
@@ -544,6 +550,46 @@ export class ProjectsService {
 
     const { userId: _uid, user: _user, ...safe } = saved;
     return safe;
+  }
+
+  /**
+   * Best-effort Hackatime hours total for the linked projects at ship time.
+   * Null when nothing is linked or Hackatime is unreachable — shipping must
+   * never be blocked on this.
+   */
+  private async snapshotHackatimeHours(
+    hcaSub: string,
+    linkedNames: string[] | null,
+  ): Promise<number | null> {
+    const names = (linkedNames ?? []).filter((n) => !!n);
+    if (names.length === 0) return null;
+    try {
+      const { hours } = await this.hackatimeService.getHoursForProjects(
+        hcaSub,
+        [...new Set(names)],
+      );
+      return hours;
+    } catch (err) {
+      this.logger.warn(`Hackatime hours snapshot failed at ship time: ${err}`);
+      return null;
+    }
+  }
+
+  /** Reviewer-relevant field values frozen onto the submission at ship time. */
+  private snapshotProjectFields(project: {
+    name: string;
+    description: string;
+    codeUrl: string | null;
+    demoUrl: string | null;
+    screenshot1Url: string | null;
+  }) {
+    return {
+      title: project.name,
+      description: project.description,
+      codeUrl: project.codeUrl,
+      demoUrl: project.demoUrl,
+      screenshotUrl: project.screenshot1Url,
+    };
   }
 
   /** Fire-and-forget "submitted for review" DM to the builder (best-effort). */
@@ -621,6 +667,7 @@ export class ProjectsService {
     // Verify at least 3 hours of new Hackatime work since last approval
     const linkedNames = (project.hackatimeProjectName ?? []).filter((n) => !!n);
     const previousApprovedHours = project.overrideHours ?? 0;
+    let hoursSnapshot: number | null = null;
     if (linkedNames.length > 0) {
       await this.hackatimeService.verifyAccountOwnership(hcaSub);
       try {
@@ -628,6 +675,7 @@ export class ProjectsService {
           hcaSub,
           [...new Set(linkedNames)],
         );
+        hoursSnapshot = currentHours;
         const delta = currentHours - previousApprovedHours;
         if (delta < 3) {
           throw new BadRequestException(
@@ -655,6 +703,8 @@ export class ProjectsService {
       minHoursConfirmed: true,
       reviewerNote: cleanReviewerNote,
       status: 'unreviewed',
+      hoursSnapshot,
+      projectSnapshot: this.snapshotProjectFields(project),
     });
     await this.submissionRepo.save(submission);
 
@@ -753,8 +803,9 @@ export class ProjectsService {
   /* ------------------------------------------------------------------ */
 
   async getComments(projectId: string) {
+    // Internal (reviewer-only) comments must never reach participants.
     const comments = await this.commentRepo.find({
-      where: { projectId },
+      where: { projectId, isInternal: false },
       order: { createdAt: 'ASC' },
       relations: ['user'],
     });
@@ -799,9 +850,12 @@ export class ProjectsService {
     });
     if (!comment) throw new NotFoundException('Comment not found');
 
-    // Allow deletion by: comment author, project owner, or admin
-    const isAuthor = comment.userId === userId;
-    const isProjectOwner = comment.project?.userId === userId;
+    // Allow deletion by: comment author, project owner, or admin. Internal
+    // (reviewer-only) comments are invisible to participants, so only the
+    // admin path may touch them — a project owner must not be able to probe
+    // or remove them.
+    const isAuthor = !comment.isInternal && comment.userId === userId;
+    const isProjectOwner = !comment.isInternal && comment.project?.userId === userId;
 
     if (!isAuthor && !isProjectOwner) {
       // Check if user is admin

@@ -16,6 +16,7 @@ import { FraudReviewModule } from './fraud-review/fraud-review.module';
 import { LapseModule } from './lapse/lapse.module';
 import { LookoutModule } from './lookout/lookout.module';
 import { HcbModule } from './hcb/hcb.module';
+import { SidekickModule } from './sidekick/sidekick.module';
 import { User } from './entities/user.entity';
 import { Session } from './entities/session.entity';
 import { Project } from './entities/project.entity';
@@ -67,6 +68,7 @@ import { HealthController } from './health.controller';
     LapseModule,
     LookoutModule,
     HcbModule,
+    SidekickModule,
   ],
 })
 export class AppModule {}

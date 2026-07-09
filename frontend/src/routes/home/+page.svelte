@@ -2525,6 +2525,8 @@
                         >
                           {refundingOrderId === order.id ? 'Refunding…' : 'Refund'}
                         </button>
+                      {:else if order.status === 'cancelled'}
+                        <span class="my-orders-status cancelled">Cancelled</span>
                       {:else}
                         <span class="my-orders-status fulfilled">Fulfilled</span>
                       {/if}
@@ -6294,6 +6296,11 @@
   .my-orders-status.fulfilled {
     background: rgba(75, 72, 64, 0.15);
     color: #4b4840;
+  }
+
+  .my-orders-status.cancelled {
+    background: rgba(75, 72, 64, 0.08);
+    color: #77736a;
   }
 
   .my-orders-refund {

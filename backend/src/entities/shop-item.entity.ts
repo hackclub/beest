@@ -41,6 +41,11 @@ export class ShopItem {
   @Column({ name: 'estimated_ship', type: 'varchar', length: 200, nullable: true, default: null })
   estimatedShip: string | null;
 
+  // Staff-facing fulfillment instructions shown only to fulfillers (in
+  // Sidekick). Shared across all orders of this item.
+  @Column({ name: 'fulfiller_context', type: 'text', nullable: true, default: null })
+  fulfillerContext: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

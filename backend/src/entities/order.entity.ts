@@ -39,11 +39,19 @@ export class Order {
   itemName: string;
 
   @Column({ length: 20, default: 'pending' })
-  status: string; // 'pending' | 'fulfilled'
+  status: string; // 'pending' | 'fulfilled' | 'cancelled'
 
   // Optional free-text note the buyer leaves for fulfillers at checkout.
   @Column({ name: 'fulfillment_notes', type: 'varchar', length: 500, nullable: true })
   fulfillmentNotes: string | null;
+
+  // External reference set by fulfillers (tracking ID, HCB grant URL, …).
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  reference: string | null;
+
+  // Per-order staff-only notes, editable by fulfillers (e.g. via Sidekick).
+  @Column({ name: 'admin_notes', type: 'text', nullable: true })
+  adminNotes: string | null;
 
   // Public ID (cdg_…) of the HCB card grant issued for this order, if any.
   // Acts as a per-order idempotency lock: a non-null value blocks re-granting.

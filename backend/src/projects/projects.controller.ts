@@ -258,8 +258,11 @@ export class ProjectsController {
       relations: ['reviewer'],
     });
 
-    // Never expose internal notes to the user
-    return reviews.map((r) => ({
+    // Never expose internal notes to the user. 'returned' rows are first-pass
+    // approvals invalidated at second-pass review — internal, never shown.
+    return reviews
+      .filter((r) => r.status !== 'returned')
+      .map((r) => ({
       id: r.id,
       status: r.status,
       feedback: r.feedback,

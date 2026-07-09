@@ -39,8 +39,20 @@ export class ProjectReview {
   @JoinColumn({ name: 'submission_id' })
   submission: Submission;
 
+  // 'approved' | 'changes_needed' | 'rejected' | 'returned'. A 'returned' row
+  // is a first-pass approval that second-pass review sent back for re-review —
+  // kept (not deleted) so timelines can show the discarded approval.
   @Column({ length: 20 })
   status: string;
+
+  // Who returned this approval at second-pass review. Only set on rows with
+  // status 'returned'.
+  @Column({ name: 'returned_by_id', type: 'uuid', nullable: true })
+  returnedById: string | null;
+
+  @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'returned_by_id' })
+  returnedBy: User | null;
 
   @Column({ type: 'text', nullable: true })
   feedback: string | null;

@@ -537,6 +537,9 @@ export class ShopService {
       if (order.status === 'fulfilled') {
         throw new BadRequestException('Order is already fulfilled');
       }
+      if (order.status === 'cancelled') {
+        throw new BadRequestException('Cannot fulfill a cancelled order');
+      }
 
       order.status = 'fulfilled';
       await manager.save(Order, order);
@@ -577,9 +580,9 @@ export class ShopService {
   }
 
   /**
-   * Refund an order — returns pipes, restocks the item, and deletes the order
-   * (which cascades to its fulfillment updates). Used when an order can't be
-   * fulfilled or was placed in error.
+   * Refund an order — returns pipes, restocks the item, and marks the order
+   * `cancelled` (the row and its fulfillment updates are kept for history).
+   * Used when an order can't be fulfilled or was placed in error.
    *
    * `requireUserId` enforces that the order belongs to that user (used for
    * self-refunds); `requirePending` blocks refunds on already-fulfilled orders
@@ -595,6 +598,9 @@ export class ShopService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!order) throw new NotFoundException('Order not found');
+      if (order.status === 'cancelled') {
+        throw new BadRequestException('Order is already cancelled');
+      }
       if (opts.requireUserId && order.userId !== opts.requireUserId) {
         throw new ForbiddenException('You do not own this order');
       }
@@ -637,14 +643,25 @@ export class ShopService {
         }
       }
 
-      const snapshot = {
+      order.status = 'cancelled';
+      await manager.save(Order, order);
+
+      // Tell the buyer their pipes came back (mirrors the purchase/fulfill
+      // fulfillment-update messages).
+      const update = manager.create(FulfillmentUpdate, {
+        userId: order.userId,
+        orderId: order.id,
+        message: `This order was cancelled and your ${order.pipesSpent} Pipes were returned.`,
+        isRead: false,
+      });
+      await manager.save(FulfillmentUpdate, update);
+
+      return {
         userId: order.userId,
         itemName: order.itemName,
         quantity: order.quantity,
         pipesSpent: order.pipesSpent,
       };
-      await manager.remove(Order, order);
-      return snapshot;
     }).then(async (snapshot) => {
       const isSelf = !!opts.requireUserId;
       await this.auditLogService.log(

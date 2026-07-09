@@ -13,6 +13,7 @@ import { ShopItem } from '../entities/shop-item.entity';
 import { Order } from '../entities/order.entity';
 import { Submission } from '../entities/submission.entity';
 import { Event } from '../entities/event.entity';
+import { Comment } from '../entities/comment.entity';
 import { ShopModule } from '../shop/shop.module';
 import { HcaModule } from '../hca/hca.module';
 import { DevlogsModule } from '../devlogs/devlogs.module';
@@ -34,7 +35,7 @@ import { AuditServiceKeyGuard } from './audit-service-key.guard';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Session, Project, AuditLog, NewsItem, ProjectReview, ShopItem, Order, Submission, Event]),
+    TypeOrmModule.forFeature([User, Session, Project, AuditLog, NewsItem, ProjectReview, ShopItem, Order, Submission, Event, Comment]),
     AuthModule,
     RsvpModule,
     AuditLogModule,
@@ -58,5 +59,6 @@ import { AuditServiceKeyGuard } from './audit-service-key.guard';
     FulfillerGuard,
     AuditServiceKeyGuard,
   ],
+  exports: [AdminService, AuditService],
 })
 export class AdminModule {}

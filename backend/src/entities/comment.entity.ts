@@ -31,6 +31,11 @@ export class Comment {
   @Column({ type: 'varchar', length: 500 })
   body: string;
 
+  // Reviewer-only comments (written from Sidekick). Never shown to
+  // participants — every participant-facing read path must filter these out.
+  @Column({ name: 'is_internal', default: false })
+  isInternal: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

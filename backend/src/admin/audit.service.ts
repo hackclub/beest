@@ -11,6 +11,7 @@ import { In, Repository } from 'typeorm';
 import { Project } from '../entities/project.entity';
 import { Submission } from '../entities/submission.entity';
 import { ProjectReview } from '../entities/project-review.entity';
+import { Comment } from '../entities/comment.entity';
 import { User } from '../entities/user.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { RsvpService } from '../rsvp/rsvp.service';
@@ -28,6 +29,12 @@ export interface AuditDecisionDto {
   overrideHours?: number | null;
   internalHours?: number | null;
   justification?: string | null;
+  // approve: prepend the first-pass approval's justification to `justification`
+  // for the review row and the Airtable sync. Set by callers whose
+  // justification is only an authorization note (the Sidekick authorize/HQ
+  // paths); the audit console instead pre-fills the first-pass text into the
+  // SA's justification, so it must NOT set this or it would duplicate.
+  combineWithFirstPass?: boolean;
   // rereview (feedback to the first reviewer, internal)
   reviewerFeedback?: string | null;
   // reject + ban (feedback to the user)
@@ -73,6 +80,7 @@ export class AuditService {
     private readonly submissionRepo: Repository<Submission>,
     @InjectRepository(ProjectReview)
     private readonly reviewRepo: Repository<ProjectReview>,
+    @InjectRepository(Comment) private readonly commentRepo: Repository<Comment>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     private readonly auditLogService: AuditLogService,
     private readonly rsvpService: RsvpService,
@@ -429,6 +437,21 @@ export class AuditService {
       );
     }
 
+    // What lands in Airtable must carry the first reviewer's reasoning (as
+    // possibly edited by HQ while the ship sat in pending_hq), not just the
+    // authorizer's note — callers whose justification is only such a note set
+    // combineWithFirstPass to have it appended to the first-pass text. The
+    // equality guard is a safety net against duplicating an identical text.
+    const priorJustification = (
+      priorApproval?.overrideJustification ??
+      priorApproval?.internalNote ??
+      ''
+    ).trim();
+    const fullJustification =
+      dto.combineWithFirstPass && priorJustification && priorJustification !== justification
+        ? `${priorJustification}\n\n${justification}`
+        : justification;
+
     // The SA may set overrideHours (user-facing, drives pipes) and internalHours
     // (Airtable's "Override Hours Spent") independently. Both are treated as
     // FINAL cumulative values, overwriting the first reviewer's numbers. If
@@ -517,7 +540,7 @@ export class AuditService {
       status: 'approved',
       feedback: approveUserFeedback,
       internalNote: isOneShot ? 'One-shot approval' : 'Second-pass (super admin) approval',
-      overrideJustification: justification,
+      overrideJustification: fullJustification,
     });
     await this.reviewRepo.save(review);
 
@@ -531,7 +554,7 @@ export class AuditService {
     try {
       await this.airtableSync.syncApprovedProject(
         project,
-        justification,
+        fullJustification,
         submission ?? null,
       );
     } catch (err) {
@@ -585,9 +608,32 @@ export class AuditService {
 
     if (submission) {
       submission.status = 'unreviewed';
-      submission.reviewerNote = `[Returned by second-pass review] ${feedback}`;
       await this.submissionRepo.save(submission);
+
+      // Invalidate the first-pass approval — kept as 'returned' (not deleted)
+      // so timelines can show the discarded approval and who returned it.
+      const firstPass = await this.reviewRepo.findOne({
+        where: { submissionId: submission.id, status: 'approved' },
+        order: { createdAt: 'DESC' },
+      });
+      if (firstPass) {
+        firstPass.status = 'returned';
+        firstPass.returnedById = superAdminId;
+        await this.reviewRepo.save(firstPass);
+      }
     }
+
+    // The feedback for the first reviewer is recorded as an internal comment
+    // by the super admin — never on submission.reviewerNote, which is the
+    // author-written "Note to reviewer".
+    await this.commentRepo.save(
+      this.commentRepo.create({
+        projectId: project.id,
+        userId: superAdminId,
+        body: `[Returned by second-pass review] ${feedback}`.slice(0, 500),
+        isInternal: true,
+      }),
+    );
 
     // Internal trace (logged against the super admin, not the user).
     await this.auditLogService.log(

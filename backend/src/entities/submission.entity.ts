@@ -43,6 +43,22 @@ export class Submission {
   @Column({ type: 'real', name: 'override_hours', nullable: true })
   overrideHours: number | null;
 
+  // Hackatime hours for the linked projects at the moment of shipping.
+  // Best-effort (null when Hackatime was unreachable or nothing is linked).
+  @Column({ type: 'real', name: 'hours_snapshot', nullable: true })
+  hoursSnapshot: number | null;
+
+  // Reviewer-relevant project fields frozen at ship time, so per-ship
+  // old→new diffs can be reconstructed later (e.g. for Sidekick timelines).
+  @Column({ type: 'jsonb', name: 'project_snapshot', nullable: true })
+  projectSnapshot: {
+    title: string;
+    description: string;
+    codeUrl: string | null;
+    demoUrl: string | null;
+    screenshotUrl: string | null;
+  } | null;
+
   @Column({ type: 'real', name: 'internal_hours', nullable: true })
   internalHours: number | null;
 
