@@ -42,7 +42,7 @@ export class SiloService {
     private readonly auditLogService: AuditLogService,
   ) {
     this.apiKey = this.config.get<string>('SILO_API_KEY')?.trim() || undefined;
-    this.baseUrl = (this.config.get<string>('SILO_BASE_URL') ?? 'https://dashboard.silo.deployor.dev').replace(/\/$/, '');
+    this.baseUrl = (this.config.get<string>('SILO_BASE_URL') ?? 'https://dash.onsilo.dev').replace(/\/$/, '');
     this.unit = (this.config.get<string>('SILO_GRANT_UNIT') ?? 'GB').trim() || 'GB';
 
     if (!this.apiKey) {
