@@ -100,48 +100,26 @@
   const showB = $derived(annotate > 0.25);
   const showC = $derived(annotate > 0.45);
 
-  const titleFull = '#BEEST';
-  let titleText = $state('');
-  let titleDone = $state(false);
-
-  const subtitleEN = 'Code a project, Fly to the Netherlands, Build a mechanical animal!';
+  const subtitleEN = 'Code a project, fly to the Netherlands, build a mechanical animal!';
   const subtitleNL = 'Programmeer een project, kom naar Scheveningen, bouw een mechanisch dier!';
-  let subtitleText = $state('');
+  const subtitle = $derived(dutch ? subtitleNL : subtitleEN);
 
-  // Type the title first, then the subtitle
-  $effect(() => {
-    let i = 0;
-    titleText = '';
-    titleDone = false;
-    let timeout: ReturnType<typeof setTimeout>;
-    const typeTitle = () => {
-      i++;
-      titleText = titleFull.slice(0, i);
-      if (i >= titleFull.length) {
-        titleDone = true;
-        return;
-      }
-      timeout = setTimeout(typeTitle, 140 + Math.random() * 60);
-    };
-    timeout = setTimeout(typeTitle, 1500);
-    return () => clearTimeout(timeout);
-  });
+  let winW = $state(0);
+  let winH = $state(0);
 
-  $effect(() => {
-    if (!titleDone) return;
-    const target = dutch ? subtitleNL : subtitleEN;
-    let i = 0;
-    subtitleText = '';
-    let timeout: ReturnType<typeof setTimeout>;
-    const typeNext = () => {
-      i++;
-      subtitleText = target.slice(0, i);
-      if (i >= target.length) return;
-      const delay = target[i - 1] === ',' ? 350 + Math.random() * 100 : 45 + Math.random() * 35;
-      timeout = setTimeout(typeNext, delay);
-    };
-    timeout = setTimeout(typeNext, 400);
-    return () => clearTimeout(timeout);
+  // Shrink the big strandbeest layer (6.webp) just enough that its flag
+  // clears the .hero-crop top-crop. Mirrors the CSS reserve: 200px in the
+  // 901–1400px range, 260px above that. The flag's top sits at ~5% of the
+  // layer's height; scaling from the top-center origin (with the feet
+  // re-planted via translateY) moves it down to (1 - 0.95 × scale).
+  const beestScale = $derived.by(() => {
+    if (!winW || !winH || winW <= 900) return 0.88;
+    const natural = winW * 0.5625;
+    const reserve = winW <= 1400 ? 200 : 260;
+    const visible = Math.min(natural, winH - reserve);
+    const cropFrac = Math.max(0, 1 - visible / natural);
+    const fit = (1 - cropFrac - 0.03) / 0.95;
+    return Math.min(0.88, Math.max(0.6, fit));
   });
 
   const eventPhotos = [
@@ -218,28 +196,35 @@
     author: string;
     description: string;
     link: string;
-    tag?: string;
+    image?: string;
+    alt?: string;
   }[] = [
     {
       title: 'Seaward',
       author: 'moaaz',
       description:
         'A 3D game where the player is in the form of a boat aiming for victory.',
-      link: 'https://moaazkamel.itch.io/seaward'
+      link: 'https://moaazkamel.itch.io/seaward',
+      image: '/images/fame/seaward.webp',
+      alt: 'Seaward gameplay: a low-poly boat weaving between canyon gates'
     },
     {
       title: 'vp3',
       author: 'Violet',
       description:
         'TUI music player',
-      link: 'https://github.com/vivithequeen/vp3/releases/tag/v1'
+      link: 'https://github.com/vivithequeen/vp3/releases/tag/v1',
+      image: '/images/fame/vp3.webp',
+      alt: 'vp3 playing an album in the terminal, with cover art rendered as ASCII'
     },
     {
       title: 'Speedtickers',
       author: 'Juan',
       description:
         'Speedrun your way trough short yet difficult levels before the timer hits zero.',
-      link: 'https://juanes10201.itch.io/speedtickers-latest'
+      link: 'https://juanes10201.itch.io/speedtickers-latest',
+      image: '/images/fame/speedtickers.webp',
+      alt: 'Speedtickers cover art: a blue character sliding across a neon grid'
     },
     {
       title: 'Beest Cli',
@@ -249,10 +234,13 @@
       link: 'https://beest.peleg2210.me/'
     },
   ];
+
+  // three copies so the belt can loop seamlessly by exactly one copy's width
+  const fameBelt = [...wallOfFameProjects, ...wallOfFameProjects, ...wallOfFameProjects];
 </script>
 
 
-<svelte:window bind:scrollY />
+<svelte:window bind:scrollY bind:innerWidth={winW} bind:innerHeight={winH} />
 
 <div class="scroll-hint" class:visible={scrollHintVisible}>
   <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -272,6 +260,9 @@
 <div class="top-bg">
 <div class="hero-scroll-space">
 <div class="hero-wrap">
+  <a class="hc-flag" href="https://hackclub.com" target="_blank" rel="noreferrer" aria-label="Hack Club">
+    <img src="/images/hack-club-flag.svg" alt="" decoding="async" />
+  </a>
   <div class="hero-mobile">
     <img
       src="/images/hero-1024w.webp"
@@ -283,6 +274,7 @@
       <polygon points="0,38 60,35 120,40 180,32 240,28 300,25 340,30 380,26 440,22 500,26 560,30 620,24 680,28 720,35 780,40 840,44 880,40 940,46 1000,50 1060,46 1100,42 1140,48 1200,52 1260,48 1300,44 1340,50 1400,46 1440,42 1440,80 0,80" fill="#4b4840" />
     </svg>
   </div>
+  <div class="hero-crop">
   <div class="hero-parallax" bind:clientHeight={heroHeight}>
     {#each [
       { src: '', x: 0, rot: 0, scale: 0, drift: 0, isBg: true },
@@ -290,7 +282,7 @@
       { src: '/images/beest-cropped/3.webp', x: 0, rot: 0, scale: 0, drift: 0.04, crop: { left: 0, top: 53.5926, width: 100, height: 46.4074 } },
       { src: '/images/beest-cropped/4.webp', x: 0, rot: 0, scale: 0, drift: 0.06, crop: { left: 0, top: 64.6667, width: 44.5625, height: 21.9259 } },
       { src: '/images/beest-cropped/5.webp', x: 0, rot: 0, scale: 0, drift: 0.08, crop: { left: 13.7708, top: 67.2222, width: 86.2292, height: 32.7778 } },
-      { src: '/images/beest-cropped/6.webp', x: 0.06, rot: 0, scale: 0, drift: 0.10 },
+      { src: '/images/beest-cropped/6.webp', x: 0.06, rot: 0, scale: 0, drift: 0.10, baseScale: beestScale },
       { src: '/images/beest-cropped/7.webp', x: 0.06, rot: 0, scale: 0, drift: 0.04, stretchX: 0.00015, crop: { left: 0, top: 57.5556, width: 89.5625, height: 42.4444 } },
       { src: '/images/beest-cropped/8.webp', x: 0, rot: 0, scale: 0, drift: 0.08, crop: { left: 3.625, top: 79.1852, width: 25, height: 10.0741 } },
       { src: '/images/beest-cropped/9.webp', x: 0, rot: 0, scale: 0, drift: 0.08, crop: { left: 10.1667, top: 60.4444, width: 88.4375, height: 36.2593 } },
@@ -308,7 +300,7 @@
           alt=""
           class="hero-layer"
           class:hero-layer-cropped={!!layer.crop}
-          style="z-index: {i}; transform-origin: top center; {layer.crop ? `left: ${layer.crop.left}%; top: ${layer.crop.top}%; width: ${layer.crop.width}%; height: ${layer.crop.height}%;` : ''} transform: translateX({pxRemaining * layer.x}px) translateY({(layer.offsetY ?? 0) - postScroll * layer.drift}px) rotate({pxRemaining * layer.rot}deg) scale({1 + pxRemaining * layer.scale}) scaleX({1 + pxRemaining * (layer.stretchX ?? 0)}) scaleY({heroHeight ? layer.crop ? 1 + (postScroll * layer.drift) / (heroHeight * layer.crop.height / 100) : (heroHeight + postScroll * layer.drift) / heroHeight : 1});"
+          style="z-index: {i}; transform-origin: top center; {layer.crop ? `left: ${layer.crop.left}%; top: ${layer.crop.top}%; width: ${layer.crop.width}%; height: ${layer.crop.height}%;` : ''} transform: translateX({pxRemaining * layer.x}px) translateY({(layer.offsetY ?? 0) + heroHeight * (1 - (layer.baseScale ?? 1)) - postScroll * layer.drift}px) rotate({pxRemaining * layer.rot}deg) scale({(layer.baseScale ?? 1) * (1 + pxRemaining * layer.scale)}) scaleX({1 + pxRemaining * (layer.stretchX ?? 0)}) scaleY({heroHeight ? layer.crop ? 1 + (postScroll * layer.drift) / (heroHeight * layer.crop.height / 100) : (heroHeight + postScroll * layer.drift) / heroHeight : 1});"
           fetchpriority={i === 0 ? 'high' : 'auto'}
           loading={i <= 2 ? 'eager' : 'lazy'}
           decoding="async"
@@ -319,10 +311,11 @@
       <polygon points="0,38 60,35 120,40 180,32 240,28 300,25 340,30 380,26 440,22 500,26 560,30 620,24 680,28 720,35 780,40 840,44 880,40 940,46 1000,50 1060,46 1100,42 1140,48 1200,52 1260,48 1300,44 1340,50 1400,46 1440,42 1440,80 0,80" fill="#4b4840" />
     </svg>
   </div>
+  </div><!-- hero-crop -->
   <div class="hero-overlay">
-    <div class="hero-credit">from Euan Ripper</div>
-    <h1 class="hero-title">{titleText}{#if !titleDone}<span class="cursor">|</span>{/if}</h1>
-    <p class="hero-subtitle">{subtitleText}{#if titleDone}<span class="cursor">|</span>{/if}</p>
+    <h1 class="hero-title"><img class="hero-logo" src="/images/beest-logo.webp" alt="Beest" fetchpriority="high" decoding="async" /></h1>
+    <div class="hero-credit">from Euan Ripper, ascpixi, and guac md</div>
+    <p class="hero-subtitle">{subtitle}</p>
   </div>
 
 </div>
@@ -332,7 +325,7 @@
   <div class="cta-group">
     <div class="cta-sticker">
       <img src="/images/sticker.webp" alt="Beest sticker" loading="lazy" decoding="async" />
-      <span class="sticker-label">#BEEST</span>
+      <img class="sticker-logo" src="/images/beest-logo.webp" alt="" loading="lazy" decoding="async" />
     </div>
     <div class="cta-content">
       {#if dutch}
@@ -405,7 +398,7 @@
   </svg>
 </div>
 
-<section class="what-is-this">
+<section class="what-is-this" id="what-is-this">
   <h2>What is this?</h2>
   <p>
     Beest is a <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a> Event
@@ -426,33 +419,44 @@
   </svg>
 </div>
 
-<section class="wall-of-fame">
+<section class="wall-of-fame" id="wall-of-fame">
   <h2>Wall of Fame</h2>
   <p class="wall-of-fame-subtitle">
     Some of the best builds from the Beest community :D
   </p>
 
-  <div class="wall-of-fame-grid" role="list">
-    {#each wallOfFameProjects as project}
-      <article class="fame-card" role="listitem">
-        <div class="fame-top">
-          <div class="fame-index">◆</div>
-          <div class="fame-meta">
+  <div class="fame-carousel" role="region" aria-label="Wall of Fame projects">
+    <div class="fame-belt">
+      {#each fameBelt as project, i}
+        {@const dup = i >= wallOfFameProjects.length}
+        <article class="fame-item" aria-hidden={dup}>
+          <div class="fame-shot">
+            {#if project.image}
+              <img src={project.image} alt={dup ? '' : project.alt ?? `Screenshot of ${project.title}`} loading="lazy" decoding="async" />
+            {:else}
+              <div class="fame-terminal" role="img" aria-label="Terminal session of {project.title}">
+                <div class="term-bar"><span></span><span></span><span></span><p>peleg@beest ~ </p></div>
+                <pre class="term-body"><span class="t-dim">$</span> beest stats
+<span class="t-blue">┌─ peleg ──────────────────┐</span>
+<span class="t-blue">│</span> hours logged       52.4h <span class="t-blue">│</span>
+<span class="t-blue">│</span> pipes earned          52 <span class="t-blue">│</span>
+<span class="t-blue">│</span> projects shipped       1 <span class="t-blue">│</span>
+<span class="t-blue">└──────────────────────────┘</span>
+<span class="t-dim">$</span> beest devlog post "it walks!"
+<span class="t-ok">✓ devlog posted</span>
+<span class="t-dim">$</span> <span class="term-cursor">█</span></pre>
+              </div>
+            {/if}
+          </div>
+          <div class="fame-plate">
             <h3>{project.title}</h3>
             <p class="fame-author">by {project.author}</p>
+            <p class="fame-description">{project.description}</p>
+            <a class="fame-link" href={project.link} target="_blank" rel="noreferrer" tabindex={dup ? -1 : undefined}>View project</a>
           </div>
-        </div>
-        <p class="fame-description">{project.description}</p>
-        <div class="fame-bottom">
-          {#if project.tag}
-            <span class="fame-tag">{project.tag}</span>
-          {/if}
-          {#if project.link}
-            <a class="fame-link" href={project.link} target="_blank" rel="noreferrer">View</a>
-          {/if}
-        </div>
-      </article>
-    {/each}
+        </article>
+      {/each}
+    </div>
   </div>
 </section>
 
@@ -657,13 +661,36 @@
 
 <footer class="site-footer">
   <div class="footer-content">
-    <p class="footer-brand">Beest</p>
-    <p class="footer-tagline">A <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a> program</p>
-    <div class="footer-links">
-      <a href="https://hackclub.com/slack" target="_blank" rel="noreferrer">Slack</a>
-      <a href="https://github.com/hackclub" target="_blank" rel="noreferrer">GitHub</a>
-      <a href="https://hackclub.com/privacy-and-terms/" target="_blank" rel="noreferrer">Privacy &amp; Terms</a>
-      <a href="https://forms.hackclub.com/bounty" target="_blank" rel="noreferrer">Fulfillment Bounty</a>
+    <img class="footer-logo" src="/images/beest-logo.webp" alt="Beest" loading="lazy" decoding="async" />
+    <p class="footer-heading">a project by <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a></p>
+    <p class="footer-about">
+      Hack Club is a 501(c)(3) nonprofit and network of 100k+ technical high schoolers. We believe
+      you learn best by building, so we're creating community and providing grants so you can make
+      awesome projects. At Hack Club, students aren't just learning - they're
+      <span class="footer-shipping">shipping</span>.
+    </p>
+    <div class="footer-columns">
+      <div class="footer-col">
+        <h3>beest</h3>
+        <a href="#what-is-this">what is beest</a>
+        <a href="#wall-of-fame">wall of fame</a>
+        <a href="/FAQ">faq</a>
+      </div>
+      <div class="footer-col">
+        <h3>resources</h3>
+        <a href="https://hackclub.com/slack" target="_blank" rel="noreferrer">join our slack</a>
+        <a href="https://hackatime.hackclub.com" target="_blank" rel="noreferrer">hackatime</a>
+        <a href="https://github.com/hackclub" target="_blank" rel="noreferrer">github</a>
+        <a href="https://forms.hackclub.com/bounty" target="_blank" rel="noreferrer">fulfillment bounty</a>
+      </div>
+      <div class="footer-col">
+        <h3>hack club</h3>
+        <a href="https://hackclub.com/philosophy/" target="_blank" rel="noreferrer">philosophy</a>
+        <a href="https://hackclub.com/team/" target="_blank" rel="noreferrer">our team &amp; board</a>
+        <a href="https://hackclub.com/brand/" target="_blank" rel="noreferrer">branding</a>
+        <a href="https://hackclub.com/donate/" target="_blank" rel="noreferrer">donate</a>
+        <a href="https://hackclub.com/privacy-and-terms/" target="_blank" rel="noreferrer">privacy &amp; terms</a>
+      </div>
     </div>
   </div>
   <p class="footer-love">made with <a href="https://hackclub.com/philosophy/" target="_blank" rel="noopener noreferrer">&lt;3</a> by <a href="https://github.com/EDRipper" target="_blank" rel="noopener noreferrer">teens</a> for <a href="https://slack.hackclub.com" target="_blank" rel="noopener noreferrer">teens</a></p>
@@ -699,8 +726,9 @@
   /* ── decorative pipes ───────────────────────────── */
   .page-wrap {
     position: relative;
-    /* clip, not hidden — see .carousel-section note; keeps overflow-y truly
-       visible instead of being promoted to auto. */
+    /* clip, not hidden — hidden would make this a scroll container and
+       promote overflow-y to auto; clip just crops the rotated belts and
+       decorative pipes without ever allowing horizontal scroll. */
     overflow-x: clip;
   }
 
@@ -838,46 +866,46 @@
   }
 
   .hero-overlay {
+    /* the wordmark's letter frame starts ~17% into the logo image (the gear
+       sits to its left); the text rows below indent by the same amount so
+       everything aligns to the letters, not the gear */
+    --logo-w: clamp(280px, 30vw, 480px);
+    --logo-indent: calc(var(--logo-w) * 0.17);
     position: absolute;
-    inset: auto 48px -130px 48px;
+    /* hangs below the hero so the whole block sits on the brown ground */
+    inset: auto clamp(48px, 7vw, 160px) -120px;
     display: flex;
-    flex-direction: row;
-    align-items: baseline;
-    gap: 24px;
-    z-index: 1;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    /* above the strata svg (z 12), which would otherwise paint over the top
+       of the logo where it overlaps the rock band */
+    z-index: 13;
     pointer-events: none;
     line-height: normal;
-    flex-wrap: wrap;
   }
 
-  /* signature credit — its own full-width row directly above #BEEST */
+  /* signature credit — directly under the logo, on the brown, deliberately
+     dimmer than the tagline below it */
   .hero-credit {
-    flex: 0 0 100%;
-    margin: 0;
+    margin: 0 0 0 var(--logo-indent);
     font-family: "Sunny Mood", "Courier New", monospace;
     font-size: clamp(16px, 1.6vw, 24px);
-    color: #ffffff;
+    color: #cbc1ae;
     letter-spacing: 0.04em;
     line-height: 1;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
     pointer-events: none;
   }
 
   .hero-subtitle {
-    margin: 0;
+    margin: 4px 0 0 var(--logo-indent);
     font-family: "Sunny Mood", "Courier New", monospace;
     font-size: clamp(19px, 2vw, 28px);
-    color: #e6f4fe;
+    color: #ffffff;
     letter-spacing: 0.03em;
     line-height: 1.4;
-    text-decoration: underline;
-    text-underline-offset: 4px;
-    white-space: nowrap;
-  }
-
-  .cursor {
-    animation: blink 0.7s step-end infinite;
-    text-decoration: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.4);
   }
 
   @keyframes blink {
@@ -888,12 +916,69 @@
   .hero-title {
     margin: 0;
     flex-shrink: 0;
-    font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: clamp(52px, 8vw, 128px);
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: #e6f4fe;
-    line-height: 1;
+    line-height: 0;
+  }
+
+  .hero-logo {
+    display: block;
+    width: var(--logo-w);
+    height: auto;
+    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.35));
+  }
+
+  /* Whenever the 16:9 hero leaves too little room for the text block, the
+     text sinks below the fold. Anchor the artwork to the bottom and crop it
+     from the top ("move the background up") so the beach, the text on the
+     brown rock, and breathing room below it all fit in the first screenful.
+     Applies wherever the desktop parallax hero renders — both the bottom-
+     pinned overlay (>1400px) and the in-flow overlay (901–1400px), which
+     needs a similar ~260px below the artwork. */
+  @media (min-width: 901px) {
+    .hero-crop {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      max-height: calc(100vh - 260px);
+      max-height: calc(100svh - 260px);
+      overflow: clip;
+    }
+
+    .hero-crop .hero-parallax {
+      flex: 0 0 auto;
+    }
+  }
+
+  /* Between 901–1400px the smaller viewport can spare less room below the
+     artwork; the bottom-pinned text block overlaps the art more instead. */
+  @media (min-width: 901px) and (max-width: 1400px) {
+    .hero-crop {
+      max-height: calc(100vh - 200px);
+      max-height: calc(100svh - 200px);
+    }
+  }
+
+  /* ── hack club flag ─────────────────────────────── */
+  .hc-flag {
+    position: absolute;
+    top: clamp(16px, 1.8vw, 30px);
+    left: clamp(20px, 4vw, 64px);
+    z-index: 20;
+    width: clamp(96px, 9vw, 150px);
+    line-height: 0;
+    transform-origin: center;
+    transition: transform 0.3s ease;
+  }
+
+  .hc-flag:hover,
+  .hc-flag:focus-visible {
+    transform: scale(1.09);
+  }
+
+  .hc-flag img {
+    display: block;
+    width: 100%;
+    height: auto;
+    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.3));
   }
 
   .hero-strata {
@@ -945,6 +1030,7 @@
 
   .sticker-cta::after,
   .what-is-this::after,
+  .wall-of-fame::after,
   .info-bg::after,
   .sticker-bg::after,
   .carousel-section::after,
@@ -973,6 +1059,7 @@
 
   :global(.tile-loaded) .sticker-cta::after,
   :global(.tile-loaded) .what-is-this::after,
+  :global(.tile-loaded) .wall-of-fame::after,
   :global(.tile-loaded) .info-bg::after,
   :global(.tile-loaded) .sticker-bg::after,
   :global(.tile-loaded) .carousel-section::after,
@@ -1022,6 +1109,7 @@
   }
 
   .cta-sticker {
+    position: relative;
     width: 380px;
     height: 380px;
     flex-shrink: 0;
@@ -1052,16 +1140,15 @@
     filter: saturate(1.4);
   }
 
-  .sticker-label {
+  /* .cta-sticker .sticker-logo outweighs the generic `.cta-sticker img`
+     105%-sizing rule above */
+  .cta-sticker .sticker-logo {
     position: absolute;
-    bottom: 20px;
-    left: 24px;
-    font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: 42px;
-    font-weight: 700;
-    color: #000000;
-    letter-spacing: 0.06em;
-    line-height: 1;
+    bottom: 22px;
+    left: 22px;
+    width: 55%;
+    height: auto;
+    filter: none;
   }
 
   .cta-content {
@@ -1133,13 +1220,11 @@
   /* ── wall of fame ───────────────────────────────── */
   .wall-of-fame {
     background: #635a4e;
-    padding: 88px 48px 96px;
+    padding: 88px 48px 108px;
     color: #e6f4fe;
     font-family: "Courier New", monospace;
     position: relative;
     z-index: 1;
-    border-top: 1px solid rgba(230, 244, 254, 0.12);
-    border-bottom: 1px solid rgba(230, 244, 254, 0.12);
   }
 
   .wall-of-fame h2 {
@@ -1164,109 +1249,197 @@
     text-shadow: 0 2px 5px rgba(0, 0, 0, 0.55);
   }
 
-  .wall-of-fame-grid {
-    max-width: 1100px;
-    margin: 0 auto;
-    display: grid;
-    grid-template-columns: repeat(12, 1fr);
-    gap: 18px;
-    align-items: stretch;
+  /* full-bleed auto-scrolling belt, same idiom as the shop carousel */
+  .fame-carousel {
+    position: relative;
+    z-index: 1;
+    margin: 12px -48px 0;
+    overflow: hidden;
+    overflow: clip;
+    /* breathing room for the crooked frames and the overhanging plates */
+    padding: 30px 0 56px;
   }
 
-  .fame-card {
-    grid-column: span 4;
-    background: rgba(240, 235, 229, 0.97);
-    border: 1px solid #4b4840;
-    box-shadow: 8px 8px 0 rgba(75, 72, 64, 0.95);
-    padding: 18px 16px 14px;
-    border-radius: 6px;
-    color: #4b4840;
+  .fame-belt {
+    display: flex;
+    width: max-content;
+    animation: fame-scroll 60s linear infinite;
+  }
+
+  /* pausable so "View project" is actually clickable / tabbable */
+  .fame-carousel:hover .fame-belt,
+  .fame-carousel:focus-within .fame-belt {
+    animation-play-state: paused;
+  }
+
+  @keyframes fame-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(calc(-100% / 3)); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fame-belt {
+      animation: none;
+    }
+
+    .fame-carousel {
+      overflow-x: auto;
+    }
+  }
+
+  .fame-item {
+    position: relative;
+    flex-shrink: 0;
+    width: min(560px, 78vw);
+    /* margin instead of flex gap so the belt is exactly 3 copies wide and
+       the -100%/3 loop point lands seamlessly */
+    margin-right: 64px;
+  }
+
+  .fame-item:nth-child(odd) .fame-shot {
+    transform: rotate(-1.1deg);
+  }
+
+  .fame-item:nth-child(even) .fame-shot {
+    transform: rotate(0.9deg);
+  }
+
+  .fame-shot {
+    position: relative;
+    aspect-ratio: 16 / 10;
+    background: #23221f;
+    border: 3px solid #4b4840;
+    box-shadow: 8px 10px 0 rgba(35, 34, 31, 0.55);
+    overflow: clip;
+    container-type: inline-size;
+  }
+
+  .fame-shot img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* terminal mock for CLI projects with no screenshot */
+  .fame-terminal {
+    position: absolute;
+    inset: 0;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    min-height: 220px;
+    background: #23221f;
+    color: #cbc1ae;
+    font-family: "Courier New", monospace;
   }
 
-  .fame-top {
+  .term-bar {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
-  .fame-index {
-    flex: 0 0 auto;
-    width: 28px;
-    height: 28px;
-    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    background: #cbc1ae;
-    border: 2px solid #4b4840;
-    border-radius: 999px;
+    gap: 7px;
+    padding: 10px 14px;
+    background: #4b4840;
+    border-bottom: 1px solid #23221f;
   }
 
-  .fame-meta h3 {
+  .term-bar span {
+    width: 11px;
+    height: 11px;
+    border-radius: 999px;
+    background: #7f796d;
+  }
+
+  .term-bar span:first-child { background: #c48382; }
+  .term-bar span:nth-child(2) { background: #cbc1ae; }
+  .term-bar span:nth-child(3) { background: #93b4cd; }
+
+  .term-bar p {
+    margin: 0 0 0 8px;
+    font-size: 13px;
+    color: #cbc1ae;
+    letter-spacing: 0.03em;
+  }
+
+  .term-body {
+    flex: 1;
+    margin: 0;
+    padding: 3.4cqi 4cqi;
+    font-size: clamp(12px, 2.6cqi, 19px);
+    line-height: 1.7;
+    overflow: clip;
+  }
+
+  .t-dim { color: #7f796d; }
+  .t-blue { color: #93b4cd; }
+  .t-ok { color: #a3b579; }
+
+  .term-cursor {
+    animation: blink 0.7s step-end infinite;
+  }
+
+  /* caption plate pinned over the screenshot's lower-right corner */
+  .fame-plate {
+    position: absolute;
+    right: -18px;
+    bottom: -30px;
+    z-index: 2;
+    width: min(60%, 290px);
+    box-sizing: border-box;
+    background: rgba(240, 235, 229, 0.97);
+    border: 1px solid #4b4840;
+    box-shadow: 5px 5px 0 rgba(75, 72, 64, 0.95);
+    padding: 13px 16px 14px;
+    color: #4b4840;
+    transform: rotate(-2.4deg);
+  }
+
+  .fame-item:nth-child(even) .fame-plate {
+    transform: rotate(1.8deg);
+  }
+
+  .fame-plate h3 {
     margin: 0;
     font-family: "Stone Breaker", "Courier New", monospace;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
-    font-size: 18px;
-    line-height: 1.2;
+    font-size: 20px;
+    line-height: 1.1;
     color: #000000;
   }
 
   .fame-author {
-    margin: 6px 0 0;
-    font-size: 13px;
-    color: #4b4840;
+    margin: 4px 0 0;
+    font-size: 16px;
+    color: #6c6659;
     font-family: "Sunny Mood", "Courier New", monospace;
   }
 
   .fame-description {
-    margin: 0;
-    font-size: 14px;
-    line-height: 1.45;
+    margin: 8px 0 0;
+    font-size: 17px;
+    line-height: 1.35;
     letter-spacing: 0.01em;
     color: #4b4840;
-    font-family: "Courier New", monospace;
-    flex: 1;
-  }
-
-  .fame-bottom {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .fame-tag {
-    display: inline-block;
-    padding: 6px 10px;
-    border: 1px solid rgba(75, 72, 64, 0.75);
-    background: rgba(147, 180, 205, 0.22);
-    color: #4b4840;
-    font-size: 12px;
     font-family: "Sunny Mood", "Courier New", monospace;
-    border-radius: 999px;
-    white-space: nowrap;
   }
 
   .fame-link {
-    padding: 7px 10px;
+    display: inline-block;
+    margin-top: 12px;
+    padding: 8px 12px;
     border: 1px solid #4b4840;
     background: #93b4cd;
-    color: #e6f4fe;
-    font-size: 13px;
+    color: #ffffff;
+    font-size: 14px;
     font-family: "Courier New", monospace;
     font-weight: 700;
-    border-radius: 6px;
-    box-shadow: 2px 2px 0 rgba(75, 72, 64, 0.95);
-    transition: transform 0.15s ease;
+    text-decoration: none;
+    box-shadow: 3px 3px 0 rgba(75, 72, 64, 0.95);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
 
   .fame-link:hover {
     transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 rgba(75, 72, 64, 0.95);
   }
 
   /* ── what-is-this ───────────────────────────────── */
@@ -1611,11 +1784,11 @@
   .carousel-section {
     position: relative;
     z-index: 2;
-    /* clip (not hidden): with overflow-y:visible, `hidden` would make the
-       browser compute overflow-y as `auto`, turning the rotated belts'
-       vertical overflow into an in-section scrollbar. `clip` avoids that. */
-    overflow-x: clip;
-    overflow-y: visible;
+    /* No overflow property here on purpose: the belt wrappers clip themselves
+       (overflow: clip below) and .page-wrap clips the page horizontally.
+       Any overflow value on this section either creates a scroll container or
+       (Safari, with mixed clip/visible axes) clips the rotated belts to a
+       plain rectangle instead of letting them bleed over the strata. */
     padding: 100px 0 100px;
     display: grid;
     grid-template: 1fr / 1fr;
@@ -1652,7 +1825,14 @@
   .shop-carousel,
   .shop-carousel-bg {
     grid-area: 1 / 1;
+    /* clip, not hidden: hidden makes these scroll containers, so find-in-page,
+       drag-selection, or programmatic scrollIntoView can shove the belts
+       sideways with no way back. clip can never scroll. min-width: 0 is
+       required with clip — without a scroll container the grid item's
+       automatic minimum size would stretch the track to the belt's width. */
     overflow: hidden;
+    overflow: clip;
+    min-width: 0;
     width: calc(100% + 28vw);
     margin-left: -14vw;
     margin-right: -14vw;
@@ -1751,20 +1931,8 @@
 
     .sticker-cta {
       gap: 32px;
-      padding: 160px 40px 80px;
-    }
-
-    .hero-overlay {
-      position: relative;
-      inset: auto;
-      padding: 16px 20px 0;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 8px;
-    }
-
-    .hero-subtitle {
-      white-space: normal;
+      /* the hero text block hangs 120px into this section */
+      padding: 176px 40px 80px;
     }
 
     .cta-sticker {
@@ -1863,54 +2031,87 @@
     position: relative;
     overflow: hidden;
     background: #000;
-    padding: 48px 48px 40px;
+    padding: 64px clamp(48px, 8vw, 160px) 44px;
     color: #7f796d;
-    font-family: "Courier New", monospace;
+    font-family: "Sunny Mood", "Courier New", monospace;
   }
 
   .footer-content {
     max-width: 1100px;
     margin: 0 auto;
-    text-align: center;
+    text-align: left;
   }
 
-  .footer-brand {
-    margin: 0 0 6px;
-    font-size: clamp(24px, 2.5vw, 36px);
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+  .footer-logo {
+    display: block;
+    margin: 0 0 26px;
+    width: min(210px, 55vw);
+    height: auto;
+  }
+
+  .footer-heading {
+    margin: 0 0 22px;
+    font-size: clamp(22px, 2vw, 28px);
+    letter-spacing: 0.03em;
+    color: #e6f4fe;
+  }
+
+  .footer-heading a,
+  .footer-heading a:visited {
+    color: #93b4cd;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+
+  .footer-heading a:hover {
+    color: #e6f4fe;
+  }
+
+  .footer-about {
+    margin: 0;
+    max-width: 62ch;
+    font-size: clamp(16px, 1.3vw, 19px);
+    line-height: 1.65;
+    letter-spacing: 0.02em;
     color: #cbc1ae;
   }
 
-  .footer-tagline {
-    margin: 0 0 24px;
-    font-size: clamp(14px, 1.2vw, 18px);
-    letter-spacing: 0.03em;
+  .footer-shipping {
+    color: #c48382;
   }
 
-  .footer-tagline a,
-  .footer-tagline a:visited {
-    color: #809fb7;
-    text-decoration-color: #809fb7;
-  }
-
-  .footer-links {
+  .footer-columns {
     display: flex;
-    justify-content: center;
-    gap: 32px;
+    flex-wrap: wrap;
+    gap: 32px 110px;
+    margin-top: 52px;
   }
 
-  .footer-links a,
-  .footer-links a:visited {
+  .footer-col {
+    min-width: 150px;
+  }
+
+  .footer-col h3 {
+    margin: 0 0 16px;
+    font-family: inherit;
+    font-size: 20px;
+    font-weight: normal;
+    letter-spacing: 0.04em;
+    color: #c48382;
+  }
+
+  .footer-col a,
+  .footer-col a:visited {
+    display: block;
+    margin-bottom: 12px;
     color: #7f796d;
-    font-size: 15px;
+    font-size: 17px;
     letter-spacing: 0.03em;
     text-decoration: none;
     transition: color 200ms ease;
   }
 
-  .footer-links a:hover {
+  .footer-col a:hover {
     color: #cbc1ae;
   }
 
@@ -2129,6 +2330,7 @@
   @media (max-width: 900px) {
     .sticker-cta::after,
     .what-is-this::after,
+    .wall-of-fame::after,
     .info-bg::after,
     .sticker-bg::after,
     .carousel-section::after,
@@ -2154,6 +2356,17 @@
 
     .hero-parallax {
       display: none;
+    }
+
+    /* mobile: the overlay flows below the static hero image. Overriding
+       --logo-w (not the img width) keeps the text indent aligned with the
+       wordmark's letter frame. */
+    .hero-overlay {
+      --logo-w: min(72vw, 420px);
+      position: relative;
+      inset: auto;
+      padding: 18px 24px 0;
+      gap: 8px;
     }
 
     .scroll-hint {
@@ -2214,6 +2427,17 @@
 
     .bottom-rsvp {
       padding: 40px 20px 48px;
+    }
+
+    .footer-cog {
+      width: 130px;
+      height: 130px;
+      bottom: -40px;
+      right: -40px;
+    }
+
+    .footer-love {
+      padding-right: 60px;
     }
 
     .cta-group {
