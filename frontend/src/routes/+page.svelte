@@ -325,7 +325,6 @@
   <div class="cta-group">
     <div class="cta-sticker">
       <img src="/images/sticker.webp" alt="Beest sticker" loading="lazy" decoding="async" />
-      <img class="sticker-logo" src="/images/beest-logo.webp" alt="" loading="lazy" decoding="async" />
     </div>
     <div class="cta-content">
       {#if dutch}
@@ -1138,17 +1137,6 @@
     height: 105%;
     object-fit: contain;
     filter: saturate(1.4);
-  }
-
-  /* .cta-sticker .sticker-logo outweighs the generic `.cta-sticker img`
-     105%-sizing rule above */
-  .cta-sticker .sticker-logo {
-    position: absolute;
-    bottom: 22px;
-    left: 22px;
-    width: 55%;
-    height: auto;
-    filter: none;
   }
 
   .cta-content {
