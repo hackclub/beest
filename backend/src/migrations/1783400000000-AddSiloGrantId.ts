@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class AddSiloGrantId1783000000000 implements MigrationInterface {
-    name = 'AddSiloGrantId1783000000000'
+export class AddSiloGrantId1783400000000 implements MigrationInterface {
+    name = 'AddSiloGrantId1783400000000'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`ALTER TABLE "orders" ADD "silo_grant_id" varchar(64)`);

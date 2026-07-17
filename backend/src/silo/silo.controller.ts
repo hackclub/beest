@@ -11,11 +11,11 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
-import { SuperAdminGuard } from '../admin/super-admin.guard';
+import { FulfillerGuard } from '../admin/fulfiller.guard';
 import { SiloService, type GrantAdmin } from './silo.service';
 
 @Controller('api/admin/silo')
-@UseGuards(SuperAdminGuard)
+@UseGuards(FulfillerGuard)
 export class SiloController {
   constructor(private readonly siloService: SiloService) {}
 

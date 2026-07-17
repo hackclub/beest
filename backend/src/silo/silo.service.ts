@@ -55,6 +55,10 @@ export class SiloService {
   }
 
   async buildPrefill(orderId: string): Promise<SiloGrantPrefill> {
+    if (!this.apiKey) {
+      throw new ServiceUnavailableException('SILO is not configured');
+    }
+
     const order = await this.orderRepo.findOne({
       where: { id: orderId },
       relations: ['user'],
@@ -96,17 +100,16 @@ export class SiloService {
       where: { id: orderId },
       relations: ['user'],
     });
+    if (!orderForRecipient) throw new NotFoundException('Order not found');
     const recipientEmail = (orderForRecipient?.user?.email ?? '').trim().toLowerCase();
 
     let issuedGrantId: string | null = null;
-    let recipientUserId: string | undefined;
-    let transactionResult: { grantId: string; amount: number; unit: string } | undefined;
+    let transactionResult: { grantId: string; amount: number; unit: string; recipientUserId: string } | undefined;
 
     try {
       transactionResult = await this.orderRepo.manager.transaction(async (em) => {
         const order = await em.findOne(Order, {
           where: { id: orderId },
-          relations: ['user'],
           lock: { mode: 'pessimistic_write' },
         });
         if (!order) throw new NotFoundException('Order not found');
@@ -116,11 +119,10 @@ export class SiloService {
           );
         }
 
-        const email = (order.user?.email ?? '').trim().toLowerCase();
-        if (!EMAIL_RE.test(email)) {
+        if (!EMAIL_RE.test(recipientEmail)) {
           throw new BadRequestException('Order owner has no valid email');
         }
-        if (email === admin.email.trim().toLowerCase()) {
+        if (recipientEmail === admin.email.trim().toLowerCase()) {
           throw new BadRequestException('You cannot issue a SILO grant to your own email');
         }
 
@@ -132,7 +134,7 @@ export class SiloService {
           externalId,
           reason: order.itemName,
         };
-        body.userId = order.user?.hcaSub ?? order.user?.slackId ?? email;
+        body.userId = orderForRecipient.user?.hcaSub ?? orderForRecipient.user?.slackId ?? recipientEmail;
 
         const res = await fetchWithTimeout(
           `${this.baseUrl}/api/ysws/grants`,
@@ -173,12 +175,11 @@ export class SiloService {
         order.siloGrantId = grantId;
         await em.save(order);
 
-        recipientUserId = order.userId;
-
         return {
           grantId,
           amount: SiloService.GRANT_AMOUNT,
           unit: this.unit,
+          recipientUserId: order.userId,
         };
       });
     } catch (err) {
@@ -203,7 +204,7 @@ export class SiloService {
 
     try {
       await this.auditLogService.log(
-        recipientUserId ?? orderId,
+        transactionResult.recipientUserId,
         'silo_grant_issued',
         `SILO grant ${transactionResult.grantId} for ${transactionResult.amount} ${transactionResult.unit} issued to ${recipientEmail || 'unknown'} by ${admin.email}`,
       );

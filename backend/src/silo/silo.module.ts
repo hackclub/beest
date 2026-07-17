@@ -6,7 +6,7 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
 import { Order } from '../entities/order.entity';
 import { SiloService } from './silo.service';
 import { SiloController } from './silo.controller';
-import { SuperAdminGuard } from '../admin/super-admin.guard';
+import { FulfillerGuard } from '../admin/fulfiller.guard';
 
 @Module({
   imports: [
@@ -16,7 +16,7 @@ import { SuperAdminGuard } from '../admin/super-admin.guard';
     TypeOrmModule.forFeature([Order]),
   ],
   controllers: [SiloController],
-  providers: [SiloService, SuperAdminGuard],
+  providers: [SiloService, FulfillerGuard],
   exports: [SiloService],
 })
 export class SiloModule {}
