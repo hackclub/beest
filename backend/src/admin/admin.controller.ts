@@ -543,6 +543,7 @@ export class AdminController {
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
+    isSuperFeatured?: boolean;
     isBlackMarket?: boolean;
   }, @Req() req: Request) {
     if (!body.name || !body.description || !body.imageUrl || body.priceHours == null) {
@@ -566,6 +567,7 @@ export class AdminController {
       estimatedShip: body.estimatedShip,
       isActive: body.isActive,
       isFeatured: body.isFeatured,
+      isSuperFeatured: body.isSuperFeatured,
       isBlackMarket: body.isBlackMarket,
     }, (req as any).user?.uid);
   }
@@ -599,6 +601,7 @@ export class AdminController {
       estimatedShip?: string | null;
       isActive?: boolean;
       isFeatured?: boolean;
+      isSuperFeatured?: boolean;
       isBlackMarket?: boolean;
     },
     @Req() req: Request,

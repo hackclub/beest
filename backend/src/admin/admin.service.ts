@@ -2301,6 +2301,7 @@ export class AdminService {
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
+    isSuperFeatured?: boolean;
     isBlackMarket?: boolean;
   }, adminId?: string): Promise<ShopItem> {
     const maxOrder = await this.shopRepo
@@ -2319,9 +2320,13 @@ export class AdminService {
       estimatedShip: data.estimatedShip ?? null,
       isActive: data.isActive ?? true,
       isFeatured: data.isFeatured ?? false,
+      isSuperFeatured: data.isSuperFeatured ?? false,
       isBlackMarket: data.isBlackMarket ?? false,
       sortOrder,
     });
+    if (item.isSuperFeatured) {
+      await this.shopRepo.update({ isSuperFeatured: true }, { isSuperFeatured: false });
+    }
     const saved = await this.shopRepo.save(item);
     if (adminId) {
       await this.auditLogService.log(
@@ -2343,6 +2348,7 @@ export class AdminService {
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
+    isSuperFeatured?: boolean;
     isBlackMarket?: boolean;
   }, adminId?: string): Promise<ShopItem> {
     const item = await this.shopRepo.findOne({ where: { id } });
@@ -2369,6 +2375,14 @@ export class AdminService {
     if (data.estimatedShip !== undefined) item.estimatedShip = data.estimatedShip;
     if (data.isActive !== undefined) item.isActive = data.isActive;
     if (data.isFeatured !== undefined) item.isFeatured = data.isFeatured;
+    if (data.isSuperFeatured !== undefined) {
+      // Only one item holds the spotlight slot — turning it on here steals it
+      // from whichever item had it before.
+      if (data.isSuperFeatured && !item.isSuperFeatured) {
+        await this.shopRepo.update({ isSuperFeatured: true }, { isSuperFeatured: false });
+      }
+      item.isSuperFeatured = data.isSuperFeatured;
+    }
     if (data.isBlackMarket !== undefined) item.isBlackMarket = data.isBlackMarket;
     const saved = await this.shopRepo.save(item);
     if (adminId) {
