@@ -94,22 +94,4 @@ export class OnboardingController {
 
     return { hackatime, slack, project };
   }
-
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @UseGuards(JwtAuthGuard)
-  @Get('sticker-link')
-  async getStickerLink(@Req() req: Request) {
-    const user = (req as any).user;
-    const dbUser = await this.userRepo.findOne({
-      where: { hcaSub: user.sub },
-      select: ['email'],
-    });
-
-    if (!dbUser?.email) {
-      return { link: null };
-    }
-
-    const link = await this.rsvpService.getStickerLink(dbUser.email);
-    return { link };
-  }
 }

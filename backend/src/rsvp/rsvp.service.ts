@@ -320,29 +320,6 @@ export class RsvpService {
     }
   }
 
-  async getStickerLink(rawEmail: string): Promise<string | null> {
-    const email = this.sanitizeEmail(rawEmail);
-    const searchParams = new URLSearchParams({
-      filterByFormula: `{Email} = "${this.escapeAirtableValue(email)}"`,
-      maxRecords: '1',
-    });
-    searchParams.append('fields[]', 'Fillout Sticker Link');
-
-    const res = await fetchWithTimeout(`${this.baseUrl}?${searchParams}`, {
-      headers: { Authorization: `Bearer ${this.airtableApiKey}` },
-    });
-
-    if (!res.ok) {
-      throw new HttpException(
-        'Failed to fetch sticker link',
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-
-    const data = await res.json();
-    return data.records?.[0]?.fields?.['Fillout Sticker Link'] ?? null;
-  }
-
   private async createRecord(email: string): Promise<void> {
     const res = await fetchWithTimeout(this.baseUrl, {
       method: 'POST',

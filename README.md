@@ -126,7 +126,6 @@ All endpoints live under the backend at `/api`. Auth-protected routes require a 
 | `/api/leaderboard` | GET | JWT | Top 10 users by approved hours |
 | `/api/onboarding/status` | GET | JWT | Onboarding step completion |
 | `/api/onboarding/two-emails` | POST | JWT | Confirm different Slack email |
-| `/api/onboarding/sticker-link` | GET | JWT | User's unique sticker form link |
 | `/api/audit-log` | GET | JWT | User's audit log entries |
 | `/api/admin/users` | GET | Admin | List all users |
 | `/api/admin/users/:id` | GET | Admin | Get specific user |

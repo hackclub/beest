@@ -36,21 +36,11 @@
   const postScroll = $derived(Math.max(scrollY - PARALLAX_TRAVEL, 0));
   let heroHeight = $state(0);
   let dutch = $state(false);
-  let freeVisible = $state(false);
-  let freeEl: HTMLElement;
   let diagramEl: HTMLElement;
   let diagramTop = $state(0);
 
 
   onMount(() => {
-    const observer = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) {
-        freeVisible = true;
-        observer.disconnect();
-      }
-    }, { threshold: 0.5 });
-    observer.observe(freeEl);
-
     const updateTop = () => {
       if (diagramEl) diagramTop = diagramEl.getBoundingClientRect().top + window.scrollY;
     };
@@ -322,25 +312,6 @@
 </div>
 
 <section class="sticker-cta">
-  <div class="cta-group">
-    <div class="cta-sticker">
-      <img src="/images/sticker.webp" alt="Beest sticker" loading="lazy" decoding="async" />
-    </div>
-    <div class="cta-content">
-      {#if dutch}
-        <p class="cta-line">MELD JE</p>
-        <p class="cta-line">VANDAAG AAN,</p>
-        <p class="cta-line">KRIJG EEN</p>
-        <p class="cta-line"><span bind:this={freeEl} class:rainbow={freeVisible} style="--i:0">G</span><span class:rainbow={freeVisible} style="--i:1">R</span><span class:rainbow={freeVisible} style="--i:2">A</span><span class:rainbow={freeVisible} style="--i:3">T</span><span class:rainbow={freeVisible} style="--i:4">I</span><span class:rainbow={freeVisible} style="--i:5">S</span></p>
-        <p class="cta-line">STICKERS</p>
-      {:else}
-        <p class="cta-line">Sign up</p>
-        <p class="cta-line">today,</p>
-        <p class="cta-line">get a <span bind:this={freeEl} class:rainbow={freeVisible} style="--i:0">f</span><span class:rainbow={freeVisible} style="--i:1">r</span><span class:rainbow={freeVisible} style="--i:2">e</span><span class:rainbow={freeVisible} style="--i:3">e</span></p>
-        <p class="cta-line">sticker</p>
-      {/if}
-    </div>
-  </div>
   <aside class="rsvp-box" aria-label="Sign Up">
     <svg class="rsvp-border" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="calc(100% - 3px)" height="calc(100% - 3px)" rx="0" ry="0" /></svg>
     <h2>Sign Up / Log In</h2>
@@ -370,7 +341,7 @@
     {#if topStatus === 'error'}<p class="rsvp-error">Something went wrong, please try again.</p>{/if}
     <p class="updates">&#10003; Signing up puts you on our email list, you can remove yourself <a href="https://email-tools.hackclub.com/" target="_blank" rel="noreferrer">here</a>.</p>
     <p class="rsvp-note">
-      We will ask for an address to send the stickers to, Please use a real address or opt out since we send real stickers! You can always
+      We will ask for an address to ship physical rewards to, please use a real address or opt out since we send real hardware! You can always
       <a href="https://hackclub.com/privacy-and-terms/" target="_blank" rel="noreferrer">view our privacy policy</a>.
     </p>
   </aside>
@@ -630,7 +601,7 @@
       {#if bottomStatus === 'error'}<p class="rsvp-error">Something went wrong, please try again.</p>{/if}
       <p class="updates">&#10003; Signing up puts you on our email list, you can remove yourself <a href="https://email-tools.hackclub.com/" target="_blank" rel="noreferrer">here</a>.</p>
       <p class="rsvp-note">
-        We will ask for an address to send the stickers to, Please use a real address or opt out since we send real stickers! You can always
+        We will ask for an address to ship physical rewards to, please use a real address or opt out since we send real hardware! You can always
         <a href="https://hackclub.com/privacy-and-terms/" target="_blank" rel="noreferrer">view our privacy policy</a>.
       </p>
     </aside>
@@ -1098,79 +1069,6 @@
     margin: 0 auto;
   }
 
-  .cta-group {
-    display: flex;
-    align-items: center;
-    gap: 48px;
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(230, 244, 254, 0.15);
-    padding: 24px 24px 24px 36px;
-  }
-
-  .cta-sticker {
-    position: relative;
-    width: 380px;
-    height: 380px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #ffffff;
-    border-radius: 48px;
-    overflow: hidden;
-    box-shadow: 10px 12px 16px rgba(0, 0, 0, 0.45);
-    animation: sticker-wiggle 3s ease-in-out infinite;
-  }
-
-  .cta-sticker:hover {
-    animation-play-state: running;
-  }
-
-  @keyframes sticker-wiggle {
-    0%, 100% { transform: rotate(10deg); }
-    50% { transform: rotate(4deg); }
-  }
-
-  .cta-sticker img {
-    display: block;
-    width: 105%;
-    height: 105%;
-    object-fit: contain;
-    filter: saturate(1.4);
-  }
-
-  .cta-content {
-    flex: 0 1 auto;
-    min-width: 0;
-  }
-
-  .cta-line {
-    margin: 0;
-    color: #e6f4fe;
-    font-family: "Andale Mono", "Lucida Console", monospace;
-    font-size: clamp(28px, 3.5vw, 52px);
-    line-height: 1.15;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-  }
-
-  .rainbow {
-    animation: rainbow 3s linear calc(var(--i) * 0.15s) 7 both;
-  }
-
-  @keyframes rainbow {
-    0%   { color: #ff0000; }
-    10%  { color: #ff8800; }
-    20%  { color: #ffff00; }
-    30%  { color: #00cc00; }
-    40%  { color: #0088ff; }
-    50%  { color: #aa00ff; }
-    60%  { color: #ff0000; }
-    70%  { color: #ff8800; }
-    80%  { color: #ffff00; }
-    90%  { color: #e6f4fe; }
-    100% { color: #e6f4fe; }
-  }
 
   .strata-with-gears {
     position: relative;
@@ -1923,11 +1821,6 @@
       padding: 176px 40px 80px;
     }
 
-    .cta-sticker {
-      width: min(42vw, 220px);
-      height: min(42vw, 220px);
-    }
-
     .sticker-row {
       flex-direction: column;
       padding: 48px 20px 180px;
@@ -1937,16 +1830,6 @@
       min-height: 0;
       width: min(700px, 100%);
       margin: 0 auto;
-    }
-
-    .cta-group {
-      box-sizing: border-box;
-      padding: 24px 28px;
-      max-width: 600px;
-    }
-
-    .cta-line {
-      font-size: clamp(22px, 2.6vw, 40px);
     }
 
     .rsvp-box {
@@ -1999,11 +1882,6 @@
       flex-direction: column;
       align-items: center;
       padding: 100px 24px 72px;
-    }
-
-    .cta-group {
-      align-self: center;
-      width: min(90vw, 700px);
     }
 
     .rsvp-box {
@@ -2426,17 +2304,6 @@
 
     .footer-love {
       padding-right: 60px;
-    }
-
-    .cta-group {
-      flex-direction: column;
-      align-items: center;
-      gap: 20px;
-      padding: 20px;
-      margin-left: 0;
-      margin-right: 0;
-      width: 100%;
-      box-sizing: border-box;
     }
 
     .rsvp-box {
