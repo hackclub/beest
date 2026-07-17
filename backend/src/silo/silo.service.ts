@@ -129,12 +129,12 @@ export class SiloService {
         const externalId = order.id;
 
         const body: Record<string, unknown> = {
+          userId: orderForRecipient.user.hcaSub,
           amount: SiloService.GRANT_AMOUNT,
           unit: this.unit,
           externalId,
           reason: order.itemName,
         };
-        body.userId = orderForRecipient.user?.hcaSub ?? orderForRecipient.user?.slackId ?? recipientEmail;
 
         const res = await fetchWithTimeout(
           `${this.baseUrl}/api/ysws/grants`,
@@ -153,7 +153,9 @@ export class SiloService {
           const detail = await res.text().catch(() => '');
           this.logger.error(`SILO grant failed: ${res.status} ${detail.slice(0, 300)}`);
           if (res.status === 400) {
-            throw new BadRequestException('SILO rejected the grant (check email and configuration)');
+            throw new BadRequestException(
+              'SILO rejected the grant (check recipient identity and configuration)',
+            );
           }
           if (res.status === 401 || res.status === 403) {
             throw new ServiceUnavailableException('SILO API key is not valid');

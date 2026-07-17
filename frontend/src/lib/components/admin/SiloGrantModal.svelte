@@ -46,7 +46,7 @@
 	async function submit() {
 		if (!prefill || submitting) return;
 		const confirmed = confirm(
-			`Grant ${prefill.amount} ${prefill.unit} of SILO S3 storage to ${prefill.recipientEmail}?\n\nThis provisions real cloud storage and cannot be undone here.`
+			`Grant ${prefill.amount} ${prefill.unit} of SILO S3 storage to the SILO account for ${prefill.recipientEmail}?\n\nThis provisions real cloud storage and cannot be undone here.`
 		);
 		if (!confirmed) return;
 
@@ -111,7 +111,7 @@
 			</div>
 		{:else if prefill}
 			<label class="sg-field">
-				<span>Recipient email <span class="sg-hint">&mdash; fixed to the order owner</span></span>
+				<span>Account email <span class="sg-hint">&mdash; confirms the order owner</span></span>
 				<input type="email" value={prefill.recipientEmail} readonly autocomplete="off" />
 			</label>
 
