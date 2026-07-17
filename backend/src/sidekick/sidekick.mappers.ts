@@ -231,7 +231,6 @@ export function toSidekickOrder(order: Order, latestUserNote: string | null): Si
       itemName: order.itemName,
       fulfillmentNotes: order.fulfillmentNotes,
       hcbCardGrantId: order.hcbCardGrantId,
-      siloGrantId: order.siloGrantId,
     },
   };
 }
