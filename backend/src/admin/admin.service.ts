@@ -195,35 +195,32 @@ export class AdminService {
     });
     if (!user) throw new NotFoundException('User not found');
 
-    const projects = await this.projectRepo.find({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-      select: ['id', 'name', 'status', 'projectType', 'createdAt'],
-    });
-
-    const orders = await this.orderRepo.find({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-      select: ['id', 'itemName', 'quantity', 'pipesSpent', 'status', 'createdAt'],
-    });
-
-    const sessions = await this.sessionRepo.count({ where: { userId } });
-
-    const auditLogs = await this.auditLogRepo.find({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-      take: 50,
-      select: ['id', 'action', 'label', 'createdAt'],
-    });
-
-    let perms: string | null = null;
-    try {
-      if (user.email) {
-        perms = await this.rsvpService.getPerms(user.email);
-      }
-    } catch {
-      // Airtable lookup failed — don't block the response
-    }
+    // These four reads plus the Airtable perms lookup are independent, so fire
+    // them concurrently instead of five serial round-trips — this runs on every
+    // user click in the panel. The perms lookup swallows its own error so a
+    // flaky Airtable call never rejects the whole batch.
+    const [projects, orders, sessions, auditLogs, perms] = await Promise.all([
+      this.projectRepo.find({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+        select: ['id', 'name', 'status', 'projectType', 'createdAt'],
+      }),
+      this.orderRepo.find({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+        select: ['id', 'itemName', 'quantity', 'pipesSpent', 'status', 'createdAt'],
+      }),
+      this.sessionRepo.count({ where: { userId } }),
+      this.auditLogRepo.find({
+        where: { userId },
+        order: { createdAt: 'DESC' },
+        take: 50,
+        select: ['id', 'action', 'label', 'createdAt'],
+      }),
+      user.email
+        ? this.rsvpService.getPerms(user.email).catch(() => null)
+        : Promise.resolve<string | null>(null),
+    ]);
 
     return {
       id: user.id,

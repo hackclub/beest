@@ -106,8 +106,6 @@
 		url: string | null;
 	}
 	let eventItems: AdminEvent[] = $state([]);
-	let eventHostUsers: UserSummary[] = $state([]);
-	let eventHostsLoading = $state(false);
 	let eventsLoading = $state(false);
 	let editingEvent: AdminEvent | null = $state(null);
 	let newEventTitle = $state('');
@@ -1033,24 +1031,31 @@
 		return filteredUsers.slice(start, start + USERS_PAGE_SIZE);
 	});
 
-	async function loadUsers() {
-		loading = true;
-		try {
-			const res = await fetch('/api/admin/users');
-			if (res.ok) users = await res.json();
-		} finally {
-			loading = false;
-		}
-	}
+	// The full user list backs three tabs (Users, Stats cards, Events host picker)
+	// and every one hits the same `/api/admin/users` — which server-side re-paginates
+	// the entire Airtable perms table each call. Load it once and share it: skip the
+	// refetch when it's already loaded, and collapse concurrent callers onto one
+	// in-flight request. Pass `force` after a mutation to refresh deliberately.
+	let usersLoaded = $state(false);
+	let usersInflight: Promise<void> | null = null;
 
-	async function loadEventHostUsers() {
-		eventHostsLoading = true;
-		try {
-			const res = await fetch('/api/admin/users');
-			if (res.ok) eventHostUsers = await res.json();
-		} finally {
-			eventHostsLoading = false;
-		}
+	function loadUsers(force = false): Promise<void> {
+		if (!force && usersLoaded) return Promise.resolve();
+		if (usersInflight) return usersInflight;
+		loading = true;
+		usersInflight = (async () => {
+			try {
+				const res = await fetch('/api/admin/users');
+				if (res.ok) {
+					users = await res.json();
+					usersLoaded = true;
+				}
+			} finally {
+				loading = false;
+				usersInflight = null;
+			}
+		})();
+		return usersInflight;
 	}
 
 	function userDisplayName(user: UserSummary) {
@@ -1072,6 +1077,16 @@
 		} finally {
 			detailLoading = false;
 		}
+	}
+
+	// Since the list is now loaded once and reused across tabs, mutations that
+	// change a listed field (perms, ban) must patch the in-memory row so the table
+	// stays correct without a full refetch. Called after selectUser() refreshes
+	// userDetail, so we copy the authoritative perms from there.
+	function syncUserInList(userId: string) {
+		if (!userDetail || userDetail.id !== userId) return;
+		const perms = userDetail.perms;
+		users = users.map((u) => (u.id === userId ? { ...u, perms } : u));
 	}
 
 	async function impersonateUser() {
@@ -1098,6 +1113,7 @@
 			const res = await fetch(`/api/admin/users/${selectedUser.id}/ban`, { method: 'POST' });
 			if (res.ok) {
 				await selectUser(selectedUser);
+				syncUserInList(selectedUser.id);
 			}
 		} finally {
 			actionLoading = '';
@@ -1149,6 +1165,7 @@
 			if (res.ok) {
 				showPermsDropdown = false;
 				await selectUser(selectedUser);
+				syncUserInList(selectedUser.id);
 			}
 		} finally {
 			actionLoading = '';
@@ -1879,7 +1896,7 @@
 		// hours need Super-Admin-only endpoints (/users, /stats/unreviewed-hours).
 		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); }
 		if (activeTab === 'news') loadNews();
-		if (activeTab === 'events') { loadEvents(); if (eventHostUsers.length === 0) loadEventHostUsers(); }
+		if (activeTab === 'events') { loadEvents(); loadUsers(); }
 		if (activeTab === 'projects') { loadProjects(); loadProjectHours(); }
 		if (activeTab === 'shop') loadShop();
 		if (activeTab === 'fulfillment') { loadFulfillment(); loadHcbStatus(); }
@@ -2298,8 +2315,8 @@
 					<input type="text" placeholder="Title" bind:value={newEventTitle} class="news-input event-title-input" />
 					<input type="url" placeholder="URL (optional)" bind:value={newEventUrl} class="news-input event-url-input" />
 					<select bind:value={newEventHostedBy} class="news-input event-hosted-input">
-						<option value="">{eventHostsLoading ? 'Loading users...' : 'Hosted by'}</option>
-						{#each eventHostUsers as user}
+						<option value="">{loading && !usersLoaded ? 'Loading users...' : 'Hosted by'}</option>
+						{#each users as user}
 							{#if user.slackId}
 								<option value={user.slackId}>{userDisplayName(user)} — {user.slackId}</option>
 							{/if}
