@@ -290,6 +290,7 @@ export class AdminController {
       overrideJustification?: string;
       overrideHours?: number;
       internalHours?: number;
+      golden?: boolean;
     },
     @Req() req: Request,
   ) {
@@ -356,6 +357,7 @@ export class AdminController {
       body.overrideJustification ?? null,
       body.overrideHours ?? null,
       body.internalHours ?? null,
+      typeof body.golden === 'boolean' ? body.golden : null,
     );
   }
 
@@ -541,6 +543,7 @@ export class AdminController {
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
+    isBlackMarket?: boolean;
   }, @Req() req: Request) {
     if (!body.name || !body.description || !body.imageUrl || body.priceHours == null) {
       throw new BadRequestException('name, description, imageUrl, and priceHours are required');
@@ -563,6 +566,7 @@ export class AdminController {
       estimatedShip: body.estimatedShip,
       isActive: body.isActive,
       isFeatured: body.isFeatured,
+      isBlackMarket: body.isBlackMarket,
     }, (req as any).user?.uid);
   }
 
@@ -595,6 +599,7 @@ export class AdminController {
       estimatedShip?: string | null;
       isActive?: boolean;
       isFeatured?: boolean;
+      isBlackMarket?: boolean;
     },
     @Req() req: Request,
   ) {

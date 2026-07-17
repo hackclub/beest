@@ -69,6 +69,12 @@ const APPROVE_FIELDS: ReviewFieldDefinition[] = [
     type: 'boolean',
     required: false,
   },
+  {
+    name: 'mark_golden',
+    label: 'Mark as golden (queue priority + black market access)',
+    type: 'boolean',
+    required: false,
+  },
 ];
 
 const REJECT_FIELDS: ReviewFieldDefinition[] = [
@@ -138,6 +144,7 @@ export function toSidekickProject(
       projectType: project.projectType,
       aiUse: project.aiUse,
       isUpdate: project.isUpdate,
+      isGolden: project.isGolden,
       beestStatus: project.status,
     },
   };

@@ -21,8 +21,10 @@ export class ShopController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  async list() {
-    return this.shopService.listActive();
+  async list(@Req() req: Request) {
+    const userId = (req as any).user?.uid;
+    if (!userId) throw new BadRequestException('Not authenticated');
+    return this.shopService.listActive(userId);
   }
 
   @UseGuards(JwtAuthGuard)

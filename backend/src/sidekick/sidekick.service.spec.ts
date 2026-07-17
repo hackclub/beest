@@ -174,9 +174,38 @@ describe('SidekickService.submitReviewAction', () => {
       expect.stringContaining('checked commits'),
       5,
       5,
+      null, // no mark_golden field → leave the golden flag unchanged
     );
     expect(s.auditService.decide).not.toHaveBeenCalled();
     expect(result.event.type).toBe('approval');
+  });
+
+  it('approve passes mark_golden through to reviewProject', async () => {
+    const s = buildService();
+    wireReviewFixtures(s);
+    await s.service.submitReviewAction({
+      shipId: 'sub-1',
+      reviewerId: 'U999',
+      action: 'approve',
+      hoursAssigned: 5,
+      feedbackMessage: 'nice',
+      justification: 'checked commits',
+      isHq: false,
+      fields: { mark_golden: true },
+    });
+    expect(s.adminService.reviewProject).toHaveBeenCalledWith(
+      'proj-1',
+      'rev-uuid',
+      'approved',
+      'nice',
+      null,
+      undefined,
+      false,
+      expect.stringContaining('checked commits'),
+      5,
+      5,
+      true,
+    );
   });
 
   it('approve splits rewardedHoursOverride (pipes) from hoursAssigned (Airtable)', async () => {
@@ -203,6 +232,7 @@ describe('SidekickService.submitReviewAction', () => {
       expect.stringContaining('checked commits'),
       8, // overrideHours — what the author is rewarded (pipes)
       5, // internalHours — canonical Unified YSWS DB value
+      null,
     );
     expect(result.event).toMatchObject({ hoursAssigned: 5, rewardedHoursOverride: 8 });
   });

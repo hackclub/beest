@@ -538,6 +538,7 @@ export class AdminService {
 
     // 1. Reject the project
     project.status = 'changes_needed';
+    project.isGolden = false;
     await this.projectRepo.save(project);
 
     // 2. Save review record
@@ -739,6 +740,12 @@ export class AdminService {
       .getMany();
     const submissionMap = new Map(latestSubmissions.map((s) => [s.projectId, s]));
 
+    // Authors with any golden project get review-queue priority; computed from
+    // the full (unfiltered) project list so the set is complete.
+    const goldenAuthorIds = new Set(
+      projects.filter((p) => p.isGolden).map((p) => p.userId),
+    );
+
     const mapped = projects
       .filter((p) => isSuperAdmin || p.status !== 'unshipped')
       .map((p) => {
@@ -759,6 +766,7 @@ export class AdminService {
           screenshot2Url: p.screenshot2Url,
           hackatimeProjectName: p.hackatimeProjectName,
           isUpdate: p.isUpdate,
+          isGolden: p.isGolden,
           otherHcProgram: p.otherHcProgram,
           aiUse: p.aiUse,
           createdAt: p.createdAt,
@@ -774,6 +782,7 @@ export class AdminService {
             watchlisted: !!p.user?.watchlisted,
             coolBuilder: !!p.user?.coolBuilder,
             intent: p.user?.intent ?? null,
+            hasGoldenProject: goldenAuthorIds.has(p.userId),
           },
           latestSubmission: latestSub ? {
             id: latestSub.id,
@@ -800,6 +809,7 @@ export class AdminService {
     overrideJustification: string | null,
     overrideHours: number | null,
     internalHours: number | null,
+    golden: boolean | null = null,
   ) {
     const project = await this.projectRepo.findOne({
       where: { id: projectId },
@@ -859,6 +869,12 @@ export class AdminService {
     // finalises the approval or marks the project changes_needed with a
     // generic user-facing message.
     project.status = status === 'approved' ? 'fraud_pending' : status;
+    // Golden is decided per approval: the checkbox value on an approve review
+    // sets or clears it. Non-approve reviews leave it alone here (revocation
+    // of an approval clears it below, alongside the pipes clawback).
+    if (status === 'approved' && golden !== null) {
+      project.isGolden = golden;
+    }
     if (status === 'approved') {
       if (overrideHours !== null && overrideHours !== undefined) {
         const delta = Math.round(overrideHours * 10) / 10;
@@ -934,6 +950,8 @@ export class AdminService {
     if (status === 'changes_needed' || status === 'rejected') {
       if (previousStatus === 'approved') {
         project.overrideHours = 0;
+        // The approval golden rode on is being revoked — revoke golden too.
+        project.isGolden = false;
         if ((project.pipesGranted ?? 0) > 0) {
           const clawback = project.pipesGranted!;
           await this.userRepo.decrement({ id: project.userId }, 'pipes', clawback);
@@ -2283,6 +2301,7 @@ export class AdminService {
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
+    isBlackMarket?: boolean;
   }, adminId?: string): Promise<ShopItem> {
     const maxOrder = await this.shopRepo
       .createQueryBuilder('s')
@@ -2300,6 +2319,7 @@ export class AdminService {
       estimatedShip: data.estimatedShip ?? null,
       isActive: data.isActive ?? true,
       isFeatured: data.isFeatured ?? false,
+      isBlackMarket: data.isBlackMarket ?? false,
       sortOrder,
     });
     const saved = await this.shopRepo.save(item);
@@ -2323,6 +2343,7 @@ export class AdminService {
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
+    isBlackMarket?: boolean;
   }, adminId?: string): Promise<ShopItem> {
     const item = await this.shopRepo.findOne({ where: { id } });
     if (!item) throw new NotFoundException('Shop item not found');
@@ -2348,6 +2369,7 @@ export class AdminService {
     if (data.estimatedShip !== undefined) item.estimatedShip = data.estimatedShip;
     if (data.isActive !== undefined) item.isActive = data.isActive;
     if (data.isFeatured !== undefined) item.isFeatured = data.isFeatured;
+    if (data.isBlackMarket !== undefined) item.isBlackMarket = data.isBlackMarket;
     const saved = await this.shopRepo.save(item);
     if (adminId) {
       const detail = changes.length ? ` [${changes.join(', ')}]` : '';

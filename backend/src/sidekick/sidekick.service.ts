@@ -415,6 +415,11 @@ export class SidekickService {
 
         const fields = input.fields ?? {};
         const hideReviewerName = fields.hide_reviewer_name === true;
+        // Golden semantics match the admin panel: a boolean decides the flag
+        // on this approval; an absent field (older Sidekick clients) maps to
+        // null = leave the project's golden mark unchanged.
+        const markGolden =
+          typeof fields.mark_golden === 'boolean' ? fields.mark_golden : null;
         const internalNote =
           typeof fields.internal_note === 'string' && fields.internal_note.trim()
             ? fields.internal_note.trim()
@@ -442,6 +447,7 @@ export class SidekickService {
           justification,
           input.rewardedHoursOverride ?? input.hoursAssigned,
           input.hoursAssigned,
+          markGolden,
         );
 
         // HQ reviewers skip the second-pass audit stage: immediately authorize

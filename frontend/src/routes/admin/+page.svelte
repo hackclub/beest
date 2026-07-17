@@ -180,11 +180,12 @@
 		screenshot2Url: string | null;
 		hackatimeProjectName: string[];
 		isUpdate: boolean;
+		isGolden: boolean;
 		otherHcProgram: string | null;
 		aiUse: string | null;
 		createdAt: string;
 		updatedAt: string;
-		user: { id: string; name: string | null; slackId: string | null; reviewerUserNote: string | null; watchlisted: boolean; coolBuilder: boolean; intent: string | null };
+		user: { id: string; name: string | null; slackId: string | null; reviewerUserNote: string | null; watchlisted: boolean; coolBuilder: boolean; intent: string | null; hasGoldenProject: boolean };
 		latestSubmission: { id: string; changeDescription: string | null; minHoursConfirmed: boolean; reviewerNote: string | null; status: string; createdAt: string } | null;
 		claimedByReviewerId: string | null;
 		claimedByReviewerName: string | null;
@@ -268,6 +269,9 @@
 	let internalNote = $state('');
 	let persistentUserNote = $state('');
 	let hideReviewerName = $state(false);
+	// "Mark as golden" checkbox — applies on approval; grants the author review
+	// -queue priority and black-market shop access.
+	let markGolden = $state(false);
 	let reviewSubmitting = $state(false);
 	let customHours = $state(0);
 	let userFacingHours = $state(0);
@@ -483,6 +487,7 @@
 					overrideJustification: overrideJustification.trim() || null,
 					overrideHours: userFacingHours,
 					internalHours: customHours,
+					golden: markGolden,
 				}),
 			});
 			if (res.ok) {
@@ -490,6 +495,14 @@
 				if (proj) {
 					proj.status = status;
 					proj.user.reviewerUserNote = persistentUserNote.trim() || null;
+					// Mirror the backend: golden is decided on approval, revoked
+					// when an approval is overturned.
+					if (status === 'approved') proj.isGolden = markGolden;
+					else if (status === 'changes_needed' || status === 'rejected') proj.isGolden = false;
+					const authorHasGolden = allProjects.some(p => p.user.id === proj.user.id && p.isGolden);
+					for (const p of allProjects) {
+						if (p.user.id === proj.user.id) p.user.hasGoldenProject = authorHasGolden;
+					}
 				}
 				// Reload reviews
 				await loadReviews(expandedProjectId);
@@ -686,6 +699,7 @@
 			lastQuickRejectUserFeedback = '';
 			lastQuickRejectInternalNote = '';
 			hideReviewerName = false;
+			markGolden = false;
 			projectDevlogs = [];
 			projectLookout = null;
 			closeAuditEmbed();
@@ -712,6 +726,9 @@
 
 		const proj = allProjects.find(p => p.id === projectId);
 		persistentUserNote = proj?.user?.reviewerUserNote ?? '';
+		// Preserve an existing golden mark when re-reviewing (unchecking on an
+		// approve review revokes it).
+		markGolden = !!proj?.isGolden;
 		loadReviews(projectId);
 		loadProjectDevlogs(projectId);
 		loadProjectLookout(projectId);
@@ -789,8 +806,12 @@
 			// Most recently created first.
 			sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 		} else {
-			// oldest submission goes first
+			// Golden-project authors first (they earned queue priority), then
+			// oldest submission first within each tier.
 			sorted.sort((a, b) => {
+				const goldenA = a.user.hasGoldenProject ? 1 : 0;
+				const goldenB = b.user.hasGoldenProject ? 1 : 0;
+				if (goldenA !== goldenB) return goldenB - goldenA;
 				const timeA = a.latestSubmission?.createdAt ? new Date(a.latestSubmission.createdAt).getTime() : new Date(a.createdAt).getTime();
 				const timeB = b.latestSubmission?.createdAt ? new Date(b.latestSubmission.createdAt).getTime() : new Date(b.createdAt).getTime();
 				return timeA - timeB;
@@ -1487,6 +1508,7 @@
 		sortOrder: number;
 		isActive: boolean;
 		isFeatured: boolean;
+		isBlackMarket: boolean;
 		estimatedShip: string | null;
 	}
 	let shopItemsList: ShopItemAdmin[] = $state([]);
@@ -1502,6 +1524,7 @@
 	let newShopShip = $state('');
 	let newShopActive = $state(true);
 	let newShopFeatured = $state(false);
+	let newShopBlackMarket = $state(false);
 	let dragIdx: number | null = $state(null);
 	let dragOverIdx: number | null = $state(null);
 	// Shop item whose buyer list is open in the ItemBuyersModal, if any.
@@ -1533,7 +1556,8 @@
 					stock: newShopStock.trim() === '' ? null : parseInt(newShopStock),
 					estimatedShip: newShopShip.trim() || null,
 					isActive: newShopActive,
-					isFeatured: newShopFeatured
+					isFeatured: newShopFeatured,
+					isBlackMarket: newShopBlackMarket
 				})
 			});
 			if (res.ok) {
@@ -1546,6 +1570,7 @@
 				newShopShip = '';
 				newShopActive = true;
 				newShopFeatured = false;
+				newShopBlackMarket = false;
 				await loadShop();
 			}
 		} finally {
@@ -1569,7 +1594,8 @@
 					stock: editingShop.stock,
 					estimatedShip: editingShop.estimatedShip,
 					isActive: editingShop.isActive,
-					isFeatured: editingShop.isFeatured
+					isFeatured: editingShop.isFeatured,
+					isBlackMarket: editingShop.isBlackMarket
 				})
 			});
 			if (res.ok) {
@@ -2572,6 +2598,10 @@
 								<input type="checkbox" bind:checked={newShopFeatured} />
 								<span>Featured (shown at the top)</span>
 							</label>
+							<label class="shop-checkbox">
+								<input type="checkbox" bind:checked={newShopBlackMarket} />
+								<span>Black market (golden-project authors only)</span>
+							</label>
 							<button class="btn btn-add-shop" onclick={createShopItem} disabled={shopSaving || !newShopName.trim() || !newShopImage.trim() || !newShopPrice}>
 								{shopSaving ? 'Saving...' : 'Add Item'}
 							</button>
@@ -2628,6 +2658,10 @@
 												<input type="checkbox" bind:checked={editingShop.isFeatured} />
 												<span>Featured</span>
 											</label>
+											<label class="shop-checkbox">
+												<input type="checkbox" bind:checked={editingShop.isBlackMarket} />
+												<span>Black market</span>
+											</label>
 											<div class="shop-edit-actions">
 												<button class="btn btn-save" onclick={saveShopEdit} disabled={shopSaving}>Save</button>
 												<button class="btn btn-cancel" onclick={() => editingShop = null}>Cancel</button>
@@ -2639,7 +2673,7 @@
 										<img src={item.imageUrl} alt={item.name} class="shop-item-thumb" />
 										<div class="shop-item-info">
 											<strong>{item.name}</strong>
-											<span class="shop-item-meta">{item.priceHours}h · {item.stock === null ? '∞' : item.stock} stock{item.estimatedShip ? ` · ${item.estimatedShip}` : ''}{item.isFeatured ? ' · FEATURED' : ''}{!item.isActive ? ' · HIDDEN' : ''}</span>
+											<span class="shop-item-meta">{item.priceHours}h · {item.stock === null ? '∞' : item.stock} stock{item.estimatedShip ? ` · ${item.estimatedShip}` : ''}{item.isFeatured ? ' · FEATURED' : ''}{item.isBlackMarket ? ' · BLACK MARKET' : ''}{!item.isActive ? ' · HIDDEN' : ''}</span>
 										</div>
 									</div>
 									<div class="shop-item-actions">
@@ -2722,7 +2756,8 @@
 										</span>
 										<span class="proj-sidebar-meta">
 											{isSuperAdmin ? (project.user.name ?? '—') : (project.user.slackId ?? '—')}
-											{#if project.user.watchlisted}<span class="marker marker-watch marker-sm" title="Watchlisted">W</span>{:else if project.user.coolBuilder}<span class="marker marker-cool marker-sm" title="Cool builder">★</span>{/if}
+											{#if project.isGolden}<span class="marker marker-gold marker-sm" title="Golden project">★</span>{:else if project.user.hasGoldenProject}<span class="marker marker-gold-author marker-sm" title="Author of a golden project — priority in queue">G</span>{/if}
+										{#if project.user.watchlisted}<span class="marker marker-watch marker-sm" title="Watchlisted">W</span>{:else if project.user.coolBuilder}<span class="marker marker-cool marker-sm" title="Cool builder">★</span>{/if}
 											{#if projectHours[project.id] != null}<span class="ht-hours" title="Hackatime hours logged">{projectHours[project.id]}h</span>{/if}
 											{#if project.user.intent}<span class="user-intent-badge user-intent-badge--sm">{INTENT_LABELS[project.user.intent] ?? project.user.intent}</span>{/if}
 											<span class="badge badge-{project.status} badge-sm">{project.status}</span>
@@ -2794,7 +2829,8 @@
 										</div>
 
 										<div class="marker-controls">
-											{#if selectedProject.user.watchlisted}<span class="marker marker-watch">watchlisted</span>{:else if selectedProject.user.coolBuilder}<span class="marker marker-cool">cool builder</span>{/if}
+											{#if selectedProject.isGolden}<span class="marker marker-gold">★ golden</span>{:else if selectedProject.user.hasGoldenProject}<span class="marker marker-gold-author">golden author</span>{/if}
+										{#if selectedProject.user.watchlisted}<span class="marker marker-watch">watchlisted</span>{:else if selectedProject.user.coolBuilder}<span class="marker marker-cool">cool builder</span>{/if}
 											<button type="button" class="marker-btn" class:on={selectedProject.user.watchlisted} disabled={markerBusy} onclick={() => toggleMarker(selectedProject.user, 'watchlist')}>
 												{selectedProject.user.watchlisted ? '✓ Watchlisted' : 'Watchlist'}
 											</button>
@@ -3183,6 +3219,11 @@
 									<label class="review-anonymous-toggle">
 										<input type="checkbox" bind:checked={hideReviewerName} />
 										<span>Hide my name from the project owner</span>
+									</label>
+
+									<label class="review-anonymous-toggle review-golden-toggle" title="Golden projects give the author priority in the review queue and access to black market shop items. Applies when you approve.">
+										<input type="checkbox" bind:checked={markGolden} />
+										<span>Mark as golden <span class="gold-star">★</span> (queue priority + black market access on approval)</span>
 									</label>
 
 									<div class="review-actions">
@@ -4261,6 +4302,9 @@
 	.marker { display: inline-block; padding: 0.05rem 0.4rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700; vertical-align: middle; }
 	.marker-watch { background: var(--reject, #e23); color: #fff; }
 	.marker-cool { background: var(--approve, #2a7); color: #fff; }
+	.marker-gold { background: #d4a017; color: #fff; }
+	.marker-gold-author { background: #fdf3d7; color: #a07408; border: 1px solid #d4a017; }
+	.gold-star { color: #d4a017; }
 	.marker-sm { padding: 0; width: 1.05rem; height: 1.05rem; line-height: 1.05rem; text-align: center; border-radius: 999px; font-size: 0.6rem; margin-left: 0.3rem; }
 	.marker-controls { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: 0.5rem; }
 	.marker-btn { padding: 0.2rem 0.55rem; border-radius: 6px; border: 1px solid var(--border, #999); background: transparent; color: inherit; cursor: pointer; font-size: 0.8rem; }

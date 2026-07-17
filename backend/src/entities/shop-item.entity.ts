@@ -35,6 +35,11 @@ export class ShopItem {
   @Column({ name: 'is_featured', type: 'boolean', default: false })
   isFeatured: boolean;
 
+  // Black-market items are only purchasable by users who have authored at
+  // least one golden project (projects.is_golden).
+  @Column({ name: 'is_black_market', type: 'boolean', default: false })
+  isBlackMarket: boolean;
+
   @Column({ name: 'detailed_description', type: 'text', nullable: true, default: null })
   detailedDescription: string | null;
 

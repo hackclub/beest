@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In } from 'typeorm';
 import { ShopItem } from '../entities/shop-item.entity';
+import { Project } from '../entities/project.entity';
 import { Order } from '../entities/order.entity';
 import { FulfillmentUpdate } from '../entities/fulfillment-update.entity';
 import { User } from '../entities/user.entity';
@@ -205,12 +206,25 @@ export class ShopService {
     return { success: true };
   }
 
-  async listActive() {
-    return this.shopRepo.find({
+  /** True when the user has authored at least one golden project. */
+  private async hasGoldenProject(userId: string): Promise<boolean> {
+    const count = await this.dataSource
+      .getRepository(Project)
+      .count({ where: { userId, isGolden: true } });
+    return count > 0;
+  }
+
+  async listActive(userId: string) {
+    const items = await this.shopRepo.find({
       where: { isActive: true },
       order: { isFeatured: 'DESC', priceHours: 'ASC' },
-      select: ['id', 'name', 'description', 'detailedDescription', 'imageUrl', 'priceHours', 'stock', 'sortOrder', 'isFeatured', 'estimatedShip'],
+      select: ['id', 'name', 'description', 'detailedDescription', 'imageUrl', 'priceHours', 'stock', 'sortOrder', 'isFeatured', 'isBlackMarket', 'estimatedShip'],
     });
+    // Black-market items are visible to everyone (they're the incentive), but
+    // only unlocked for golden-project authors — purchase() enforces this
+    // server-side; the flag here just drives the UI's locked state.
+    const blackMarketUnlocked = await this.hasGoldenProject(userId);
+    return { items, blackMarketUnlocked };
   }
 
   /**
@@ -241,6 +255,19 @@ export class ShopService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!item) throw new NotFoundException('Shop item not found or inactive');
+
+      // Black-market items require a golden project. Checked inside the
+      // transaction so a tampered request can't skip the UI gate.
+      if (item.isBlackMarket) {
+        const goldenCount = await manager.count(Project, {
+          where: { userId, isGolden: true },
+        });
+        if (goldenCount === 0) {
+          throw new ForbiddenException(
+            'This is a black market item — ship a golden project to unlock it.',
+          );
+        }
+      }
 
       // Check stock
       if (item.stock !== null) {

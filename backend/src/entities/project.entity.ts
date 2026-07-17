@@ -111,6 +111,11 @@ export class Project {
   @Column({ type: 'integer', name: 'pipes_granted', default: 0 })
   pipesGranted: number;
 
+  // Set by a reviewer on approval for exceptional projects. Grants the author
+  // priority in the review queue and access to black-market shop items.
+  @Column({ type: 'boolean', name: 'is_golden', default: false })
+  isGolden: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

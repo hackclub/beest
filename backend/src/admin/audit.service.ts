@@ -142,7 +142,12 @@ export class AuditService {
           GROUP BY s.project_id
         ) sub ON sub.project_id = p.id
         WHERE p.status = 'fraud_pending'
-        ORDER BY sub.max_created_at ASC NULLS LAST, p.created_at ASC
+        ORDER BY
+          EXISTS (
+            SELECT 1 FROM projects g
+            WHERE g.user_id = p.user_id AND g.is_golden = true
+          ) DESC,
+          sub.max_created_at ASC NULLS LAST, p.created_at ASC
       `
     );
 
@@ -190,7 +195,12 @@ export class AuditService {
           GROUP BY s.project_id
         ) sub ON sub.project_id = p.id
         WHERE p.status = 'unreviewed'
-        ORDER BY sub.max_created_at ASC NULLS LAST, p.created_at ASC
+        ORDER BY
+          EXISTS (
+            SELECT 1 FROM projects g
+            WHERE g.user_id = p.user_id AND g.is_golden = true
+          ) DESC,
+          sub.max_created_at ASC NULLS LAST, p.created_at ASC
         LIMIT $1
       `,
       [safeLimit],
@@ -640,6 +650,9 @@ export class AuditService {
         Math.round(((project.internalHours ?? 0) - subInternal) * 10) / 10,
       );
     }
+    // The first-pass approval (which may have marked the project golden) is
+    // being discarded — the re-review decides golden afresh.
+    project.isGolden = false;
     project.status = 'unreviewed';
     await this.projectRepo.save(project);
 
@@ -699,6 +712,7 @@ export class AuditService {
     project.status = 'changes_needed';
     project.overrideHours = 0;
     project.internalHours = 0;
+    project.isGolden = false;
     await this.projectRepo.save(project);
 
     if (submission && submission.status !== 'changes_needed') {

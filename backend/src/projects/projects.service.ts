@@ -150,6 +150,10 @@ export class ProjectsService {
    * Position is derived from the project's latest 'unreviewed' submission's
    * createdAt — that's the moment the project entered the queue. Projects
    * with no submission row fall back to ranking last.
+   *
+   * Golden priority: projects by authors with a golden project form a
+   * priority tier ahead of everyone else (mirrors the queue ordering in
+   * AuditService), submission time breaking ties within each tier.
    */
   async getQueuePosition(projectId: string, userId: string) {
     const project = await this.projectRepo.findOne({
@@ -170,18 +174,38 @@ export class ProjectsService {
     });
     if (!sub) return { total, position: total };
 
+    const isGoldenAuthor =
+      (await this.projectRepo.count({ where: { userId, isGolden: true } })) > 0;
+
+    // Count the projects at or ahead of this one. Golden-tier projects are
+    // always ahead of non-golden ones; within a tier, earlier submission wins.
     const result: { count: number }[] = await this.projectRepo.query(
       `
         SELECT COUNT(*)::int AS count
         FROM projects p
         WHERE p.status = 'unreviewed'
           AND (
-            SELECT MAX(s.created_at)
-            FROM submissions s
-            WHERE s.project_id = p.id AND s.status = 'unreviewed'
-          ) <= $1
+            (
+              EXISTS (
+                SELECT 1 FROM projects g
+                WHERE g.user_id = p.user_id AND g.is_golden = true
+              ) = $2
+              AND (
+                SELECT MAX(s.created_at)
+                FROM submissions s
+                WHERE s.project_id = p.id AND s.status = 'unreviewed'
+              ) <= $1
+            )
+            OR (
+              $2 = false
+              AND EXISTS (
+                SELECT 1 FROM projects g
+                WHERE g.user_id = p.user_id AND g.is_golden = true
+              )
+            )
+          )
       `,
-      [sub.createdAt],
+      [sub.createdAt, isGoldenAuthor],
     );
     const position = Number(result[0]?.count ?? total);
     return { total, position };
@@ -204,6 +228,7 @@ export class ProjectsService {
         'hackatimeProjectName',
         'status',
         'isUpdate',
+        'isGolden',
         'otherHcProgram',
         'aiUse',
         'overrideHours',

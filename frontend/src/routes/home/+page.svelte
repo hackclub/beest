@@ -143,8 +143,10 @@
   let stickerLink = $state<string | null>(null);
 
   // Shop state
-  type ShopItemType = { id: string; name: string; description: string; detailedDescription: string | null; imageUrl: string; priceHours: number; stock: number | null; sortOrder: number; isFeatured: boolean; estimatedShip: string | null };
+  type ShopItemType = { id: string; name: string; description: string; detailedDescription: string | null; imageUrl: string; priceHours: number; stock: number | null; sortOrder: number; isFeatured: boolean; isBlackMarket: boolean; estimatedShip: string | null };
   let shopItems = $state<ShopItemType[]>([]);
+  // True when the user has authored a golden project — unlocks black market items.
+  let blackMarketUnlocked = $state(false);
   let shopLoading = $state(false);
   let shopLoaded = $state(false);
   let selectedShopItem = $state<ShopItemType | null>(null);
@@ -1161,7 +1163,11 @@
     shopLoading = true;
     try {
       const res = await fetch('/api/shop');
-      if (res.ok) shopItems = await res.json();
+      if (res.ok) {
+        const data = await res.json();
+        shopItems = data.items ?? [];
+        blackMarketUnlocked = !!data.blackMarketUnlocked;
+      }
       shopLoaded = true;
     } catch { /* silent */ }
     shopLoading = false;
@@ -2328,6 +2334,9 @@
                     <h3 class="project-name">{project.name}</h3>
                     <span class="project-type-badge">{project.projectType}</span>
                     <span class="project-status-badge {project.status === 'fraud_pending' ? 'unreviewed' : project.status}">{project.status === 'changes_needed' ? 'Changes Needed' : project.status === 'fraud_pending' ? 'In Review' : project.status}</span>
+                    {#if project.isGolden}
+                      <span class="project-status-badge golden" title="Marked golden by a reviewer — you get review-queue priority and black market access">★ golden</span>
+                    {/if}
                   </div>
                   <p class="project-desc">{project.description}</p>
                   <div class="project-links">
@@ -2445,11 +2454,11 @@
           {:else if shopItems.length === 0}
             <p class="coming-soon">No items in the shop yet.</p>
           {:else}
-            {#if shopItems.some(i => i.isFeatured)}
+            {#if shopItems.some(i => i.isFeatured && !i.isBlackMarket)}
               <div class="shop-featured-section">
                 <h3 class="shop-section-title">Featured</h3>
                 <div class="shop-grid shop-grid-featured">
-                  {#each shopItems.filter(i => i.isFeatured) as item}
+                  {#each shopItems.filter(i => i.isFeatured && !i.isBlackMarket) as item}
                     <button class="shop-card shop-card-featured" onclick={() => openShopItem(item)} type="button">
                       <div class="shop-card-img">
                         <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" />
@@ -2469,12 +2478,12 @@
                 </div>
               </div>
             {/if}
-            {#if shopItems.some(i => !i.isFeatured)}
-              {#if shopItems.some(i => i.isFeatured)}
+            {#if shopItems.some(i => !i.isFeatured && !i.isBlackMarket)}
+              {#if shopItems.some(i => i.isFeatured && !i.isBlackMarket)}
                 <h3 class="shop-section-title">All Items</h3>
               {/if}
               <div class="shop-grid">
-                {#each shopItems.filter(i => !i.isFeatured) as item}
+                {#each shopItems.filter(i => !i.isFeatured && !i.isBlackMarket) as item}
                   <button class="shop-card" onclick={() => openShopItem(item)} type="button">
                     <div class="shop-card-img">
                       <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" />
@@ -2491,6 +2500,42 @@
                     </div>
                   </button>
                 {/each}
+              </div>
+            {/if}
+            {#if shopItems.some(i => i.isBlackMarket)}
+              <div class="shop-bm-section" class:locked={!blackMarketUnlocked}>
+                <h3 class="shop-section-title shop-bm-title">Black Market</h3>
+                <p class="shop-bm-note">
+                  {#if blackMarketUnlocked}
+                    You shipped a golden project — these are yours to browse.
+                  {:else}
+                    Locked. Ship a project so good the reviewers mark it <strong>golden</strong> to shop here.
+                  {/if}
+                </p>
+                <div class="shop-grid">
+                  {#each shopItems.filter(i => i.isBlackMarket) as item}
+                    <button class="shop-card shop-card-bm" onclick={() => openShopItem(item)} type="button">
+                      <div class="shop-card-img">
+                        <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" />
+                        {#if !blackMarketUnlocked}
+                          <span class="shop-bm-lock" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lock-icon-lg"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                          </span>
+                        {/if}
+                      </div>
+                      <div class="shop-card-body">
+                        <p class="shop-card-name">{item.name}</p>
+                        <p class="shop-card-desc">{item.description}</p>
+                        <div class="shop-card-footer">
+                          <p class="shop-card-cost">{item.priceHours} Pipes</p>
+                          {#if item.stock !== null}
+                            <span class="shop-card-stock" class:low={item.stock <= 3}>{item.stock} left</span>
+                          {/if}
+                        </div>
+                      </div>
+                    </button>
+                  {/each}
+                </div>
               </div>
             {/if}
           {/if}
@@ -2598,7 +2643,15 @@
               <span class="shop-modal-total-value">{selectedShopItem.priceHours * shopQuantity} Pipes</span>
             </div>
 
-            {#if purchaseSuccess}
+            {#if selectedShopItem.isBlackMarket && !blackMarketUnlocked}
+              <div class="shop-modal-cant-afford shop-modal-bm-locked">
+                <p class="shop-modal-bm-head">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lock-icon"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  <span>This is a <strong>black market</strong> item.</span>
+                </p>
+                <p class="shop-modal-keep-building">Ship a project impressive enough to be marked golden by a reviewer to unlock it.</p>
+              </div>
+            {:else if purchaseSuccess}
               <div class="shop-modal-success">{purchaseSuccess}</div>
             {:else if userPipes >= selectedShopItem.priceHours * shopQuantity}
               <button class="shop-modal-buy" type="button" onclick={openNotePrompt} disabled={purchaseLoading}>
@@ -6116,6 +6169,52 @@
     box-shadow: 9px 9px 0 #b07d3a;
   }
 
+  .shop-bm-section {
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 3px dashed #3a3832;
+  }
+
+  .shop-bm-title {
+    color: #f4d47c;
+  }
+
+  .shop-bm-note {
+    margin: -6px 0 14px 0;
+    font-size: 14px;
+    color: #e6f4fe;
+    opacity: 0.85;
+  }
+
+  .shop-card-bm {
+    border-color: #1f1d1a;
+    box-shadow: 6px 6px 0 #1f1d1a;
+    background: #a89c86;
+  }
+
+  .shop-card-bm:hover {
+    box-shadow: 9px 9px 0 #1f1d1a;
+  }
+
+  .shop-bm-section.locked .shop-card-bm .shop-card-img img {
+    filter: grayscale(0.9) brightness(0.75);
+  }
+
+  .shop-bm-lock {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #f0ebe5;
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+  }
+
+  .lock-icon-lg {
+    width: 44px;
+    height: 44px;
+  }
+
   .shop-card {
     background: #cbc1ae;
     border: 3px solid #3a3832;
@@ -6132,6 +6231,7 @@
 
   .shop-card-img {
     padding: 10px 10px 0;
+    position: relative;
   }
 
   .shop-card-img img {
@@ -6372,7 +6472,6 @@
     background: #4b4840;
     color: #e8e0d4;
     border: 1px solid #6c6659;
-    border-radius: 14px;
     padding: 2rem 1.75rem;
     width: 100%;
     max-width: 420px;
@@ -6400,7 +6499,6 @@
     align-items: center;
     gap: 0.5rem;
     padding: 1.25rem 0.75rem;
-    border-radius: 12px;
     border: 1px solid #6c6659;
     background: #52504a;
     color: #e8e0d4;
@@ -6673,6 +6771,27 @@
   }
 
   .shop-modal-cant-afford p { margin: 4px 0; }
+
+  /* Black-market lock notice reuses the can't-afford box shape with the
+     shop's gold accent instead of the pink one. */
+  .shop-modal-bm-locked {
+    background: rgba(212, 160, 23, 0.08);
+    border-color: rgba(212, 160, 23, 0.35);
+  }
+
+  .shop-modal-bm-head {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .lock-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: #a07408;
+  }
 
   .shop-modal-keep-building {
     font-family: "Stone Breaker", "Courier New", monospace;
@@ -7362,6 +7481,11 @@
   .project-status-badge.approved {
     background: #93b4cd;
     color: #635a4e;
+  }
+
+  .project-status-badge.golden {
+    background: #d4a017;
+    color: #fff;
   }
 
   .project-desc {
