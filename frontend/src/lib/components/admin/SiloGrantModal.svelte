@@ -90,11 +90,11 @@
 		</header>
 
 		<p class="sg-sub">
-			Order: <strong>{order.itemName}</strong> &middot; {order.userName} &middot; {order.pipesSpent} pipes
+			Order: <strong>{order.itemName}</strong> · {order.userName} · {order.pipesSpent} pipes
 		</p>
 
 		{#if loading}
-			<p class="sg-info">Loading&hellip;</p>
+			<p class="sg-info">Loading…</p>
 		{:else if loadError}
 			<p class="sg-error">{loadError}</p>
 		{:else if successGrantId}
@@ -127,7 +127,7 @@
 			<div class="sg-actions">
 				<button class="btn" onclick={onClose} disabled={submitting}>Cancel</button>
 				<button class="btn btn-primary" onclick={submit} disabled={submitting}>
-					{submitting ? 'Issuing&hellip;' : `Approve &amp; grant ${prefill.amount} ${prefill.unit}`}
+					{submitting ? 'Issuing…' : `Approve & grant ${prefill.amount} ${prefill.unit}`}
 				</button>
 			</div>
 		{/if}

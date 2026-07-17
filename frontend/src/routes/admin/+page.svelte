@@ -3536,7 +3536,7 @@
 	<SiloGrantModal
 		order={siloGrantModalOrder}
 		onClose={() => (siloGrantModalOrder = null)}
-		onGranted={() => { siloGrantModalOrder = null; onSiloGrantIssued(); }}
+		onGranted={() => { onSiloGrantIssued(); }}
 	/>
 {/if}
 
