@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
+import { In, IsNull, Not, Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { Session } from '../entities/session.entity';
 import { Project } from '../entities/project.entity';
@@ -1081,14 +1081,23 @@ export class AdminService {
               select: ['name'],
             })
           )?.name ?? null;
+      // Surfaced only on the approved path — reflects the golden mark applied
+      // above so the builder is told the moment their project becomes golden.
+      const isGolden = status === 'approved' && project.isGolden;
+      // Whether they had another golden project before this one, so the callout
+      // congratulates instead of re-explaining perks they already have.
+      const goldenAlreadyHad =
+        isGolden &&
+        (await this.projectRepo.count({
+          where: { userId: project.userId, isGolden: true, id: Not(projectId) },
+        })) > 0;
       const dmInput = {
         projectName: project.name,
         projectLink: project.codeUrl ?? project.demoUrl ?? null,
         reviewerName,
         feedback: feedback || null,
-        // Surfaced only on the approved path — reflects the golden mark applied
-        // above so the builder is told the moment their project becomes golden.
-        isGolden: status === 'approved' && project.isGolden,
+        isGolden,
+        goldenAlreadyHad,
       };
       const message =
         status === 'approved'

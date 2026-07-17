@@ -16,6 +16,12 @@ interface ReviewDmInput {
   feedback: string | null;
   /** True when this approval marks the project golden — adds a callout. */
   isGolden?: boolean;
+  /**
+   * True when the builder already had another golden project before this one,
+   * so the golden callout congratulates rather than explains the perks (which
+   * they already have).
+   */
+  goldenAlreadyHad?: boolean;
 }
 
 // When the reviewer opts to stay anonymous (reviewerName === null) the DM
@@ -68,14 +74,18 @@ export function reviewApprovedDm(input: ReviewDmInput): DmMessage {
     });
   }
 
-  // Called out on every approval that marks the project golden, so builders
-  // learn about the perks the moment they're granted.
+  // Called out on every approval that marks the project golden. First-time
+  // golden earners get the perks explained; repeat earners (who already have
+  // them) just get a cheer.
   if (input.isGolden) {
+    const perk = input.goldenAlreadyHad
+      ? 'Keep making cool projects! :cat-heart:'
+      : 'You now have priority access in the review queue and access to the black market. :yay:';
     blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: ":star2: This project was marked *golden*! You now have priority access in the review queue and access to the black market. :yay:",
+        text: `:woa: This project was marked *golden*! ${perk}`,
       },
     });
   }
@@ -303,7 +313,7 @@ export function goldenBackfillDm(): DmMessage {
         type: 'header',
         text: {
           type: 'plain_text',
-          text: ':star2: Your projects are now golden!',
+          text: ':woa: Your projects are now golden!',
           emoji: true,
         },
       },
