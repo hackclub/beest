@@ -303,49 +303,49 @@
   </div>
   </div><!-- hero-crop -->
   <div class="hero-overlay">
-    <h1 class="hero-title"><img class="hero-logo" src="/images/beest-logo.webp" alt="Beest" fetchpriority="high" decoding="async" /></h1>
-    <div class="hero-credit">from Euan Ripper, ascpixi, and guac md</div>
-    <p class="hero-subtitle">{subtitle}</p>
+    <div class="hero-copy">
+      <h1 class="hero-title"><img class="hero-logo" src="/images/beest-logo.webp" alt="Beest" fetchpriority="high" decoding="async" /></h1>
+      <div class="hero-credit">from Euan Ripper, ascpixi, and guac md</div>
+      <p class="hero-subtitle">{subtitle}</p>
+    </div>
+    <div class="hero-signup" aria-label="Sign Up">
+      <p class="signup-note">&#10003; Signing up puts you on our email list, you can remove yourself <a href="https://email-tools.hackclub.com/" target="_blank" rel="noreferrer">here</a>.</p>
+      {#if authenticated}
+        <div class="signup-form">
+          <button
+            type="button"
+            class="signup-btn valid"
+            class:sending={topStatus === 'sending'}
+            disabled={topStatus === 'sending'}
+            onclick={() => submitAuthenticatedRsvp((s) => topStatus = s)}
+          >
+            {#if topStatus === 'sending'}Sending...{:else}Start{/if}
+          </button>
+        </div>
+      {:else}
+        <div class="signup-form">
+          <input class="signup-input" type="email" placeholder="you@example.com" aria-label="Email" bind:value={topEmail} onkeydown={(e) => { if (e.key === 'Enter' && topValid && topStatus !== 'sending') submitRsvp(topEmail, (s) => topStatus = s); }} />
+          <button
+            type="button"
+            class="signup-btn"
+            class:valid={topValid}
+            class:sending={topStatus === 'sending'}
+            disabled={!topValid || topStatus === 'sending'}
+            onclick={() => submitRsvp(topEmail, (s) => topStatus = s)}
+          >
+            {#if topStatus === 'sending'}Sending...{:else}Sign Up{/if}
+          </button>
+        </div>
+      {/if}
+      {#if topStatus === 'error'}<p class="signup-error">Something went wrong, please try again.</p>{/if}
+    </div>
   </div>
 
 </div>
 </div>
 
-<section class="sticker-cta">
-  <aside class="rsvp-box" aria-label="Sign Up">
-    <svg class="rsvp-border" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="calc(100% - 3px)" height="calc(100% - 3px)" rx="0" ry="0" /></svg>
-    <h2>Sign Up / Log In</h2>
-    {#if authenticated}
-      <button
-        type="button"
-        class="rsvp-btn valid"
-        class:sending={topStatus === 'sending'}
-        disabled={topStatus === 'sending'}
-        onclick={() => submitAuthenticatedRsvp((s) => topStatus = s)}
-      >
-        {#if topStatus === 'sending'}Sending...{:else}Start{/if}
-      </button>
-    {:else}
-      <input type="email" placeholder="you@example.com" aria-label="Email" bind:value={topEmail} onkeydown={(e) => { if (e.key === 'Enter' && topValid && topStatus !== 'sending') submitRsvp(topEmail, (s) => topStatus = s); }} />
-      <button
-        type="button"
-        class="rsvp-btn"
-        class:valid={topValid}
-        class:sending={topStatus === 'sending'}
-        disabled={!topValid || topStatus === 'sending'}
-        onclick={() => submitRsvp(topEmail, (s) => topStatus = s)}
-      >
-        {#if topStatus === 'sending'}Sending...{:else}Sign Up{/if}
-      </button>
-    {/if}
-    {#if topStatus === 'error'}<p class="rsvp-error">Something went wrong, please try again.</p>{/if}
-    <p class="updates">&#10003; Signing up puts you on our email list, you can remove yourself <a href="https://email-tools.hackclub.com/" target="_blank" rel="noreferrer">here</a>.</p>
-    <p class="rsvp-note">
-      We will ask for an address to ship physical rewards to, please use a real address or opt out since we send real hardware! You can always
-      <a href="https://hackclub.com/privacy-and-terms/" target="_blank" rel="noreferrer">view our privacy policy</a>.
-    </p>
-  </aside>
-</section>
+<!-- spacer band the absolutely-positioned hero overlay (title + sign-up) hangs into -->
+<section class="sticker-cta" aria-hidden="true"></section>
 
   </div>
 
@@ -845,14 +845,151 @@
     /* hangs below the hero so the whole block sits on the brown ground */
     inset: auto clamp(48px, 7vw, 160px) -120px;
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: clamp(32px, 5vw, 80px);
     /* above the strata svg (z 12), which would otherwise paint over the top
        of the logo where it overlaps the rock band */
     z-index: 13;
+    /* transparent overlay lets clicks fall through to the parallax; the
+       sign-up box re-enables events on itself */
     pointer-events: none;
     line-height: normal;
+  }
+
+  .hero-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  /* bare sign-up: email + button docked to the right of the wordmark */
+  .hero-signup {
+    pointer-events: auto;
+    position: relative;
+    flex: 0 0 clamp(320px, 32vw, 440px);
+  }
+
+  /* the input and button are each tilted a touch and the button laps over the
+     input's edge, like two parts pinned on by hand */
+  .signup-form {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 6px 4px;
+  }
+
+  .signup-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    position: relative;
+    z-index: 1;
+    box-sizing: border-box;
+    padding: 13px 12px;
+    border: 2px solid #4b4840;
+    background: #e6f4fe;
+    color: #4b4840;
+    font-size: 18px;
+    font-family: "Courier New", monospace;
+    cursor: text;
+    rotate: -2deg;
+  }
+
+  .signup-input::placeholder {
+    color: #6c6659;
+  }
+
+  /* chunky "hardware key" that presses down on hover/click */
+  .signup-btn {
+    flex: 0 0 auto;
+    min-width: 150px;
+    position: relative;
+    z-index: 2;
+    margin-left: -18px;
+    rotate: 2.5deg;
+    translate: 0 10px;
+    border: 2px solid #4b4840;
+    background: #AD9E83;
+    color: #4C483D;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 22px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 12px 18px;
+    cursor: not-allowed;
+    box-shadow: 4px 4px 0 #4b4840;
+    transition: transform 0.12s ease-out, box-shadow 0.12s ease-out, background 0.2s;
+  }
+
+  /* enabled: the disabled palette inverted, dark fill with taupe text;
+     taupe border so the dark key stands out against the ground */
+  .signup-btn.valid {
+    background: #4C483D;
+    color: #AD9E83;
+    border-color: #AD9E83;
+    cursor: pointer;
+  }
+
+  .signup-btn.valid:hover {
+    background: #5a5648;
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 #4b4840;
+  }
+
+  .signup-btn.valid:active {
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 #4b4840;
+  }
+
+  .signup-btn.sending {
+    background: #809fb7;
+    color: #f3e9d6;
+    cursor: wait;
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 #4b4840;
+  }
+
+  /* floats above the input row, fades in only while the box holds focus;
+     :focus-within keeps the "remove yourself here" link reachable */
+  .signup-note {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.32);
+    border: 1px solid rgba(230, 244, 254, 0.15);
+    color: #e6f4fe;
+    font-family: "Courier New", monospace;
+    font-size: 14px;
+    line-height: 1.4;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.22s ease-out, transform 0.22s ease-out;
+    pointer-events: none;
+  }
+
+  .hero-signup:focus-within .signup-note {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .signup-note a,
+  .signup-note a:visited {
+    color: #93b4cd;
+    text-decoration: underline;
+  }
+
+  .signup-error {
+    margin: 8px 0 0;
+    color: #000000;
+    font-size: 14px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 
   /* signature credit — directly under the logo, on the brown, deliberately
@@ -1493,34 +1630,46 @@
     color: #6c6659;
   }
 
+  /* chunky "hardware" button: a hard offset shadow reads as a physical key
+     that presses down on hover/click — matches the hand-built mechanical theme */
   .rsvp-box button {
     width: 100%;
-    border: 1px solid #4b4840;
-    background: #c48382;
-    color: #ffffff;
-    font-family: inherit;
-    font-size: 28px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    padding: 14px 12px;
+    border: 2px solid #4b4840;
+    background: #a89f8d;
+    color: #4b4840;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 26px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 12px;
     cursor: not-allowed;
-    transition: background 0.25s, color 0.25s, transform 0.15s;
+    box-shadow: 4px 4px 0 #4b4840;
+    transition: transform 0.12s ease-out, box-shadow 0.12s ease-out, background 0.2s;
   }
 
   .rsvp-box button.valid {
     background: #b5443f;
-    color: #ffffff;
+    color: #f3e9d6;
     cursor: pointer;
   }
 
   .rsvp-box button.valid:hover {
-    background: #944039;
+    background: #c15049;
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 #4b4840;
+  }
+
+  .rsvp-box button.valid:active {
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 #4b4840;
   }
 
   .rsvp-box button.sending {
     background: #809fb7;
-    color: #ffffff;
+    color: #f3e9d6;
     cursor: wait;
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 #4b4840;
   }
 
   .rsvp-error {
@@ -1529,11 +1678,18 @@
     font-size: 14px;
   }
 
+  /* only surfaces while the sign-up box holds focus; :focus-within keeps the
+     "remove yourself here" link reachable (focusing it counts as within) */
   .updates {
+    display: none;
     margin: 14px 0 0;
     color: #e6f4fe;
     font-size: 14px;
     line-height: 1.4;
+  }
+
+  .rsvp-box:focus-within .updates {
+    display: block;
   }
 
   .updates a,
@@ -1543,7 +1699,7 @@
   }
 
   .rsvp-note {
-    margin: 56px 0 0;
+    margin: 20px 0 0;
     color: #e6f4fe;
     font-family: "Courier New", monospace;
     font-size: 14px;
@@ -1878,10 +2034,10 @@
   }
 
   @media (max-width: 900px) {
+    /* the hero overlay flows inline here, so the desktop spacer band the
+       absolute overlay hung into is no longer needed */
     .sticker-cta {
-      flex-direction: column;
-      align-items: center;
-      padding: 100px 24px 72px;
+      display: none;
     }
 
     .rsvp-box {
@@ -2231,8 +2387,25 @@
       --logo-w: min(72vw, 420px);
       position: relative;
       inset: auto;
-      padding: 18px 24px 0;
-      gap: 8px;
+      flex-direction: column;
+      align-items: stretch;
+      padding: 18px 24px 48px;
+      gap: 20px;
+    }
+
+    .hero-signup {
+      flex: 0 1 auto;
+      align-self: center;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    /* no empty hero art to float over here, so the notice sits in flow above
+       the input (its space reserved) and just fades — never over the tagline */
+    .signup-note {
+      position: static;
+      margin: 0 0 12px;
+      transform: none;
     }
 
     .scroll-hint {
