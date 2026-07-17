@@ -23,7 +23,6 @@ Thumbs.db
 # Editor/tool configs
 .vscode/
 .claude/
-CLAUDE.md
 .mcp.json
 
 # Dev-server stdout captures
