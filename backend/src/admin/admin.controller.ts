@@ -480,6 +480,16 @@ export class AdminController {
     });
   }
 
+  // Bulk-grant golden to every cool builder's projects (queue priority + black
+  // market), DMing each. Skips builders who already have a golden project, so
+  // it's safe to re-run.
+  @UseGuards(SuperAdminGuard)
+  @Post('golden/backfill-cool-builders')
+  async backfillGoldenForCoolBuilders(@Req() req: Request) {
+    const adminId = (req as any).user?.uid;
+    return this.adminService.backfillGoldenForCoolBuilders(adminId);
+  }
+
   @UseGuards(SuperAdminGuard)
   @Post('projects/:id/resync-airtable')
   async resyncAirtable(

@@ -996,6 +996,28 @@
 		}
 	}
 
+	// One-shot golden backfill for cool builders (Super Admin only).
+	let goldenBackfillBusy = $state(false);
+	let goldenBackfillResult = $state<{ coolBuilders: number; processed: number; skipped: number; projectsMarked: number; dmsSent: number } | null>(null);
+	let goldenBackfillError = $state<string | null>(null);
+	async function backfillGoldenForCoolBuilders() {
+		if (goldenBackfillBusy) return;
+		if (!confirm('Mark all projects of every cool builder as golden and DM them? Builders who already have a golden project are skipped.')) return;
+		goldenBackfillBusy = true;
+		goldenBackfillError = null;
+		goldenBackfillResult = null;
+		try {
+			const res = await fetch('/api/admin/golden/backfill-cool-builders', { method: 'POST' });
+			const j = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
+			goldenBackfillResult = j;
+		} catch (e) {
+			goldenBackfillError = e instanceof Error ? e.message : String(e);
+		} finally {
+			goldenBackfillBusy = false;
+		}
+	}
+
 	let filteredUsers = $derived.by(() => {
 		let result = users;
 		if (permsFilter) {
@@ -2253,6 +2275,28 @@
 					<SignupsChart />
 				</div>
 				<UserFunnel />
+				{#if isSuperAdmin}
+					<div class="golden-backfill">
+						<div class="golden-backfill-copy">
+							<h3>Backfill golden for cool builders <span class="gold-star">★</span></h3>
+							<p>Marks every project of each cool builder golden (queue priority + black market) and DMs them. Builders who already have a golden project are skipped, so it's safe to re-run.</p>
+						</div>
+						<button class="golden-backfill-btn" onclick={backfillGoldenForCoolBuilders} disabled={goldenBackfillBusy}>
+							{goldenBackfillBusy ? 'Backfilling…' : 'Backfill golden'}
+						</button>
+						{#if goldenBackfillResult}
+							<p class="golden-backfill-result">
+								Done — {goldenBackfillResult.processed} builder{goldenBackfillResult.processed === 1 ? '' : 's'} updated
+								({goldenBackfillResult.projectsMarked} project{goldenBackfillResult.projectsMarked === 1 ? '' : 's'} marked golden,
+								{goldenBackfillResult.dmsSent} DM{goldenBackfillResult.dmsSent === 1 ? '' : 's'} sent),
+								{goldenBackfillResult.skipped} skipped of {goldenBackfillResult.coolBuilders} cool builder{goldenBackfillResult.coolBuilders === 1 ? '' : 's'}.
+							</p>
+						{/if}
+						{#if goldenBackfillError}
+							<p class="golden-backfill-error">{goldenBackfillError}</p>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		{:else if activeTab === 'news'}
 			<div class="news-admin">
@@ -3653,6 +3697,47 @@
 		grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
 		gap: 1rem;
 		margin-bottom: 1rem;
+	}
+
+	.golden-backfill {
+		margin-top: 1.5rem;
+		padding: 1rem 1.25rem;
+		border: 1px solid rgba(212, 160, 23, 0.4);
+		border-radius: 10px;
+		background: rgba(212, 160, 23, 0.06);
+	}
+	.golden-backfill-copy h3 {
+		margin: 0 0 0.25rem;
+		font-size: 1rem;
+	}
+	.golden-backfill-copy p {
+		margin: 0 0 0.75rem;
+		font-size: 0.85rem;
+		opacity: 0.75;
+		max-width: 60ch;
+	}
+	.golden-backfill-btn {
+		padding: 0.5rem 1rem;
+		border: none;
+		border-radius: 8px;
+		background: #d4a017;
+		color: #1a1200;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.golden-backfill-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	.golden-backfill-result {
+		margin: 0.75rem 0 0;
+		font-size: 0.85rem;
+		color: #d4a017;
+	}
+	.golden-backfill-error {
+		margin: 0.75rem 0 0;
+		font-size: 0.85rem;
+		color: #e06666;
 	}
 
 	.stats-grid :global(.dau-card),

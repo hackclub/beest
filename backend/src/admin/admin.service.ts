@@ -31,6 +31,7 @@ import {
   reviewApprovedDm,
   reviewChangesNeededDm,
   reviewRejectedDm,
+  goldenBackfillDm,
 } from '../slack/slack-notify.templates';
 import { ShopService } from '../shop/shop.service';
 import { getFileHoursForProject } from '../hackatime/hackatime-file-breakdown';
@@ -711,6 +712,75 @@ export class AdminService {
     return { watchlisted: user.watchlisted, coolBuilder: user.coolBuilder };
   }
 
+  // One-shot backfill: for every user marked as a cool builder, mark all of
+  // their projects golden (granting review-queue priority + black-market access)
+  // and DM them about it. Users who already have at least one golden project are
+  // skipped entirely — they've already been recognised, so this won't re-DM them
+  // or touch their non-golden projects. Idempotent by that skip rule: a second
+  // run is a no-op for anyone processed the first time.
+  async backfillGoldenForCoolBuilders(adminId?: string): Promise<{
+    coolBuilders: number;
+    processed: number;
+    skipped: number;
+    projectsMarked: number;
+    dmsSent: number;
+  }> {
+    const coolBuilders = await this.userRepo.find({
+      where: { coolBuilder: true },
+      select: { id: true, name: true, slackId: true, hcaSub: true },
+    });
+
+    let processed = 0;
+    let skipped = 0;
+    let projectsMarked = 0;
+    let dmsSent = 0;
+
+    for (const user of coolBuilders) {
+      // Skip anyone who already has a golden project — including projects we may
+      // have just marked, which keeps re-runs idempotent.
+      const alreadyGolden = await this.projectRepo.count({
+        where: { userId: user.id, isGolden: true },
+      });
+      if (alreadyGolden > 0) {
+        skipped++;
+        continue;
+      }
+
+      const result = await this.projectRepo.update(
+        { userId: user.id, isGolden: false },
+        { isGolden: true },
+      );
+      const marked = result.affected ?? 0;
+      // No projects to mark → nothing was granted, so don't DM about it.
+      if (marked === 0) {
+        skipped++;
+        continue;
+      }
+      projectsMarked += marked;
+      processed++;
+
+      const dm = goldenBackfillDm();
+      if (await this.slackNotify.dm(user.slackId, dm.text, dm.blocks)) {
+        dmsSent++;
+      }
+
+      const identifier = user.name || user.slackId || user.hcaSub;
+      const label = `Marked all ${marked} project(s) of ${identifier} as golden (cool-builder backfill)`;
+      await this.auditLogService.log(user.id, 'admin_golden_backfill', label);
+      if (adminId) {
+        await this.auditLogService.log(adminId, 'admin_golden_backfill', label);
+      }
+    }
+
+    return {
+      coolBuilders: coolBuilders.length,
+      processed,
+      skipped,
+      projectsMarked,
+      dmsSent,
+    };
+  }
+
   // ── Projects ──
 
   async listAllProjects(isSuperAdmin: boolean) {
@@ -1016,6 +1086,9 @@ export class AdminService {
         projectLink: project.codeUrl ?? project.demoUrl ?? null,
         reviewerName,
         feedback: feedback || null,
+        // Surfaced only on the approved path — reflects the golden mark applied
+        // above so the builder is told the moment their project becomes golden.
+        isGolden: status === 'approved' && project.isGolden,
       };
       const message =
         status === 'approved'

@@ -14,6 +14,8 @@ interface ReviewDmInput {
   /** Reviewer's display name, or null when hidden from the owner. */
   reviewerName: string | null;
   feedback: string | null;
+  /** True when this approval marks the project golden — adds a callout. */
+  isGolden?: boolean;
 }
 
 // When the reviewer opts to stay anonymous (reviewerName === null) the DM
@@ -63,6 +65,18 @@ export function reviewApprovedDm(input: ReviewDmInput): DmMessage {
     blocks.push({
       type: 'section',
       text: { type: 'mrkdwn', text: `*Feedback:* ${input.feedback}` },
+    });
+  }
+
+  // Called out on every approval that marks the project golden, so builders
+  // learn about the perks the moment they're granted.
+  if (input.isGolden) {
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: ":star2: This project was marked *golden*! You now have priority access in the review queue and access to the black market. :yay:",
+      },
     });
   }
 
@@ -274,6 +288,31 @@ export function orderFulfilledDm(input: OrderDmInput): DmMessage {
         elements: [
           { type: 'mrkdwn', text: 'Thank you for being a Beester!' },
         ],
+      },
+    ],
+  };
+}
+
+// Sent by the cool-builder golden backfill: all of a trusted builder's
+// projects were just marked golden in one sweep, unlocking the perks.
+export function goldenBackfillDm(): DmMessage {
+  return {
+    text: "We've marked all of your projects as golden!",
+    blocks: [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: ':star2: Your projects are now golden!',
+          emoji: true,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: "Hiya! It looks like you've been making really cool projects, so we've marked all of them as golden. You now have priority access in the review queue and access to the black market!",
+        },
       },
     ],
   };

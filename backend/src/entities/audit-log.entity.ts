@@ -20,6 +20,7 @@ export const AUDIT_ACTIONS = [
   'admin_ban',
   'admin_perms_change',
   'admin_watchlist_change',
+  'admin_golden_backfill',
   'admin_pipes_adjust',
   'project_reviewed',
   'admin_impersonate',
