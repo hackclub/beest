@@ -3,6 +3,16 @@
 // service is compile-checked against what Sidekick actually sends/expects.
 // Keep in sync when the protocol evolves.
 
+// A short, colored label surfacing an attribute of a project in the reviewer's
+// queue (renders as a GitHub-style pill). `color` is an optional hex string
+// (`#rrggbb` or `#rgb`); omit for neutral gray. Empty labels are dropped by
+// Sidekick. The same tags must be returned on FETCH_PROJECTS,
+// FETCH_PROJECT_DETAIL, and FETCH_AUTHOR_PROJECTS for a given project.
+export interface SidekickTag {
+  label: string;
+  color?: string;
+}
+
 export interface SidekickProject {
   id: string;
   title: string;
@@ -18,6 +28,7 @@ export interface SidekickProject {
   // time on reused Hackatime projects doesn't inflate Sidekick's totals.
   hackatimeStartDate?: string;
   ships: SidekickShip[];
+  tags?: SidekickTag[];
   metadata?: Record<string, unknown>;
 }
 
@@ -277,6 +288,9 @@ export interface FetchProjectsOutput {
   projects: SidekickProject[];
   nextCursor?: string;
   totalCount: number;
+  // When true, Sidekick renders projects in the exact order received and does
+  // not re-sort. Must be set consistently across every page of a status query.
+  explicitlySorted?: boolean;
 }
 
 export interface FetchProjectTimelineOutput {

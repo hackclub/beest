@@ -156,6 +156,21 @@ describe('toSidekickProject', () => {
     expect(ships[1].supportsRewardedOverride).toBe(true);
     expect(ships[1].approveFields?.map((f) => f.name)).not.toContain('internal_hours');
   });
+
+  it('omits tags for a non-golden project by a non-golden author', () => {
+    expect(toSidekickProject(project({ isGolden: false }), [], false).tags).toBeUndefined();
+  });
+
+  it('tags a golden project and a golden author independently', () => {
+    const golden = toSidekickProject(project({ isGolden: true }), [], false).tags;
+    expect(golden?.map((t) => t.label)).toEqual(['golden']);
+
+    const goldenAuthor = toSidekickProject(project({ isGolden: false }), [], true).tags;
+    expect(goldenAuthor?.map((t) => t.label)).toEqual(['golden author']);
+
+    const both = toSidekickProject(project({ isGolden: true }), [], true).tags;
+    expect(both?.map((t) => t.label)).toEqual(['golden', 'golden author']);
+  });
 });
 
 describe('toSidekickOrder', () => {

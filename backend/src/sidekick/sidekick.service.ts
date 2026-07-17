@@ -114,52 +114,108 @@ export class SidekickService {
     const filterEcho = `projects:${status}`;
     const offset = input.cursor ? decodeCursor(input.cursor, filterEcho) : 0;
 
-    const qb = this.projectRepo
-      .createQueryBuilder('project')
-      .innerJoinAndSelect('project.user', 'user')
-      // Draft projects have never been shipped — they have no submissions and
-      // are none of Sidekick's business.
-      .where('EXISTS (SELECT 1 FROM submissions s WHERE s.project_id = project.id)');
+    // Base filter shared by the count and id-ordering queries. Deliberately no
+    // join: the ordering below sorts by raw SQL sub-expressions, which TypeORM
+    // cannot resolve through its join-pagination path — so we select ordered
+    // ids first (the same two-step pattern AuditService.listQueue uses) and
+    // hydrate them by id afterwards.
+    const baseQuery = () => {
+      const qb = this.projectRepo
+        .createQueryBuilder('project')
+        // Draft projects have never been shipped — they have no submissions and
+        // are none of Sidekick's business.
+        .where('EXISTS (SELECT 1 FROM submissions s WHERE s.project_id = project.id)');
+      switch (status) {
+        case 'pending':
+          qb.andWhere(`project.status = 'unreviewed'`);
+          break;
+        case 'pending_hq':
+          qb.andWhere(`project.status = 'fraud_pending'`);
+          break;
+        case 'approved':
+          qb.andWhere(
+            `EXISTS (SELECT 1 FROM submissions s WHERE s.project_id = project.id AND s.status = 'approved')`,
+          );
+          break;
+        case 'rejected':
+          qb.andWhere(
+            `EXISTS (SELECT 1 FROM submissions s WHERE s.project_id = project.id AND s.status IN ('changes_needed', 'rejected'))`,
+          );
+          break;
+      }
+      return qb;
+    };
 
-    switch (status) {
-      case 'pending':
-        qb.andWhere(`project.status = 'unreviewed'`);
-        break;
-      case 'pending_hq':
-        qb.andWhere(`project.status = 'fraud_pending'`);
-        break;
-      case 'approved':
-        qb.andWhere(
-          `EXISTS (SELECT 1 FROM submissions s WHERE s.project_id = project.id AND s.status = 'approved')`,
-        );
-        break;
-      case 'rejected':
-        qb.andWhere(
-          `EXISTS (SELECT 1 FROM submissions s WHERE s.project_id = project.id AND s.status IN ('changes_needed', 'rejected'))`,
-        );
-        break;
-    }
+    const totalCount = await baseQuery().getCount();
 
-    const [projects, totalCount] = await qb
-      .orderBy('project.createdAt', 'DESC')
-      .addOrderBy('project.id', 'DESC')
-      .skip(offset)
-      .take(limit)
-      .getManyAndCount();
+    // Explicit queue ordering (mirrors AuditService.listQueue): golden-author
+    // projects form a priority tier ahead of everyone else, and within each
+    // tier the longest-waiting project (earliest "clicked submit" time) sorts
+    // first. project.id is a stable final tiebreak so offset pagination stays
+    // consistent across pages.
+    const idRows: { id: string }[] = await baseQuery()
+      .select('project.id', 'id')
+      .orderBy(
+        `EXISTS (SELECT 1 FROM projects g WHERE g.user_id = project.user_id AND g.is_golden = true)`,
+        'DESC',
+      )
+      .addOrderBy(
+        `(SELECT MAX(s.created_at) FROM submissions s WHERE s.project_id = project.id)`,
+        'ASC',
+        'NULLS LAST',
+      )
+      .addOrderBy('project.createdAt', 'ASC')
+      .addOrderBy('project.id', 'ASC')
+      .offset(offset)
+      .limit(limit)
+      .getRawMany();
+    const orderedIds = idRows.map((r) => r.id);
 
-    const submissionsByProject = await this.loadSubmissions(projects.map((p) => p.id));
+    const loaded = orderedIds.length
+      ? await this.projectRepo.find({ where: { id: In(orderedIds) }, relations: ['user'] })
+      : [];
+    // find() ignores the id ordering, so restore the queue order we computed.
+    const byId = new Map(loaded.map((p) => [p.id, p]));
+    const projects = orderedIds
+      .map((id) => byId.get(id))
+      .filter((p): p is Project => !!p);
+
+    const [submissionsByProject, goldenAuthors] = await Promise.all([
+      this.loadSubmissions(projects.map((p) => p.id)),
+      this.goldenAuthorIds(projects.map((p) => p.userId)),
+    ]);
     const mapped = projects.map((p) =>
-      toSidekickProject(p, submissionsByProject.get(p.id) ?? []),
+      toSidekickProject(p, submissionsByProject.get(p.id) ?? [], goldenAuthors.has(p.userId)),
     );
 
     return {
       projects: mapped,
       totalCount,
+      // We always return the queue in the order above; tell Sidekick not to
+      // re-sort. Set on every page so pagination concatenates correctly.
+      explicitlySorted: true,
       nextCursor:
         offset + projects.length < totalCount
           ? encodeCursor(offset + projects.length, filterEcho)
           : undefined,
     };
+  }
+
+  /**
+   * Subset of `userIds` that have shipped at least one golden project — the
+   * authors who get queue priority and the `golden author` tag. One query for
+   * the whole page; empty input short-circuits.
+   */
+  private async goldenAuthorIds(userIds: string[]): Promise<Set<string>> {
+    const unique = [...new Set(userIds)];
+    if (unique.length === 0) return new Set();
+    const rows: { user_id: string }[] = await this.projectRepo
+      .createQueryBuilder('p')
+      .select('DISTINCT p.user_id', 'user_id')
+      .where('p.userId IN (:...ids)', { ids: unique })
+      .andWhere('p.isGolden = true')
+      .getRawMany();
+    return new Set(rows.map((r) => r.user_id));
   }
 
   async fetchProjectDetail(projectId: string): Promise<SidekickProject> {
@@ -169,7 +225,8 @@ export class SidekickService {
       order: { createdAt: 'ASC' },
     });
     await this.backfillHoursSnapshot(project, submissions);
-    return toSidekickProject(project, submissions);
+    const goldenAuthors = await this.goldenAuthorIds([project.userId]);
+    return toSidekickProject(project, submissions, goldenAuthors.has(project.userId));
   }
 
   /**
@@ -197,9 +254,12 @@ export class SidekickService {
     const projects = await qb.orderBy('project.createdAt', 'DESC').getMany();
 
     const submissionsByProject = await this.loadSubmissions(projects.map((p) => p.id));
+    // Every project here is by the same author, so one golden-author lookup
+    // decides the `golden author` tag for the whole set.
+    const isGoldenAuthor = (await this.goldenAuthorIds([author.id])).has(author.id);
     return {
       projects: projects.map((p) =>
-        toSidekickProject(p, submissionsByProject.get(p.id) ?? []),
+        toSidekickProject(p, submissionsByProject.get(p.id) ?? [], isGoldenAuthor),
       ),
     };
   }

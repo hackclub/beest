@@ -15,6 +15,7 @@ import {
   SidekickShip,
   SidekickShipStatus,
   SidekickShopItem,
+  SidekickTag,
 } from './sidekick.types';
 
 /**
@@ -117,13 +118,28 @@ export function toSidekickShip(
   return ship;
 }
 
+/** Queue-priority pills. `golden` marks a golden project; `golden author`
+ * marks any project whose author has shipped at least one golden project (the
+ * same authors who get review-queue priority + black-market access). */
+export function projectTags(project: Project, isGoldenAuthor: boolean): SidekickTag[] {
+  const tags: SidekickTag[] = [];
+  if (project.isGolden) tags.push({ label: 'golden', color: '#eab308' });
+  if (isGoldenAuthor) tags.push({ label: 'golden author', color: '#ca8a04' });
+  return tags;
+}
+
 /**
  * `project.user` must be loaded. `submissions` must be ordered oldest-first.
+ * `isGoldenAuthor` is whether the author has shipped any golden project — it
+ * drives the `golden author` tag and must be supplied by the caller since it's
+ * a cross-project fact not derivable from this project alone.
  */
 export function toSidekickProject(
   project: Project,
   submissions: Submission[],
+  isGoldenAuthor = false,
 ): SidekickProject {
+  const tags = projectTags(project, isGoldenAuthor);
   return {
     id: project.id,
     title: project.name,
@@ -140,6 +156,7 @@ export function toSidekickProject(
     ships: submissions.map((s, i) =>
       toSidekickShip(s, project.status, i === submissions.length - 1),
     ),
+    ...(tags.length > 0 ? { tags } : {}),
     metadata: {
       projectType: project.projectType,
       aiUse: project.aiUse,
