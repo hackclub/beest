@@ -143,8 +143,14 @@
   let stickerLink = $state<string | null>(null);
 
   // Shop state
-  type ShopItemType = { id: string; name: string; description: string; detailedDescription: string | null; imageUrl: string; priceHours: number; stock: number | null; sortOrder: number; isFeatured: boolean; isBlackMarket: boolean; estimatedShip: string | null };
+  type ShopItemType = { id: string; name: string; description: string; detailedDescription: string | null; imageUrl: string; priceHours: number; stock: number | null; sortOrder: number; isFeatured: boolean; isSuperFeatured: boolean; isBlackMarket: boolean; estimatedShip: string | null };
   let shopItems = $state<ShopItemType[]>([]);
+  // The single "super featured" item owns the spotlight hero at the top of the
+  // shop; it's pulled out of the regular sections so it only appears once.
+  const spotlightItem = $derived(shopItems.find((i) => i.isSuperFeatured && !i.isBlackMarket) ?? null);
+  const featuredItems = $derived(shopItems.filter((i) => i.isFeatured && !i.isBlackMarket && i !== spotlightItem));
+  const regularItems = $derived(shopItems.filter((i) => !i.isFeatured && !i.isBlackMarket && i !== spotlightItem));
+  const blackMarketItems = $derived(shopItems.filter((i) => i.isBlackMarket));
   // True when the user has authored a golden project — unlocks black market items.
   let blackMarketUnlocked = $state(false);
   let shopLoading = $state(false);
@@ -1316,16 +1322,18 @@
     { q: 'I have more questions — how do I get in touch?', a: 'Contact us in the #beest channel on Hack Club Slack or email beest@hackclub.com!' }
   ];
 
+  // `icon` is inline SVG content (Lucide-style, 24×24 viewBox, stroked with
+  // currentColor) rendered inside the shared .nav-icon <svg> wrapper.
   const navItems = [
-    { id: 'projects', label: 'Projects', mobile: true },
-    { id: 'shop', label: 'Shop', mobile: true },
-    { id: 'events', label: 'Events', mobile: true },
-    { id: 'explore', label: 'Explore', mobile: true },
-    { id: 'leaderboard', label: 'Leaderboard', mobile: false },
-    { id: 'faq', label: 'FAQ', mobile: false },
-    { id: 'me', label: 'Me', mobile: true },
-    { id: 'devlogs', label: 'Devlogs', mobile: false },
-    { id: 'tutorial', label: 'Tutorial', mobile: false }
+    { id: 'projects', label: 'Projects', mobile: true, icon: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>' },
+    { id: 'shop', label: 'Shop', mobile: true, icon: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>' },
+    { id: 'events', label: 'Events', mobile: true, icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>' },
+    { id: 'explore', label: 'Explore', mobile: true, icon: '<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>' },
+    { id: 'leaderboard', label: 'Leaderboard', mobile: false, icon: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>' },
+    { id: 'faq', label: 'FAQ', mobile: false, icon: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>' },
+    { id: 'me', label: 'Me', mobile: true, icon: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
+    { id: 'devlogs', label: 'Devlogs', mobile: false, icon: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>' },
+    { id: 'tutorial', label: 'Tutorial', mobile: false, icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' }
   ];
 
   function loadSectionData(id: string) {
@@ -1679,8 +1687,9 @@
   <nav class="sidebar pinned" aria-label="Home navigation">
     <div class="sidebar-panel">
       <div class="sidebar-content">
-        <a href="/" class="sidebar-brand">BEEST</a>
-        <p class="sidebar-greeting">Hey {data.user.nickname ?? data.user.name ?? 'there!'}</p>
+        <a href="/" class="sidebar-brand">
+          <img src="/images/beest-logo.webp" alt="Beest" class="sidebar-logo" decoding="async" />
+        </a>
         <ul class="sidebar-nav">
           {#each navItems as item}
             <li class:mobile-only-hide={!item.mobile}>
@@ -1689,19 +1698,28 @@
                 class:active={activeSection === item.id}
                 onclick={() => navigate(item.id)}
               >
-                {item.label}
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{@html item.icon}</svg>
+                <span class="nav-label">{item.label}</span>
                 {#if item.id === 'me' && unreadCount > 0}
                   <span class="nav-notif"></span>
                 {/if}
               </button>
             </li>
           {/each}
+          {#snippet adminNavLink(label: string)}
+            <li>
+              <a href="/admin" class="nav-btn nav-link">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+                <span class="nav-label">{label}</span>
+              </a>
+            </li>
+          {/snippet}
           {#if data.role === 'Super Admin'}
-            <li><a href="/admin" class="nav-btn nav-link">Admin</a></li>
+            {@render adminNavLink('Admin')}
           {:else if data.role === 'Reviewer' || data.role === 'Fraud Reviewer'}
-            <li><a href="/admin" class="nav-btn nav-link">Review</a></li>
+            {@render adminNavLink('Review')}
           {:else if data.role === 'Fulfiller'}
-            <li><a href="/admin" class="nav-btn nav-link">Fulfillment</a></li>
+            {@render adminNavLink('Fulfillment')}
           {/if}
         </ul>
         {#if stickerLink}
@@ -2411,9 +2429,9 @@
         <div class="shop-container">
           <div class="shop-header-border">
             <div class="shop-header">
-              <div>
+              <div class="shop-header-copy">
                 <h2 class="section-title">Earn Prizes</h2>
-                <p class="section-subtitle">Build projects, earn hours, unlock rewards.<br><b>Hours spent in the shop detract from qualifying hours!</b></p>
+                <p class="section-subtitle shop-subtitle">Build projects, earn approved hours, spend them here.<br><b>Hours spent in the shop no longer count toward qualifying!</b></p>
               </div>
               <div class="shop-header-actions">
                 <button class="suggestions-btn" type="button" onclick={openSuggestions} aria-label="Shop suggestions">
@@ -2425,22 +2443,48 @@
                   <span>Suggestions</span>
                 </button>
                 <div class="pipes-box">
-                  <img src="/images/pipes.png" alt="Pipes" class="pipe-img" />
+                  <img src="/images/pipes.png" alt="" class="pipe-img" />
                   <div class="pipes-box-text">
                     <span class="pipes-box-label">Pipes</span>
                     <span class="pipes-box-value">{userPipes}</span>
+                    <span class="pipes-box-hint">1 approved hour = 1 Pipe</span>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-          <div class="shop-warning-banner">
-            <div class="shop-warning-track">
-              {#each {length: 8} as _}
-                <span class="shop-warning-text">1 approved hour = 1 pipe, spend pipes on prizes&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;</span>
-              {/each}
-            </div>
-          </div>
+          {#snippet shopCard(item: ShopItemType, variant: 'default' | 'featured' | 'bm')}
+            <button
+              class="shop-card"
+              class:shop-card-featured={variant === 'featured'}
+              class:shop-card-bm={variant === 'bm'}
+              onclick={() => openShopItem(item)}
+              type="button"
+            >
+              <div class="shop-card-img">
+                <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" />
+                {#if variant === 'bm' && !blackMarketUnlocked}
+                  <span class="shop-bm-lock" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lock-icon-lg"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  </span>
+                {/if}
+              </div>
+              <div class="shop-card-body">
+                <p class="shop-card-name">{item.name}</p>
+                <p class="shop-card-desc">{item.description}</p>
+                <div class="shop-card-footer">
+                  <p class="shop-card-cost" aria-label="{item.priceHours} {item.priceHours === 1 ? 'Pipe' : 'Pipes'}">
+                    <img src="/images/pipes.png" alt="" class="cost-pipe" />
+                    <span>{item.priceHours}</span>
+                  </p>
+                  {#if item.stock !== null}
+                    <span class="shop-card-stock" class:low={item.stock <= 3}>{item.stock} left</span>
+                  {/if}
+                </div>
+              </div>
+            </button>
+          {/snippet}
+
           {#if shopLoading}
             <div class="shop-grid">
               {#each Array(6) as _}
@@ -2454,55 +2498,49 @@
           {:else if shopItems.length === 0}
             <p class="coming-soon">No items in the shop yet.</p>
           {:else}
-            {#if shopItems.some(i => i.isFeatured && !i.isBlackMarket)}
+            {#if spotlightItem}
+              <div class="shop-spotlight-border">
+                <button class="shop-spotlight" type="button" onclick={() => spotlightItem && openShopItem(spotlightItem)}>
+                  <div class="shop-spotlight-img">
+                    <img src={spotlightItem.imageUrl} alt={spotlightItem.name} />
+                  </div>
+                  <div class="shop-spotlight-body">
+                    <p class="shop-spotlight-name">{spotlightItem.name}</p>
+                    <p class="shop-spotlight-desc">{spotlightItem.description}</p>
+                    <div class="shop-spotlight-footer">
+                      <p class="shop-card-cost shop-spotlight-cost" aria-label="{spotlightItem.priceHours} {spotlightItem.priceHours === 1 ? 'Pipe' : 'Pipes'}">
+                        <img src="/images/pipes.png" alt="" class="cost-pipe" />
+                        <span>{spotlightItem.priceHours}</span>
+                      </p>
+                      {#if spotlightItem.stock !== null}
+                        <span class="shop-card-stock" class:low={spotlightItem.stock <= 3}>{spotlightItem.stock} left</span>
+                      {/if}
+                    </div>
+                  </div>
+                </button>
+              </div>
+            {/if}
+            {#if featuredItems.length > 0}
               <div class="shop-featured-section">
                 <h3 class="shop-section-title">Featured</h3>
-                <div class="shop-grid shop-grid-featured">
-                  {#each shopItems.filter(i => i.isFeatured && !i.isBlackMarket) as item}
-                    <button class="shop-card shop-card-featured" onclick={() => openShopItem(item)} type="button">
-                      <div class="shop-card-img">
-                        <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" />
-                      </div>
-                      <div class="shop-card-body">
-                        <p class="shop-card-name">{item.name}</p>
-                        <p class="shop-card-desc">{item.description}</p>
-                        <div class="shop-card-footer">
-                          <p class="shop-card-cost">{item.priceHours} Pipes</p>
-                          {#if item.stock !== null}
-                            <span class="shop-card-stock" class:low={item.stock <= 3}>{item.stock} left</span>
-                          {/if}
-                        </div>
-                      </div>
-                    </button>
+                <div class="shop-grid">
+                  {#each featuredItems as item}
+                    {@render shopCard(item, 'featured')}
                   {/each}
                 </div>
               </div>
             {/if}
-            {#if shopItems.some(i => !i.isFeatured && !i.isBlackMarket)}
-              {#if shopItems.some(i => i.isFeatured && !i.isBlackMarket)}
+            {#if regularItems.length > 0}
+              {#if spotlightItem || featuredItems.length > 0}
                 <h3 class="shop-section-title">All Items</h3>
               {/if}
               <div class="shop-grid">
-                {#each shopItems.filter(i => !i.isFeatured && !i.isBlackMarket) as item}
-                  <button class="shop-card" onclick={() => openShopItem(item)} type="button">
-                    <div class="shop-card-img">
-                      <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" />
-                    </div>
-                    <div class="shop-card-body">
-                      <p class="shop-card-name">{item.name}</p>
-                      <p class="shop-card-desc">{item.description}</p>
-                      <div class="shop-card-footer">
-                        <p class="shop-card-cost">{item.priceHours} Pipes</p>
-                        {#if item.stock !== null}
-                          <span class="shop-card-stock" class:low={item.stock <= 3}>{item.stock} left</span>
-                        {/if}
-                      </div>
-                    </div>
-                  </button>
+                {#each regularItems as item}
+                  {@render shopCard(item, 'default')}
                 {/each}
               </div>
             {/if}
-            {#if shopItems.some(i => i.isBlackMarket)}
+            {#if blackMarketItems.length > 0}
               <div class="shop-bm-section" class:locked={!blackMarketUnlocked}>
                 <h3 class="shop-section-title shop-bm-title">Black Market</h3>
                 <p class="shop-bm-note">
@@ -2513,27 +2551,8 @@
                   {/if}
                 </p>
                 <div class="shop-grid">
-                  {#each shopItems.filter(i => i.isBlackMarket) as item}
-                    <button class="shop-card shop-card-bm" onclick={() => openShopItem(item)} type="button">
-                      <div class="shop-card-img">
-                        <img src={item.imageUrl} alt={item.name} loading="lazy" decoding="async" />
-                        {#if !blackMarketUnlocked}
-                          <span class="shop-bm-lock" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="lock-icon-lg"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                          </span>
-                        {/if}
-                      </div>
-                      <div class="shop-card-body">
-                        <p class="shop-card-name">{item.name}</p>
-                        <p class="shop-card-desc">{item.description}</p>
-                        <div class="shop-card-footer">
-                          <p class="shop-card-cost">{item.priceHours} Pipes</p>
-                          {#if item.stock !== null}
-                            <span class="shop-card-stock" class:low={item.stock <= 3}>{item.stock} left</span>
-                          {/if}
-                        </div>
-                      </div>
-                    </button>
+                  {#each blackMarketItems as item}
+                    {@render shopCard(item, 'bm')}
                   {/each}
                 </div>
               </div>
@@ -2541,7 +2560,7 @@
           {/if}
 
           <div class="my-orders">
-            <h3 class="my-orders-title">My Orders</h3>
+            <h3 class="shop-section-title">My Orders</h3>
             {#if userOrdersLoading && userOrders.length === 0}
               <p class="my-orders-empty">Loading…</p>
             {:else if userOrders.length === 0}
@@ -2604,7 +2623,7 @@
             {/if}
 
             <div class="shop-modal-price-row">
-              <span class="shop-modal-price">{selectedShopItem.priceHours} Pipes</span>
+              <span class="shop-modal-price">{selectedShopItem.priceHours} {selectedShopItem.priceHours === 1 ? 'Pipe' : 'Pipes'}</span>
               {#if selectedShopItem.stock !== null}
                 <span class="shop-modal-stock" class:low={selectedShopItem.stock <= 3}>{selectedShopItem.stock} in stock</span>
               {:else}
@@ -2640,7 +2659,7 @@
 
             <div class="shop-modal-total">
               <span>Total:</span>
-              <span class="shop-modal-total-value">{selectedShopItem.priceHours * shopQuantity} Pipes</span>
+              <span class="shop-modal-total-value">{selectedShopItem.priceHours * shopQuantity} {selectedShopItem.priceHours * shopQuantity === 1 ? 'Pipe' : 'Pipes'}</span>
             </div>
 
             {#if selectedShopItem.isBlackMarket && !blackMarketUnlocked}
@@ -3654,26 +3673,20 @@
 
   .sidebar-brand {
     display: block;
-    font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: 32px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: #e6f4fe;
-    text-decoration: none;
-    margin-bottom: 4px;
-    line-height: 1;
+    margin-bottom: 24px;
+    line-height: 0;
   }
 
-  .sidebar-brand:hover {
-    color: #ffffff;
+  .sidebar-logo {
+    width: 100%;
+    max-width: 170px;
+    height: auto;
+    display: block;
+    transition: filter 150ms ease;
   }
 
-  .sidebar-greeting {
-    margin: 0 0 28px;
-    font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 14px;
-    color: #cbc1ae;
-    letter-spacing: 0.02em;
+  .sidebar-brand:hover .sidebar-logo {
+    filter: brightness(1.12);
   }
 
   .sidebar-nav {
@@ -3686,6 +3699,7 @@
   }
 
   .nav-btn {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -3726,6 +3740,18 @@
 
   .nav-link {
     text-decoration: none;
+  }
+
+  .nav-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+
+  .nav-btn.active .nav-icon,
+  .nav-btn:hover .nav-icon {
+    opacity: 1;
   }
 
   .sticker-promo {
@@ -5736,19 +5762,25 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    flex-wrap: wrap;
     gap: 24px;
     background: #6c6659;
     padding: 24px 28px;
+  }
+
+  .shop-subtitle {
+    margin-bottom: 0;
   }
 
   .pipes-box {
     display: flex;
     align-items: center;
     gap: 12px;
-    background: rgba(0, 0, 0, 0.25);
-    padding: 10px 18px;
+    background: #3a3832;
+    border: 2px solid #1a1a1a;
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+    padding: 10px 16px;
     flex-shrink: 0;
-    clip-path: polygon(0% 3%, 2% 0%, 98% 1%, 100% 4%, 99% 96%, 97% 100%, 3% 99%, 0% 95%);
   }
 
   .shop-header-actions {
@@ -5833,10 +5865,13 @@
   }
   .order-note-title {
     margin: 0 0 6px;
+    font-family: "Stone Breaker", "Courier New", monospace;
     font-size: 20px;
+    letter-spacing: 0.02em;
   }
   .order-note-hint {
     margin: 0 0 14px;
+    font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 14px;
     opacity: 0.75;
   }
@@ -5847,11 +5882,13 @@
     background: #ded5c3;
     border: 2px solid #1a1a1a;
     padding: 10px;
-    font: inherit;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 14px;
     color: #4b4840;
   }
   .order-note-count {
     text-align: right;
+    font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 12px;
     opacity: 0.6;
     margin-top: 4px;
@@ -5866,8 +5903,10 @@
   .order-note-confirm {
     padding: 8px 18px;
     border: 2px solid #1a1a1a;
-    font: inherit;
-    font-weight: 700;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     cursor: pointer;
   }
   .order-note-cancel {
@@ -5905,14 +5944,14 @@
     color: #4b4840;
   }
   .suggestions-subtitle {
-    font-family: "Courier New", monospace;
-    font-size: 13px;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 14px;
     color: #6c6659;
     margin: 0 0 20px;
   }
 
   .suggestions-new {
-    background: rgba(255, 255, 255, 0.4);
+    background: rgba(240, 235, 229, 0.5);
     border: 2px solid #4b4840;
     padding: 12px;
     margin-bottom: 20px;
@@ -5920,10 +5959,10 @@
   .suggestions-input {
     width: 100%;
     min-height: 60px;
-    background: #fff;
-    border: 1px solid #6c6659;
+    background: #f0ebe5;
+    border: 2px solid #4b4840;
     padding: 8px 10px;
-    font-family: "Courier New", monospace;
+    font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 14px;
     color: #4b4840;
     resize: vertical;
@@ -5940,7 +5979,7 @@
     margin-top: 8px;
   }
   .suggestions-counter {
-    font-family: "Courier New", monospace;
+    font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 11px;
     color: #6c6659;
   }
@@ -5965,8 +6004,8 @@
     opacity: 0.6;
   }
   .suggestions-error {
-    color: #c48382;
-    font-family: "Courier New", monospace;
+    color: #8a4a49;
+    font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 13px;
     margin: 8px 0 0;
   }
@@ -5979,7 +6018,7 @@
   .suggestions-empty {
     text-align: center;
     color: #6c6659;
-    font-family: "Courier New", monospace;
+    font-family: "Sunny Mood", "Courier New", monospace;
     padding: 24px 0;
   }
 
@@ -5987,8 +6026,8 @@
     display: flex;
     align-items: stretch;
     gap: 12px;
-    background: rgba(255, 255, 255, 0.5);
-    border: 1px solid #6c6659;
+    background: rgba(240, 235, 229, 0.55);
+    border: 2px solid #6c6659;
     padding: 10px 12px;
   }
 
@@ -5999,7 +6038,7 @@
     justify-content: center;
     gap: 2px;
     min-width: 56px;
-    background: #fff;
+    background: #f0ebe5;
     border: 2px solid #6c6659;
     color: #4b4840;
     padding: 6px 8px;
@@ -6032,15 +6071,15 @@
   }
   .suggestion-text {
     margin: 0;
-    font-family: "Courier New", monospace;
+    font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 14px;
     color: #4b4840;
     word-break: break-word;
   }
   .suggestion-meta {
     margin: 0;
-    font-family: "Courier New", monospace;
-    font-size: 11px;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 12px;
     color: #6c6659;
     display: flex;
     align-items: center;
@@ -6049,10 +6088,10 @@
   .suggestion-delete {
     background: transparent;
     border: none;
-    color: #c48382;
+    color: #8a4a49;
     cursor: pointer;
-    font-family: "Courier New", monospace;
-    font-size: 11px;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 12px;
     text-decoration: underline;
     padding: 0;
   }
@@ -6080,10 +6119,10 @@
   }
 
   .pipes-box-label {
-    font-family: "Courier New", monospace;
+    font-family: "Stone Breaker", "Courier New", monospace;
     font-size: 11px;
-    color: #7f796d;
-    letter-spacing: 0.06em;
+    color: #cbc1ae;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
 
@@ -6096,104 +6135,195 @@
     text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
   }
 
-  .shop-warning-banner {
-    margin: 56px -120px 56px;
-    background: #c48382;
-    padding: 16px 0;
-    transform: rotate(-3deg);
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
-    border-top: 2px solid #1a1a1a;
-    border-bottom: 2px solid #1a1a1a;
-    overflow: hidden;
+  .pipes-box-hint {
+    margin-top: 4px;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 11px;
+    color: #a89c86;
     white-space: nowrap;
-  }
-
-  .shop-warning-track {
-    display: inline-flex;
-    transform: translateX(-9.0%);
-  }
-
-  .shop-warning-text {
-    font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: clamp(18px, 2.2vw, 28px);
-    color: #1a1a1a;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    flex-shrink: 0;
-  }
-
-  @keyframes marquee-scroll {
-    0% { transform: translateX(-50%); }
-    100% { transform: translateX(0); }
   }
 
   .shop-container {
     background: #8a7f6f;
-    padding: 32px;
-    overflow: hidden;
-    clip-path: polygon(0% 0.5%, 2% 0%, 6% 0.5%, 10% 0%, 16% 0.4%, 22% 0%, 28% 0.5%, 34% 0%, 40% 0.4%, 46% 0%, 52% 0.5%, 58% 0%, 64% 0.4%, 70% 0%, 76% 0.5%, 82% 0%, 88% 0.4%, 94% 0%, 98% 0.5%, 100% 0%, 100% 5%, 99.4% 10%, 100% 16%, 99.5% 22%, 100% 28%, 99.4% 34%, 100% 40%, 99.5% 46%, 100% 52%, 99.4% 58%, 100% 64%, 99.5% 70%, 100% 76%, 99.4% 82%, 100% 88%, 99.5% 94%, 100% 99.5%, 98% 100%, 94% 99.5%, 88% 100%, 82% 99.6%, 76% 100%, 70% 99.5%, 64% 100%, 58% 99.6%, 52% 100%, 46% 99.5%, 40% 100%, 34% 99.6%, 28% 100%, 22% 99.5%, 16% 100%, 10% 99.6%, 6% 100%, 2% 99.5%, 0% 100%, 0% 94%, 0.5% 88%, 0% 82%, 0.6% 76%, 0% 70%, 0.5% 64%, 0% 58%, 0.6% 52%, 0% 46%, 0.5% 40%, 0% 34%, 0.6% 28%, 0% 22%, 0.5% 16%, 0% 10%, 0.6% 5%);
+    border: 2px solid #1a1a1a;
+    box-shadow: 6px 6px 0 rgba(26, 26, 26, 0.45);
+    padding: 28px 32px 32px;
   }
 
   .shop-featured-section {
-    margin-bottom: 32px;
+    margin-bottom: 36px;
   }
 
   .shop-section-title {
-    margin: 0 0 14px 0;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 16px 0;
     font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: clamp(28px, 3vw, 42px);
-    letter-spacing: 0.04em;
+    font-size: 22px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     color: #e6f4fe;
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    text-shadow: 2px 2px 0 rgba(26, 26, 26, 0.35);
+  }
+
+  .shop-section-title::after {
+    content: '';
+    flex: 1;
+    height: 2px;
+    background: rgba(230, 244, 254, 0.25);
   }
 
   .shop-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
     gap: 20px;
-    justify-content: start;
   }
 
-  .shop-grid-featured {
-    /* match the all-items grid: same 3 cols, left-aligned */
-    grid-template-columns: repeat(3, 1fr);
-    justify-content: start;
+  /* ── spotlight (super-featured) hero ── */
+  .shop-spotlight-border {
+    background: #1a1a1a;
+    padding: 2px;
+    margin: 28px 0 36px;
+    box-shadow: 6px 6px 0 #b07d3a;
+    clip-path: polygon(0% 1%, 1% 0%, 4% 1%, 8% 0%, 14% 1%, 20% 0%, 28% 1%, 36% 0%, 44% 1%, 52% 0%, 60% 1%, 68% 0%, 76% 1%, 84% 0%, 90% 1%, 96% 0%, 100% 1%, 100% 99%, 96% 100%, 90% 99%, 84% 100%, 76% 99%, 68% 100%, 60% 99%, 52% 100%, 44% 99%, 36% 100%, 28% 99%, 20% 100%, 14% 99%, 8% 100%, 4% 99%, 1% 100%, 0% 99%);
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .shop-spotlight-border:hover,
+  .shop-spotlight-border:focus-within {
+    transform: translate(-2px, -2px);
+    box-shadow: 8px 8px 0 #b07d3a;
+  }
+
+  .shop-spotlight {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+    background: #cbc1ae;
+    border: none;
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .shop-spotlight:focus-visible {
+    outline: 3px solid #e6f4fe;
+    outline-offset: -3px;
+  }
+
+  .shop-spotlight-img {
+    width: min(300px, 38%);
+    flex-shrink: 0;
+    background: #f0ebe5;
+    border-right: 2px solid #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+
+  .shop-spotlight-img img {
+    width: 100%;
+    max-height: 260px;
+    object-fit: contain;
+  }
+
+  .shop-spotlight-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 24px 28px;
+  }
+
+  .shop-spotlight-name {
+    margin: 0;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: clamp(22px, 2.6vw, 32px);
+    letter-spacing: 0.02em;
+    line-height: 1.15;
+    color: #1a1a1a;
+  }
+
+  .shop-spotlight-desc {
+    margin: 0;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 15px;
+    line-height: 1.5;
+    color: #4b4840;
+    max-width: 65ch;
+  }
+
+  .shop-spotlight-footer {
+    margin-top: auto;
+    padding-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .shop-spotlight-cost {
+    font-size: 22px;
+  }
+
+  .shop-spotlight-cost .cost-pipe {
+    width: 24px;
+    height: 24px;
   }
 
   .shop-card-featured {
-    border-color: #b07d3a;
+    border-color: #8a5f2a;
+    box-shadow: 4px 4px 0 #b07d3a;
+  }
+
+  .shop-card-featured:hover,
+  .shop-card-featured:focus-visible {
     box-shadow: 6px 6px 0 #b07d3a;
   }
 
-  .shop-card-featured:hover {
-    box-shadow: 9px 9px 0 #b07d3a;
-  }
-
   .shop-bm-section {
-    margin-top: 32px;
-    padding-top: 24px;
-    border-top: 3px dashed #3a3832;
+    margin-top: 36px;
+    padding-top: 28px;
+    border-top: 2px solid rgba(26, 26, 26, 0.35);
   }
 
   .shop-bm-title {
     color: #f4d47c;
   }
 
+  .shop-bm-title::after {
+    background: rgba(244, 212, 124, 0.3);
+  }
+
   .shop-bm-note {
-    margin: -6px 0 14px 0;
+    margin: -6px 0 16px 0;
+    font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 14px;
     color: #e6f4fe;
     opacity: 0.85;
   }
 
   .shop-card-bm {
-    border-color: #1f1d1a;
-    box-shadow: 6px 6px 0 #1f1d1a;
+    border-color: #14120f;
+    box-shadow: 4px 4px 0 #14120f;
     background: #a89c86;
   }
 
-  .shop-card-bm:hover {
-    box-shadow: 9px 9px 0 #1f1d1a;
+  .shop-card-bm:hover,
+  .shop-card-bm:focus-visible {
+    box-shadow: 6px 6px 0 #14120f;
+    outline-color: #f4d47c;
+  }
+
+  .shop-card-bm .shop-card-img {
+    background: #e3dccd;
   }
 
   .shop-bm-section.locked .shop-card-bm .shop-card-img img {
@@ -6216,22 +6346,39 @@
   }
 
   .shop-card {
+    display: flex;
+    flex-direction: column;
     background: #cbc1ae;
-    border: 3px solid #3a3832;
-    box-shadow: 6px 6px 0 #3a3832;
-    transition: transform 150ms ease, box-shadow 150ms ease;
-    filter: saturate(0.667);
-    clip-path: polygon(0% 1%, 2% 0%, 5% 1%, 10% 0%, 20% 1%, 30% 0%, 40% 1%, 50% 0%, 60% 1%, 70% 0%, 80% 1%, 90% 0%, 95% 1%, 98% 0%, 100% 1%, 100% 99%, 98% 100%, 95% 99%, 90% 100%, 80% 99%, 70% 100%, 60% 99%, 50% 100%, 40% 99%, 30% 100%, 20% 99%, 10% 100%, 5% 99%, 2% 100%, 0% 99%);
+    border: 2px solid #1a1a1a;
+    box-shadow: 4px 4px 0 rgba(26, 26, 26, 0.45);
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    padding: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    outline: 3px solid transparent;
+    outline-offset: 3px;
+    transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 150ms cubic-bezier(0.22, 1, 0.36, 1), outline-color 150ms ease;
   }
 
-  .shop-card:hover {
-    transform: translate(-3px, -3px);
-    box-shadow: 9px 9px 0 #3a3832;
+  .shop-card:hover,
+  .shop-card:focus-visible {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 rgba(26, 26, 26, 0.45);
+    outline-color: #e6f4fe;
+  }
+
+  .shop-card:active {
+    transform: translate(1px, 1px);
+    box-shadow: 2px 2px 0 rgba(26, 26, 26, 0.45);
   }
 
   .shop-card-img {
-    padding: 10px 10px 0;
+    padding: 12px;
     position: relative;
+    background: #f0ebe5;
+    border-bottom: 2px solid #1a1a1a;
   }
 
   .shop-card-img img {
@@ -6239,38 +6386,36 @@
     aspect-ratio: 4 / 5;
     object-fit: contain;
     display: block;
-    border: 2px solid #4b4840;
-    background: #f0ebe5;
   }
 
   .shop-card-body {
-    padding: 10px 12px 12px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 14px 14px;
   }
 
   .shop-card-name {
-    margin: 0 0 3px;
-    font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 16px;
-    color: #4b4840;
-    line-height: 1.25;
-    font-weight: 600;
+    margin: 0;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    color: #1a1a1a;
+    line-height: 1.3;
   }
 
   .shop-card-desc {
-    margin: 0 0 6px;
+    margin: 0;
     font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 12px;
-    color: #1a1a1a;
-    line-height: 1.35;
-  }
-
-  .shop-card {
-    cursor: pointer;
-    text-align: left;
-    font: inherit;
-    padding: 0;
-    appearance: none;
-    -webkit-appearance: none;
+    font-size: 13px;
+    color: #4b4840;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .shop-card-footer {
@@ -6278,55 +6423,60 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 2px solid rgba(26, 26, 26, 0.12);
   }
 
   .shop-card-cost {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin: 0;
     font-family: "Stone Breaker", "Courier New", monospace;
     font-size: 16px;
-    color: #c48382;
+    color: #1a1a1a;
+  }
+
+  .cost-pipe {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    flex-shrink: 0;
   }
 
   .shop-card-stock {
     font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 11px;
-    color: #6c6659;
-    background: rgba(0,0,0,0.15);
-    padding: 2px 6px;
-    border-radius: 4px;
+    color: #4b4840;
+    background: rgba(26, 26, 26, 0.12);
+    padding: 2px 8px;
   }
 
   .shop-card-stock.low {
-    color: #c48382;
-    background: rgba(196, 131, 130, 0.15);
+    color: #8a4a49;
+    background: rgba(196, 131, 130, 0.25);
     font-weight: 700;
   }
 
   .my-orders {
-    margin-top: 32px;
-    padding-top: 20px;
-    border-top: 2px dashed rgba(75, 72, 64, 0.4);
-  }
-
-  .my-orders-title {
-    margin: 0 0 12px;
-    font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: 22px;
-    color: #4b4840;
+    margin-top: 36px;
+    padding-top: 28px;
+    border-top: 2px solid rgba(26, 26, 26, 0.35);
   }
 
   .my-orders-empty {
     margin: 0;
     font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 13px;
-    color: #6c6659;
+    font-size: 14px;
+    color: #ded5c3;
   }
 
   .my-orders-error {
     margin: 0 0 10px;
     font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 13px;
-    color: #c48382;
+    color: #f6d7d6;
   }
 
   .my-orders-list {
@@ -6345,8 +6495,8 @@
     gap: 12px;
     padding: 10px 14px;
     background: #cbc1ae;
-    border: 2px solid #3a3832;
-    box-shadow: 4px 4px 0 #3a3832;
+    border: 2px solid #1a1a1a;
+    box-shadow: 3px 3px 0 rgba(26, 26, 26, 0.45);
   }
 
   .my-orders-info {
@@ -6404,12 +6554,14 @@
   }
 
   .my-orders-refund {
-    font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 13px;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     padding: 6px 12px;
     background: #f0ebe5;
-    border: 2px solid #3a3832;
-    box-shadow: 2px 2px 0 #3a3832;
+    border: 2px solid #1a1a1a;
+    box-shadow: 2px 2px 0 rgba(26, 26, 26, 0.45);
     color: #4b4840;
     cursor: pointer;
     transition: transform 100ms ease, box-shadow 100ms ease;
@@ -6417,7 +6569,7 @@
 
   .my-orders-refund:hover:not(:disabled) {
     transform: translate(-1px, -1px);
-    box-shadow: 3px 3px 0 #3a3832;
+    box-shadow: 3px 3px 0 rgba(26, 26, 26, 0.45);
   }
 
   .my-orders-refund:disabled {
@@ -6426,28 +6578,59 @@
   }
 
   .shop-card-skeleton {
-    background: rgba(255,255,255,0.05);
-    border: 2px solid rgba(255,255,255,0.08);
-    padding: 16px;
-    animation: pulse 1.5s ease-in-out infinite;
+    background: rgba(203, 193, 174, 0.2);
+    border: 2px solid rgba(26, 26, 26, 0.2);
+    padding: 14px;
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
   }
 
   .shop-card-skeleton .skeleton-img {
     width: 100%;
     aspect-ratio: 4/5;
-    background: rgba(255,255,255,0.06);
+    background: rgba(240, 235, 229, 0.25);
     margin-bottom: 12px;
   }
 
   .shop-card-skeleton .skeleton-line {
     height: 14px;
-    background: rgba(255,255,255,0.06);
+    background: rgba(240, 235, 229, 0.25);
     margin-bottom: 8px;
-    border-radius: 4px;
   }
 
   .shop-card-skeleton .skeleton-line.wide { width: 80%; }
   .shop-card-skeleton .skeleton-line.narrow { width: 40%; }
+
+  @media (max-width: 760px) {
+    .shop-container {
+      padding: 16px 16px 20px;
+    }
+    .shop-header {
+      padding: 18px 20px;
+    }
+    .shop-grid {
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 14px;
+    }
+    .shop-spotlight {
+      flex-direction: column;
+    }
+    .shop-spotlight-img {
+      width: 100%;
+      border-right: none;
+      border-bottom: 2px solid #1a1a1a;
+    }
+    .shop-spotlight-img img {
+      max-height: 200px;
+    }
+    .shop-spotlight-body {
+      padding: 18px 20px;
+    }
+  }
 
   /* ── intent prompt ── */
   .intent-overlay {
@@ -6543,14 +6726,13 @@
   .shop-modal {
     position: relative;
     background: #cbc1ae;
-    border: 4px solid #3a3832;
-    box-shadow: 12px 12px 0 #3a3832;
+    border: 3px solid #1a1a1a;
+    box-shadow: 10px 10px 0 rgba(26, 26, 26, 0.5);
     max-width: 860px;
     width: 90vw;
     max-height: 90vh;
     overflow-y: auto;
-    clip-path: polygon(0% 1%, 1.5% 0%, 4% 0.8%, 8% 0%, 14% 0.6%, 20% 0%, 28% 0.8%, 36% 0%, 44% 0.6%, 52% 0%, 60% 0.8%, 68% 0%, 76% 0.6%, 84% 0%, 90% 0.8%, 96% 0%, 98.5% 0.6%, 100% 0%, 100% 99%, 98.5% 100%, 96% 99.2%, 90% 100%, 84% 99.4%, 76% 100%, 68% 99.2%, 60% 100%, 52% 99.4%, 44% 100%, 36% 99.2%, 28% 100%, 20% 99.4%, 14% 100%, 8% 99.2%, 4% 100%, 1.5% 99.4%, 0% 100%);
-    animation: modalSlide 250ms ease;
+    animation: modalSlide 250ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   @keyframes modalSlide {
@@ -6635,20 +6817,19 @@
   .shop-modal-price {
     font-family: "Stone Breaker", "Courier New", monospace;
     font-size: 28px;
-    color: #c48382;
+    color: #8a4a49;
   }
 
   .shop-modal-stock {
     font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 14px;
     padding: 3px 10px;
-    border-radius: 4px;
-    background: rgba(0,0,0,0.1);
+    background: rgba(26, 26, 26, 0.1);
     color: #4b4840;
   }
 
-  .shop-modal-stock.low { color: #c48382; font-weight: 700; }
-  .shop-modal-stock.unlimited { color: #809fb7; }
+  .shop-modal-stock.low { color: #8a4a49; font-weight: 700; }
+  .shop-modal-stock.unlimited { color: #46647c; }
 
   .shop-modal-ship {
     display: flex;
@@ -6682,7 +6863,7 @@
     display: flex;
     align-items: center;
     gap: 0;
-    border: 3px solid #3a3832;
+    border: 2px solid #1a1a1a;
   }
 
   .qty-input {
@@ -6712,52 +6893,43 @@
     font-size: 16px;
     color: #4b4840;
     padding-top: 8px;
-    border-top: 2px dashed rgba(0,0,0,0.15);
+    border-top: 2px solid rgba(26, 26, 26, 0.15);
   }
 
   .shop-modal-total-value {
     font-family: "Stone Breaker", "Courier New", monospace;
     font-size: 24px;
-    color: #c48382;
+    color: #8a4a49;
   }
 
   .shop-modal-buy {
     width: 100%;
     padding: 16px;
     background: #809fb7;
-    border: 3px solid #3a3832;
-    box-shadow: 4px 4px 0 #3a3832;
+    border: 2px solid #1a1a1a;
+    box-shadow: 4px 4px 0 rgba(26, 26, 26, 0.45);
     color: #1a1a1a;
     font-family: "Stone Breaker", "Courier New", monospace;
     font-size: 22px;
+    letter-spacing: 0.04em;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
     transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
-    clip-path: polygon(0% 2%, 2% 0%, 6% 2%, 12% 0%, 20% 1.5%, 30% 0%, 40% 2%, 50% 0%, 60% 1.5%, 70% 0%, 80% 2%, 88% 0%, 94% 1.5%, 98% 0%, 100% 2%, 100% 98%, 98% 100%, 94% 98.5%, 88% 100%, 80% 98%, 70% 100%, 60% 98.5%, 50% 100%, 40% 98%, 30% 100%, 20% 98.5%, 12% 100%, 6% 98%, 2% 100%, 0% 98%);
   }
 
-  .shop-modal-buy:hover {
+  .shop-modal-buy:hover,
+  .shop-modal-buy:focus-visible {
     transform: translate(-2px, -2px);
-    box-shadow: 6px 6px 0 #3a3832;
+    box-shadow: 6px 6px 0 rgba(26, 26, 26, 0.45);
     background: #93b4cd;
   }
 
   .shop-modal-buy:active {
     transform: translate(2px, 2px);
-    box-shadow: 1px 1px 0 #3a3832;
-  }
-
-  .buy-sparkle {
-    font-size: 18px;
-    animation: sparkle-pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes sparkle-pulse {
-    0%, 100% { opacity: 0.6; transform: scale(1); }
-    50% { opacity: 1; transform: scale(1.2); }
+    box-shadow: 1px 1px 0 rgba(26, 26, 26, 0.45);
   }
 
   .shop-modal-cant-afford {
@@ -6796,7 +6968,7 @@
   .shop-modal-keep-building {
     font-family: "Stone Breaker", "Courier New", monospace;
     font-size: 18px;
-    color: #c48382;
+    color: #8a4a49;
   }
 
   @media (max-width: 700px) {
@@ -8790,19 +8962,20 @@
   /* ── Shop purchase feedback ──────────────────────── */
   .shop-modal-error {
     margin: 8px 0 0;
-    font-family: "Courier New", monospace;
+    font-family: "Sunny Mood", "Courier New", monospace;
     font-size: 14px;
-    color: #c48382;
+    color: #8a4a49;
     text-align: center;
   }
 
   .shop-modal-success {
     padding: 14px;
+    background: rgba(90, 158, 111, 0.18);
+    border: 2px solid #5a9e6f;
     font-family: "Stone Breaker", "Courier New", monospace;
     font-size: 22px;
-    color: #000;
+    color: #2c4f37;
     text-align: center;
-    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
   }
 
   /* ── responsive ─────────────────────────────────── */
@@ -8858,7 +9031,6 @@
     }
 
     .sidebar-brand,
-    .sidebar-greeting,
     .sidebar-footer {
       display: none;
     }
@@ -8875,8 +9047,8 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 2px;
-      padding: 18px 2px;
+      gap: 4px;
+      padding: 10px 2px 12px;
       font-size: clamp(10px, 2.6vw, 13px);
       line-height: 1;
       letter-spacing: 0.02em;
@@ -8885,6 +9057,11 @@
       border-bottom-width: 4px;
       white-space: nowrap;
       min-width: 0;
+    }
+
+    .nav-icon {
+      width: 20px;
+      height: 20px;
     }
 
     .sidebar-nav li {

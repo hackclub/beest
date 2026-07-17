@@ -1508,6 +1508,7 @@
 		sortOrder: number;
 		isActive: boolean;
 		isFeatured: boolean;
+		isSuperFeatured: boolean;
 		isBlackMarket: boolean;
 		estimatedShip: string | null;
 	}
@@ -1524,6 +1525,7 @@
 	let newShopShip = $state('');
 	let newShopActive = $state(true);
 	let newShopFeatured = $state(false);
+	let newShopSuperFeatured = $state(false);
 	let newShopBlackMarket = $state(false);
 	let dragIdx: number | null = $state(null);
 	let dragOverIdx: number | null = $state(null);
@@ -1557,6 +1559,7 @@
 					estimatedShip: newShopShip.trim() || null,
 					isActive: newShopActive,
 					isFeatured: newShopFeatured,
+					isSuperFeatured: newShopSuperFeatured,
 					isBlackMarket: newShopBlackMarket
 				})
 			});
@@ -1570,6 +1573,7 @@
 				newShopShip = '';
 				newShopActive = true;
 				newShopFeatured = false;
+				newShopSuperFeatured = false;
 				newShopBlackMarket = false;
 				await loadShop();
 			}
@@ -1595,6 +1599,7 @@
 					estimatedShip: editingShop.estimatedShip,
 					isActive: editingShop.isActive,
 					isFeatured: editingShop.isFeatured,
+					isSuperFeatured: editingShop.isSuperFeatured,
 					isBlackMarket: editingShop.isBlackMarket
 				})
 			});
@@ -2599,6 +2604,10 @@
 								<span>Featured (shown at the top)</span>
 							</label>
 							<label class="shop-checkbox">
+								<input type="checkbox" bind:checked={newShopSuperFeatured} />
+								<span>Super featured (the single spotlight item — replaces any current one)</span>
+							</label>
+							<label class="shop-checkbox">
 								<input type="checkbox" bind:checked={newShopBlackMarket} />
 								<span>Black market (golden-project authors only)</span>
 							</label>
@@ -2659,6 +2668,10 @@
 												<span>Featured</span>
 											</label>
 											<label class="shop-checkbox">
+												<input type="checkbox" bind:checked={editingShop.isSuperFeatured} />
+												<span>Super featured</span>
+											</label>
+											<label class="shop-checkbox">
 												<input type="checkbox" bind:checked={editingShop.isBlackMarket} />
 												<span>Black market</span>
 											</label>
@@ -2673,7 +2686,7 @@
 										<img src={item.imageUrl} alt={item.name} class="shop-item-thumb" />
 										<div class="shop-item-info">
 											<strong>{item.name}</strong>
-											<span class="shop-item-meta">{item.priceHours}h · {item.stock === null ? '∞' : item.stock} stock{item.estimatedShip ? ` · ${item.estimatedShip}` : ''}{item.isFeatured ? ' · FEATURED' : ''}{item.isBlackMarket ? ' · BLACK MARKET' : ''}{!item.isActive ? ' · HIDDEN' : ''}</span>
+											<span class="shop-item-meta">{item.priceHours}h · {item.stock === null ? '∞' : item.stock} stock{item.estimatedShip ? ` · ${item.estimatedShip}` : ''}{item.isSuperFeatured ? ' · SUPER FEATURED' : ''}{item.isFeatured ? ' · FEATURED' : ''}{item.isBlackMarket ? ' · BLACK MARKET' : ''}{!item.isActive ? ' · HIDDEN' : ''}</span>
 										</div>
 									</div>
 									<div class="shop-item-actions">

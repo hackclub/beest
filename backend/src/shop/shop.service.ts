@@ -217,8 +217,8 @@ export class ShopService {
   async listActive(userId: string) {
     const items = await this.shopRepo.find({
       where: { isActive: true },
-      order: { isFeatured: 'DESC', priceHours: 'ASC' },
-      select: ['id', 'name', 'description', 'detailedDescription', 'imageUrl', 'priceHours', 'stock', 'sortOrder', 'isFeatured', 'isBlackMarket', 'estimatedShip'],
+      order: { isSuperFeatured: 'DESC', isFeatured: 'DESC', priceHours: 'ASC' },
+      select: ['id', 'name', 'description', 'detailedDescription', 'imageUrl', 'priceHours', 'stock', 'sortOrder', 'isFeatured', 'isSuperFeatured', 'isBlackMarket', 'estimatedShip'],
     });
     // Black-market items are visible to everyone (they're the incentive), but
     // only unlocked for golden-project authors — purchase() enforces this
