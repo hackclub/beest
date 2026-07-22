@@ -12,6 +12,7 @@ import { Submission } from '../entities/submission.entity';
 import { User } from '../entities/user.entity';
 import { HackatimeModule } from '../hackatime/hackatime.module';
 import { HcaModule } from '../hca/hca.module';
+import { LapseModule } from '../lapse/lapse.module';
 import { ShopModule } from '../shop/shop.module';
 import { SidekickAuthGuard } from './sidekick-auth.guard';
 import { SidekickController } from './sidekick.controller';
@@ -34,6 +35,7 @@ import { SidekickService } from './sidekick.service';
     HcaModule,
     AuditLogModule,
     HackatimeModule,
+    LapseModule,
   ],
   controllers: [SidekickController],
   providers: [SidekickService, SidekickAuthGuard],

@@ -24,9 +24,7 @@ const buildService = () => {
   const fulfillmentRepo = repo();
   const adminService = {
     reviewProject: jest.fn().mockResolvedValue({ success: true }),
-    getJustificationFacts: jest
-      .fn()
-      .mockResolvedValue({ trackedHours: null, unifiedFirstSubmission: false }),
+    getJustificationFacts: jest.fn().mockResolvedValue({ trackedSeconds: null }),
   };
   const auditService = { decide: jest.fn().mockResolvedValue({ success: true }) };
   const shopService = {
@@ -38,6 +36,10 @@ const buildService = () => {
   const auditLogService = { log: jest.fn() };
   const hackatimeService = {
     getHoursForProjects: jest.fn().mockResolvedValue({ hours: 0, perProject: {} }),
+  };
+  const lapseService = {
+    findForProject: jest.fn().mockResolvedValue([]),
+    timelapsePageUrl: jest.fn((id: string) => `https://lapse.hackclub.com/timelapse/${id}`),
   };
 
   const service = new SidekickService(
@@ -55,6 +57,7 @@ const buildService = () => {
     hcaService as never,
     auditLogService as never,
     hackatimeService as never,
+    lapseService as never,
   );
 
   return {
@@ -69,6 +72,7 @@ const buildService = () => {
     shopService,
     auditLogService,
     hackatimeService,
+    lapseService,
   };
 };
 
@@ -82,6 +86,7 @@ const wireReviewFixtures = (
     openSubmissionId = 'sub-1',
     projectHours = 0,
     submissionHours = null as number | null,
+    prevShip = null as { createdAt: Date } | null,
   } = {},
 ) => {
   const ship = {
@@ -89,11 +94,15 @@ const wireReviewFixtures = (
     projectId: 'proj-1',
     status: 'unreviewed',
     overrideHours: submissionHours,
+    createdAt: new Date('2026-07-08T12:00:00.000Z'),
   };
   s.userRepo.findOne.mockResolvedValue(reviewer);
-  s.submissionRepo.findOne.mockImplementation(async ({ where }: any) =>
-    where.id ? ship : { ...ship, id: openSubmissionId },
-  );
+  s.submissionRepo.findOne.mockImplementation(async ({ where }: any) => {
+    if (where.id) return ship;
+    // composeJustification's previous-approved-ship lookup
+    if (where.status === 'approved') return prevShip;
+    return { ...ship, id: openSubmissionId };
+  });
   s.projectRepo.findOne.mockResolvedValue({
     id: 'proj-1',
     status: projectStatus,
@@ -237,23 +246,20 @@ describe('SidekickService.submitReviewAction', () => {
     expect(result.event).toMatchObject({ hoursAssigned: 5, rewardedHoursOverride: 8 });
   });
 
-  it('wraps Sidekick justifications in the auto-generated header and sign-off', async () => {
+  it('wraps Sidekick justifications in the accounting header and footer', async () => {
     const s = buildService();
     wireReviewFixtures(s);
     s.userRepo.findOne.mockResolvedValue({ ...reviewer, name: 'Orpheus' });
     s.projectRepo.findOne.mockResolvedValue({
       id: 'proj-1',
       status: 'unreviewed',
-      overrideHours: 50,
       codeUrl: 'https://github.com/x/y',
-      hackatimeProjectName: ['cx'],
+      hackatimeProjectName: ['cx', 'cx-v2'],
       isUpdate: false,
-      user: { slackId: 'U1', hcaSub: 'ident!author' },
+      user: { slackId: 'U1', hcaSub: 'ident!author', name: 'Ada' },
     });
-    s.adminService.getJustificationFacts.mockResolvedValue({
-      trackedHours: 75.7,
-      unifiedFirstSubmission: true,
-    });
+    // 19h 31min tracked
+    s.adminService.getJustificationFacts.mockResolvedValue({ trackedSeconds: 70_260 });
     await s.service.submitReviewAction({
       shipId: 'sub-1',
       reviewerId: 'U999',
@@ -263,15 +269,94 @@ describe('SidekickService.submitReviewAction', () => {
       justification: 'checked commits',
       isHq: false,
     });
+    const today = new Date().toISOString().split('T')[0];
     const justification = s.adminService.reviewProject.mock.calls[0][7] as string;
-    expect(justification).toContain('the user tracked 75.7 hours on the project through hackatime');
-    expect(justification).toContain('Hackatime projects: cx');
     expect(justification).toContain(
-      "Previously approved: 50h — this ship's delta: 25.7h (project total after: 75.7h)",
+      'This user tracked 19h 31min on Hackatime. This was adjusted to 25h 42min after review.',
     );
-    expect(justification).toContain('first submission of this code URL to unified');
     expect(justification).toContain('checked commits');
-    expect(justification).toContain('signed off by Orpheus via Sidekick');
+    expect(justification).toContain('Project was submitted by @/Ada on 2026-07-08');
+    expect(justification).toContain(
+      'The Hackatime projects submitted were: cx, cx-v2 and included time from 2026-04-02 to 2026-07-08',
+    );
+    expect(justification).toContain(`Project was reviewed by @/Orpheus on ${today}.`);
+    // First ship of the project → no re-ship framing.
+    expect(justification).not.toContain('reshipped');
+    expect(justification).not.toContain('update to an existing project');
+    // Hackatime window counts from event start on a first ship.
+    expect(s.adminService.getJustificationFacts).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'proj-1' }),
+      new Date('2026-04-02T00:00:00.000Z'),
+    );
+  });
+
+  it('frames re-ships around the previous approved ship', async () => {
+    const s = buildService();
+    const prevShip = { createdAt: new Date('2026-07-01T09:00:00.000Z') };
+    wireReviewFixtures(s, { prevShip });
+    s.projectRepo.findOne.mockResolvedValue({
+      id: 'proj-1',
+      status: 'unreviewed',
+      hackatimeProjectName: ['website-v9'],
+      isUpdate: false,
+      user: { slackId: 'U1', hcaSub: 'ident!author', nickname: 'crn' },
+    });
+    s.adminService.getJustificationFacts.mockResolvedValue({ trackedSeconds: 3_480 }); // 0h 58min
+    await s.service.submitReviewAction({
+      shipId: 'sub-1',
+      reviewerId: 'U999',
+      action: 'approve',
+      hoursAssigned: 0.5,
+      feedbackMessage: 'nice',
+      justification: 'checked commits',
+      isHq: false,
+    });
+    const justification = s.adminService.reviewProject.mock.calls[0][7] as string;
+    expect(justification).toContain(
+      'This user tracked 0h 58min on Hackatime. This was adjusted to 0h 30min after review. ' +
+        'This is an update to an existing project previously submitted to Beest.',
+    );
+    expect(justification).toContain(
+      'Project was reshipped by @/crn on 2026-07-08. Previously shipped on 2026-07-01',
+    );
+    expect(justification).toContain('included time from 2026-07-01 to 2026-07-08');
+    // The Hackatime window is the delta since the previous approved ship.
+    expect(s.adminService.getJustificationFacts).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'proj-1' }),
+      prevShip.createdAt,
+    );
+  });
+
+  it('appends Lapse timelapses to the justification', async () => {
+    const s = buildService();
+    wireReviewFixtures(s);
+    s.projectRepo.findOne.mockResolvedValue({
+      id: 'proj-1',
+      status: 'unreviewed',
+      hackatimeProjectName: ['cx'],
+      isUpdate: false,
+      user: { slackId: 'U1', hcaSub: 'ident!author', email: 'a@b.c' },
+    });
+    s.lapseService.findForProject.mockResolvedValue([
+      { id: '3H5weGrQKWys', duration: 19 * 60, createdAt: Date.parse('2026-04-24T15:00:00Z') },
+      { id: 'KT_9UDJeuaiL', duration: 6 * 60, createdAt: Date.parse('2026-04-14T10:00:00Z') },
+    ]);
+    await s.service.submitReviewAction({
+      shipId: 'sub-1',
+      reviewerId: 'U999',
+      action: 'approve',
+      hoursAssigned: 5,
+      feedbackMessage: 'nice',
+      justification: 'checked commits',
+      isHq: false,
+    });
+    const justification = s.adminService.reviewProject.mock.calls[0][7] as string;
+    expect(justification).toContain(
+      'This project has 2 timelapses tracked with Lapse:\n' +
+        '- https://lapse.hackclub.com/timelapse/3H5weGrQKWys (0h 19m created on April 24th, 2026)\n' +
+        '- https://lapse.hackclub.com/timelapse/KT_9UDJeuaiL (0h 6m created on April 14th, 2026)',
+    );
+    expect(s.lapseService.findForProject).toHaveBeenCalledWith('a@b.c', ['cx']);
   });
 
   it('composes a minimal justification when the lookups come back empty', async () => {
@@ -286,10 +371,16 @@ describe('SidekickService.submitReviewAction', () => {
       justification: 'checked commits',
       isHq: false,
     });
+    const today = new Date().toISOString().split('T')[0];
     const justification = s.adminService.reviewProject.mock.calls[0][7] as string;
-    // No Hackatime data, no prior approvals, no unified check → just the
-    // reviewer's text and the sign-off.
-    expect(justification).toBe('checked commits\n\nsigned off by unknown via Sidekick');
+    // No Hackatime data, no linked projects, no timelapses → assigned-hours
+    // header, the reviewer's text, and the ship/reviewed footer only.
+    expect(justification).toBe(
+      'This ship was assigned 5h 0min after review.\n\n' +
+        'checked commits\n\n' +
+        'Project was submitted by @/unknown on 2026-07-08\n\n' +
+        `Project was reviewed by @/unknown on ${today}.`,
+    );
   });
 
   it('rejects a non-positive rewardedHoursOverride', async () => {
@@ -328,14 +419,15 @@ describe('SidekickService.submitReviewAction', () => {
       'rev-uuid',
       expect.objectContaining({ action: 'approve', isSuperAdmin: true }),
     );
-    // The decide justification must clear AuditService's 50-char floor. Only
-    // the authorization note is sent — the audit stage appends it to the
-    // composed first-pass justification already stored on the review row.
+    // Single-pass approval → no authorization note. The decide justification
+    // is the composed first-pass text verbatim (its reviewed-by line already
+    // credits this reviewer), sent without combineWithFirstPass so the audit
+    // stage doesn't duplicate it.
+    const composed = s.adminService.reviewProject.mock.calls[0][7] as string;
     const dto = s.auditService.decide.mock.calls[0][2];
+    expect(dto.justification).toBe(composed);
+    expect(dto.combineWithFirstPass).toBeUndefined();
     expect(dto.justification.length).toBeGreaterThanOrEqual(50);
-    expect(dto.justification).toBe(
-      'HQ direct approval via Sidekick — first pass and authorization by the same HQ reviewer.',
-    );
   });
 
   it('hard_reject maps to the terminal rejected status', async () => {
@@ -390,6 +482,32 @@ describe('SidekickService.submitReviewAction', () => {
       'rev-uuid',
       expect.objectContaining({ action: 'approve', overrideHours: 11, internalHours: 11 }),
     );
+    // The authorizer attribution is always appended, so a community-reviewed
+    // ship's final record (combineWithFirstPass) names both passes.
+    const today = new Date().toISOString().split('T')[0];
+    const dto = s.auditService.decide.mock.calls[0][2];
+    expect(dto.combineWithFirstPass).toBe(true);
+    expect(dto.justification).toBe(
+      'Spot-checked the commit history against Hackatime logs.\n\n' +
+        `Project was authorized by @/unknown on ${today} after a second-pass review.`,
+    );
+  });
+
+  it('authorize without free text still attributes the authorizer', async () => {
+    const s = buildService();
+    wireReviewFixtures(s, { projectStatus: 'fraud_pending' });
+    s.userRepo.findOne.mockResolvedValue({ ...reviewer, nickname: 'iamalive' });
+    await s.service.submitReviewAction({
+      shipId: 'sub-1',
+      reviewerId: 'U999',
+      action: 'authorize',
+    });
+    const today = new Date().toISOString().split('T')[0];
+    const dto = s.auditService.decide.mock.calls[0][2];
+    expect(dto.justification).toBe(
+      `Project was authorized by @/iamalive on ${today} after a second-pass review.`,
+    );
+    expect(dto.justification.length).toBeGreaterThanOrEqual(50);
   });
 
   it('authorize carries the rewarded override into the pipes total only', async () => {

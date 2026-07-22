@@ -1555,42 +1555,33 @@ export class AdminService {
   }
 
   /**
-   * Facts for the auto-generated justification header that Beest's admin UI
-   * pre-fills client-side (buildJustification in the admin frontend). The
-   * Sidekick integration uses this to compose the same header server-side.
-   * Best-effort: a failed lookup resolves to null / false rather than
-   * throwing — a Hackatime or Airtable hiccup must never block an approval.
+   * Hackatime seconds tracked on the project's linked Hackatime projects
+   * since `since` (event start when omitted; re-ships pass the previous
+   * approved ship's date so only the delta window is counted). Used by the
+   * Sidekick integration to compose approval justifications server-side.
+   * Best-effort: resolves to null rather than throwing — a Hackatime hiccup
+   * must never block an approval.
    */
-  async getJustificationFacts(project: Project): Promise<{
-    trackedHours: number | null;
-    unifiedFirstSubmission: boolean;
-  }> {
+  async getJustificationFacts(
+    project: Project,
+    since?: Date,
+  ): Promise<{ trackedSeconds: number | null }> {
     const names = [...new Set((project.hackatimeProjectName ?? []).filter((n) => !!n))];
     const user = project.user;
+    if (!user?.hackatimeUserId || names.length === 0) return { trackedSeconds: null };
 
-    const [trackedHours, unified] = await Promise.all([
-      (async () => {
-        if (!user?.hackatimeUserId || names.length === 0) return null;
-        try {
-          const seconds = await this.fetchHackatimeStatsTotalSeconds(
-            user.hackatimeUserId,
-            names,
-            user.hackatimeToken ?? '',
-            new Date(`${HACKATIME_EVENT_START}T00:00:00.000Z`),
-          );
-          return Math.round((seconds / 3600) * 10) / 10;
-        } catch (err) {
-          this.logger.warn(`Justification Hackatime lookup failed for project ${project.id}: ${err}`);
-          return null;
-        }
-      })(),
-      this.checkUnifiedDuplicate(project.codeUrl ?? ''),
-    ]);
-
-    return {
-      trackedHours,
-      unifiedFirstSubmission: !unified.duplicate && !unified.error,
-    };
+    try {
+      const seconds = await this.fetchHackatimeStatsTotalSeconds(
+        user.hackatimeUserId,
+        names,
+        user.hackatimeToken ?? '',
+        since ?? new Date(`${HACKATIME_EVENT_START}T00:00:00.000Z`),
+      );
+      return { trackedSeconds: seconds };
+    } catch (err) {
+      this.logger.warn(`Justification Hackatime lookup failed for project ${project.id}: ${err}`);
+      return { trackedSeconds: null };
+    }
   }
 
   async getProjectHackatime(projectId: string, isSuperAdmin: boolean) {

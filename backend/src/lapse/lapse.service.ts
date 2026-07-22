@@ -52,6 +52,14 @@ export class LapseService {
   }
 
   /**
+   * Public watch-page URL for a timelapse. Use this in durable text (audit
+   * justifications, DMs) — `playbackUrl` may be a rotating signed URL.
+   */
+  timelapsePageUrl(id: string): string {
+    return `${this.baseUrl}/timelapse/${encodeURIComponent(id)}`;
+  }
+
+  /**
    * Returns Lapse timelapses for a beest user (by email) whose
    * `hackatimeProject` matches any of the project's linked Hackatime names.
    * Returns `[]` for all failure modes (no key, network, 4xx, malformed) so

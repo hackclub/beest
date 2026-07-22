@@ -18,8 +18,10 @@ import { ProjectReview } from '../entities/project-review.entity';
 import { ShopItem } from '../entities/shop-item.entity';
 import { Submission } from '../entities/submission.entity';
 import { User } from '../entities/user.entity';
+import { HACKATIME_EVENT_START } from '../hackatime/hackatime.constants';
 import { HackatimeService } from '../hackatime/hackatime.service';
 import { HcaService } from '../hca/hca.service';
+import { LapseService, TimelapseDTO } from '../lapse/lapse.service';
 import { ShopService } from '../shop/shop.service';
 import {
   actorIdFor,
@@ -82,6 +84,7 @@ export class SidekickService {
     private readonly hcaService: HcaService,
     private readonly auditLogService: AuditLogService,
     private readonly hackatimeService: HackatimeService,
+    private readonly lapseService: LapseService,
   ) {}
 
   // ── Health / stats ──────────────────────────────────────────────────────
@@ -487,6 +490,7 @@ export class SidekickService {
 
         const justification = await this.composeJustification(
           project,
+          submission,
           reviewer,
           input.hoursAssigned,
           input.justification,
@@ -514,15 +518,15 @@ export class SidekickService {
         // the approval we just recorded (grants pipes, flips to 'approved',
         // syncs Airtable/Loops). Community approvals stay parked in
         // fraud_pending → reported to Sidekick as pending_hq.
-        // Only the authorization note is sent here — the audit stage combines
-        // it with the composed first-pass justification stored on the review
-        // row, so passing the composed text again would duplicate it.
+        // No authorization note here: the composed justification already ends
+        // with the reviewed-by line crediting this same reviewer, and that is
+        // all the integrity team wants on a single-pass approval. Send the
+        // composed text as-is (no combineWithFirstPass — it IS the first-pass
+        // text, combining would duplicate it).
         if (input.isHq === true) {
           await this.auditService.decide(project.id, reviewer.id, {
             action: 'approve',
-            justification:
-              'HQ direct approval via Sidekick — first pass and authorization by the same HQ reviewer.',
-            combineWithFirstPass: true,
+            justification,
             isSuperAdmin: true,
           });
         }
@@ -619,14 +623,24 @@ export class SidekickService {
           internalHours = Math.round((priorInternal + input.hoursAssigned) * 10) / 10;
         }
 
+        // Always attach the authorizer attribution: combineWithFirstPass
+        // appends this note to the community reviewer's composed first-pass
+        // justification (which already carries their own reviewed-by line),
+        // so the final record names both passes. The fixed line also clears
+        // AuditService's justification floor when the authorizer wrote
+        // little or nothing.
+        const authorizationNote = [
+          input.justification?.trim() || null,
+          `Project was authorized by @/${displayHandle(reviewer)} on ${ymd(new Date())} after a second-pass review.`,
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+
         await this.auditService.decide(project.id, reviewer.id, {
           action: 'approve',
           overrideHours,
           internalHours,
-          justification: padJustification(
-            input.justification,
-            `Authorized by ${reviewer.name ?? 'unknown'} via Sidekick — second-pass review conducted in the Sidekick console.`,
-          ),
+          justification: authorizationNote,
           combineWithFirstPass: true,
           isSuperAdmin: true,
         });
@@ -643,7 +657,7 @@ export class SidekickService {
               ? { rewardedHoursOverride: input.rewardedHoursOverride }
               : {}),
             feedbackMessage: '',
-            justification: input.justification ?? 'Authorized via Sidekick.',
+            justification: authorizationNote,
             timestamp: now,
           },
         };
@@ -1014,55 +1028,78 @@ export class SidekickService {
   // ── Internals ───────────────────────────────────────────────────────────
 
   /**
-   * Beest's admin UI pre-fills the justification textarea with an accounting
-   * header (Hackatime tracked hours, linked projects, prior-approval delta
-   * bookkeeping, unified-first-submission note) and a sign-off line; whatever
-   * the reviewer submits is stored verbatim. Reviews arriving through Sidekick
-   * skip that UI, so compose the same header around the reviewer's text here —
-   * the audit record (→ Airtable) stays uniform regardless of review surface.
+   * Reviews arriving through Sidekick only carry the reviewer's free text, so
+   * wrap it in the standard accounting header/footer the audit record (→
+   * Airtable) expects: tracked-vs-adjusted hours, ship/re-ship dates, the
+   * Hackatime window, the reviewed-by line, and any Lapse timelapses.
    * `project.user` must be loaded. Lookups are best-effort: on failure the
    * corresponding line is simply omitted.
    */
   private async composeJustification(
     project: Project,
+    submission: Submission,
     reviewer: User,
     hoursAssigned: number,
     justification: string,
   ): Promise<string> {
-    const facts = await this.adminService.getJustificationFacts(project);
+    // A prior approved ship makes this a re-ship: tracked hours (and the
+    // Hackatime window reported below) count from that approval, not from
+    // event start — matching the delta semantics of hoursAssigned.
+    const prevShip = await this.submissionRepo.findOne({
+      where: { projectId: project.id, status: 'approved' },
+      order: { createdAt: 'DESC' },
+    });
+    const windowStart = prevShip
+      ? prevShip.createdAt
+      : new Date(`${HACKATIME_EVENT_START}T00:00:00.000Z`);
+    const shippedAt = submission.createdAt ?? new Date();
 
-    const updateNote = project.isUpdate ? ' (this is an update to an existing project)' : '';
-    const lines: string[] = [];
-    if (facts.trackedHours !== null) {
-      lines.push(
-        `the user tracked ${facts.trackedHours} hours on the project through hackatime${updateNote}`,
-      );
-    } else if (project.isUpdate) {
-      lines.push('this is an update to an existing project');
-    }
+    const [facts, timelapses] = await Promise.all([
+      this.adminService.getJustificationFacts(project, windowStart),
+      this.lapseService.findForProject(
+        project.user?.email ?? '',
+        project.hackatimeProjectName ?? [],
+      ),
+    ]);
 
-    const htNames = (project.hackatimeProjectName ?? []).filter((n) => !!n).join(', ');
-    if (htNames) lines.push(`Hackatime projects: ${htNames}`);
+    const adjusted = fmtHoursMinutes(hoursAssigned * 3600);
+    const header = [
+      facts.trackedSeconds !== null
+        ? `This user tracked ${fmtHoursMinutes(facts.trackedSeconds)} on Hackatime. This was adjusted to ${adjusted} after review.`
+        : `This ship was assigned ${adjusted} after review.`,
+      prevShip
+        ? 'This is an update to an existing project previously submitted to Beest.'
+        : project.isUpdate
+          ? 'This is an update to an existing project.'
+          : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
 
-    const prevHours = project.internalHours ?? project.overrideHours ?? 0;
-    if (prevHours > 0) {
-      const totalAfter = Math.round((prevHours + hoursAssigned) * 10) / 10;
-      lines.push(
-        `Previously approved: ${prevHours}h — this ship's delta: ${hoursAssigned}h (project total after: ${totalAfter}h)`,
-      );
-    }
+    const author = displayHandle(project.user);
+    const shipLine = prevShip
+      ? `Project was reshipped by @/${author} on ${ymd(shippedAt)}. Previously shipped on ${ymd(prevShip.createdAt)}`
+      : `Project was submitted by @/${author} on ${ymd(shippedAt)}`;
 
-    if (facts.unifiedFirstSubmission && project.codeUrl) {
-      const today = new Date().toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-      lines.push(`As of ${today} this is the first submission of this code URL to unified.`);
-    }
+    const htNames = (project.hackatimeProjectName ?? []).filter((n) => !!n);
+    const htLine = htNames.length
+      ? `The Hackatime projects submitted were: ${htNames.join(', ')} and included time from ${ymd(windowStart)} to ${ymd(shippedAt)}`
+      : null;
 
-    const signOff = `signed off by ${reviewer.name ?? 'unknown'} via Sidekick`;
-    return [lines.join('\n'), justification.trim(), signOff].filter(Boolean).join('\n\n');
+    const reviewedLine = `Project was reviewed by @/${displayHandle(reviewer)} on ${ymd(new Date())}.`;
+
+    const lapseBlock = timelapses.length
+      ? [
+          `This project has ${timelapses.length} timelapse${timelapses.length === 1 ? '' : 's'} tracked with Lapse:`,
+          ...timelapses.map(
+            (t) => `- ${this.lapseService.timelapsePageUrl(t.id)}${lapseMeta(t)}`,
+          ),
+        ].join('\n')
+      : null;
+
+    return [header, justification.trim(), shipLine, htLine, reviewedLine, lapseBlock]
+      .filter(Boolean)
+      .join('\n\n');
   }
 
   /** Incoming actor IDs are a Slack ID or an HCA identity ID. */
@@ -1197,6 +1234,44 @@ function requireString(value: unknown, field: string): void {
   }
 }
 
+/** Same display-name preference the order mappers use. */
+function displayHandle(user: Pick<User, 'nickname' | 'name'> | null | undefined): string {
+  return user?.nickname || user?.name || 'unknown';
+}
+
+/** Seconds → `19h 31min` (Hackatime style). */
+function fmtHoursMinutes(seconds: number): string {
+  const totalMinutes = Math.max(0, Math.round(seconds / 60));
+  return `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}min`;
+}
+
+/** UTC calendar date, `2026-07-08`. */
+function ymd(date: Date): string {
+  return date.toISOString().split('T')[0];
+}
+
+/** ` (0h 19m created on April 24th, 2026)` — empty when neither fact is known. */
+function lapseMeta(t: TimelapseDTO): string {
+  const parts: string[] = [];
+  if (t.duration !== null) {
+    const totalMinutes = Math.max(0, Math.round(t.duration / 60));
+    parts.push(`${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`);
+  }
+  if (t.createdAt !== null) parts.push(`created on ${ordinalLongDate(new Date(t.createdAt))}`);
+  return parts.length ? ` (${parts.join(' ')})` : '';
+}
+
+/** UTC long-form date with ordinal day, `April 24th, 2026`. */
+function ordinalLongDate(date: Date): string {
+  const day = date.getUTCDate();
+  const suffix =
+    day % 100 >= 11 && day % 100 <= 13
+      ? 'th'
+      : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[day % 10] ?? 'th';
+  const month = date.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
+  return `${month} ${day}${suffix}, ${date.getUTCFullYear()}`;
+}
+
 /** Same character stripping the rest of the codebase applies to free text. */
 function sanitizeText(raw: string): string {
   return String(raw)
@@ -1205,13 +1280,3 @@ function sanitizeText(raw: string): string {
     .trim();
 }
 
-/**
- * AuditService.decide enforces a minimum justification length; Sidekick's
- * justification is free text (with a canned default when the authorizer wrote
- * none), so extend short ones instead of failing the authorization.
- */
-function padJustification(justification: string | undefined, suffix: string): string {
-  const base = (justification ?? '').trim();
-  if (base.length >= 50) return base;
-  return base ? `${base} — ${suffix}` : suffix;
-}
