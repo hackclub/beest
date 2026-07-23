@@ -194,6 +194,12 @@ export function diffSnapshots(
   return changes;
 }
 
+/** Before 2026-07-09 the second-pass return flow overwrote the author's
+ * reviewerNote with the returning admin's feedback under this prefix (it is
+ * recorded as an internal comment now). A handful of production rows still
+ * carry it — surface those as reviewer feedback, not as an author note. */
+const LEGACY_RETURN_PREFIX = '[Returned by second-pass review]';
+
 /** The submitter-provided texts shown on a ship's timeline event. */
 export function shipDisplayFields(submission: Submission): ShipDisplayField[] {
   const fields: ShipDisplayField[] = [];
@@ -201,9 +207,12 @@ export function shipDisplayFields(submission: Submission): ShipDisplayField[] {
     fields.push({ label: 'What changed', value: submission.changeDescription });
   }
   if (submission.reviewerNote) {
+    const legacyReturn = submission.reviewerNote.startsWith(LEGACY_RETURN_PREFIX);
     fields.push({
-      label: 'Note to reviewer',
-      value: submission.reviewerNote,
+      label: legacyReturn ? 'Second-pass return feedback' : 'Note to reviewer',
+      value: legacyReturn
+        ? submission.reviewerNote.slice(LEGACY_RETURN_PREFIX.length).trim()
+        : submission.reviewerNote,
       isInternal: true,
     });
   }

@@ -112,6 +112,18 @@ describe('shipDisplayFields', () => {
   it('is empty when the submitter wrote nothing', () => {
     expect(shipDisplayFields(submission())).toEqual([]);
   });
+  it('relabels notes stomped by the legacy second-pass return flow', () => {
+    const fields = shipDisplayFields(
+      submission({ reviewerNote: '[Returned by second-pass review] Justification is too thin' }),
+    );
+    expect(fields).toEqual([
+      {
+        label: 'Second-pass return feedback',
+        value: 'Justification is too thin',
+        isInternal: true,
+      },
+    ]);
+  });
 });
 
 describe('toSidekickProject', () => {
