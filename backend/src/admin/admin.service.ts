@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Logger,
   NotFoundException,
+  OnApplicationBootstrap,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -53,7 +54,7 @@ const VALID_PERMS = [
 const ELEVATED_PERMS = ['Fulfiller', 'Super Admin'];
 
 @Injectable()
-export class AdminService {
+export class AdminService implements OnApplicationBootstrap {
   private readonly logger = new Logger(AdminService.name);
   private static readonly AI_BREAKDOWN_CATEGORIES = new Set([
     'ai coding',
@@ -461,26 +462,8 @@ export class AdminService {
     await this.sessionRepo.delete({ userId });
 
     // 3. Pull the user's in-flight work out of the review/audit queues so
-    //    reviewers don't waste time on a banned account. 'unreviewed' projects
-    //    sit in the first-review queue and 'fraud_pending' ones in the audit
-    //    queue; both move to 'changes_needed' — the same terminal state a
-    //    ban-via-project review leaves a project in. Open submissions are
-    //    flipped too so nothing keeps the project queued.
-    const queuedProjects = await this.projectRepo.find({
-      where: { userId, status: In(['unreviewed', 'fraud_pending']) },
-      select: ['id'],
-    });
-    if (queuedProjects.length > 0) {
-      const projectIds = queuedProjects.map((p) => p.id);
-      await this.projectRepo.update(
-        { id: In(projectIds) },
-        { status: 'changes_needed' },
-      );
-      await this.submissionRepo.update(
-        { projectId: In(projectIds), status: 'unreviewed' },
-        { status: 'changes_needed' },
-      );
-    }
+    //    reviewers don't waste time on a banned account.
+    const queuedCount = await this.rejectQueuedProjects(userId, adminId);
 
     // 4. Refund the user's pending shop orders so they drop out of the
     //    fulfilment queue. refundOrder restocks the item and cascade-deletes
@@ -499,8 +482,8 @@ export class AdminService {
     // 5. Audit log on the banned user's record
     const identifier = user.name || user.slackId || user.hcaSub;
     const cleanup =
-      queuedProjects.length || pendingOrders.length
-        ? ` (cleared ${queuedProjects.length} queued project${queuedProjects.length === 1 ? '' : 's'}, ${pendingOrders.length} pending order${pendingOrders.length === 1 ? '' : 's'})`
+      queuedCount || pendingOrders.length
+        ? ` (cleared ${queuedCount} queued project${queuedCount === 1 ? '' : 's'}, ${pendingOrders.length} pending order${pendingOrders.length === 1 ? '' : 's'})`
         : '';
     await this.auditLogService.log(userId, 'admin_ban', `Banned user ${identifier}${cleanup}`);
 
@@ -508,6 +491,118 @@ export class AdminService {
     if (adminId) {
       await this.auditLogService.log(adminId, 'admin_ban', `Banned user ${identifier}${cleanup}`);
     }
+  }
+
+  /**
+   * Silently hard-reject a banned user's in-flight work. 'unreviewed' projects
+   * sit in the first-review queue and 'fraud_pending' ones in the audit queue;
+   * both go straight to the terminal 'rejected' status — no resubmission, and
+   * deliberately no builder DM (unlike a reviewer rejection).
+   *
+   * A 'fraud_pending' project carries a not-yet-finalised first-pass approval:
+   * reviewProject already bumped the project's hours by the submitted delta,
+   * but no pipes were granted. Discard that pending approval the same way the
+   * second-pass return path does — revert the delta, drop golden, and
+   * invalidate the review row — so the stale hours can't starve the Hackatime
+   * cap check ("Cannot approve Xh of new work...") if the ban is ever undone.
+   *
+   * Returns the number of projects rejected.
+   */
+  private async rejectQueuedProjects(
+    userId: string,
+    adminId?: string,
+  ): Promise<number> {
+    const queuedProjects = await this.projectRepo.find({
+      where: { userId, status: In(['unreviewed', 'fraud_pending']) },
+    });
+    for (const project of queuedProjects) {
+      if (project.status === 'fraud_pending') {
+        const submission = await this.submissionRepo.findOne({
+          where: { projectId: project.id, status: 'unreviewed' },
+          order: { createdAt: 'DESC' },
+        });
+        const subOverride = submission?.overrideHours ?? 0;
+        const subInternal = submission?.internalHours ?? 0;
+        if (subOverride > 0) {
+          project.overrideHours = Math.max(
+            0,
+            Math.round(((project.overrideHours ?? 0) - subOverride) * 10) / 10,
+          );
+        }
+        if (subInternal > 0) {
+          project.internalHours = Math.max(
+            0,
+            Math.round(((project.internalHours ?? 0) - subInternal) * 10) / 10,
+          );
+        }
+        project.isGolden = false;
+        if (submission) {
+          const firstPass = await this.reviewRepo.findOne({
+            where: { submissionId: submission.id, status: 'approved' },
+            order: { createdAt: 'DESC' },
+          });
+          if (firstPass) {
+            firstPass.status = 'returned';
+            firstPass.returnedById = adminId ?? null;
+            await this.reviewRepo.save(firstPass);
+          }
+        }
+      }
+      project.status = 'rejected';
+      await this.projectRepo.save(project);
+    }
+    if (queuedProjects.length > 0) {
+      await this.submissionRepo.update(
+        {
+          projectId: In(queuedProjects.map((p) => p.id)),
+          status: 'unreviewed',
+        },
+        { status: 'rejected' },
+      );
+    }
+    return queuedProjects.length;
+  }
+
+  // Safety net for bans applied directly in Airtable (Perms → 'Banned')
+  // without going through banUser: those never trigger the queue sweep, so the
+  // banned user's projects would sit in the review queue indefinitely. Checks
+  // every queued project owner's Airtable perms and silently hard-rejects the
+  // queued work of anyone banned. The boot run doubles as the backfill for
+  // users banned before this sweep existed.
+  @Cron('30 * * * *', { name: 'reject-banned-user-queued-projects' })
+  async sweepBannedUsersQueuedProjects(): Promise<void> {
+    if (process.env.NODE_ENV !== 'production') return;
+    const queued = await this.projectRepo.find({
+      where: { status: In(['unreviewed', 'fraud_pending']) },
+      relations: ['user'],
+    });
+    const owners = new Map<string, User>();
+    for (const project of queued) {
+      if (project.user) owners.set(project.user.id, project.user);
+    }
+    for (const owner of owners.values()) {
+      let perms: string | null;
+      try {
+        perms = await this.rsvpService.getPerms(owner.email);
+      } catch {
+        // Airtable hiccup — never reject on a failed lookup; the next sweep
+        // will retry.
+        continue;
+      }
+      if (perms !== 'Banned') continue;
+      const count = await this.rejectQueuedProjects(owner.id);
+      this.logger.warn(
+        `Rejected ${count} queued project(s) of banned user ${owner.id} (${owner.name || owner.slackId || owner.hcaSub})`,
+      );
+    }
+  }
+
+  onApplicationBootstrap(): void {
+    if (process.env.NODE_ENV !== 'production') return;
+    // Fire-and-forget so a slow Airtable never delays boot.
+    void this.sweepBannedUsersQueuedProjects().catch((err) =>
+      this.logger.warn(`Banned-user queue sweep failed at boot: ${err}`),
+    );
   }
 
   async banAndRejectProject(
@@ -534,12 +629,26 @@ export class AdminService {
       await this.userRepo.save(project.user);
     }
 
-    // 1. Reject the project
-    project.status = 'changes_needed';
-    project.isGolden = false;
-    await this.projectRepo.save(project);
+    // 1. Ban the user — pass the requester's tier so a non-Super-Admin (e.g. a
+    //    Fraud Reviewer) cannot ban a Fulfiller/Super Admin through the project
+    //    -review path, matching the direct /ban endpoint's elevated-target guard.
+    //    Runs before the rejection below on purpose: banUser's queue sweep must
+    //    still see this project in its queued status to discard a pending
+    //    (fraud_pending) approval's hours, and its elevated-target guard then
+    //    aborts the whole operation before anything is mutated.
+    await this.banUser(project.userId, undefined, requesterIsSuperAdmin);
 
-    // 2. Save review record
+    // 2. Reject the project — terminal 'rejected', matching the queue sweep
+    //    banUser just ran (a banned user's projects are dead, not fixable).
+    //    Targeted update, not a save of the entity loaded above — banUser may
+    //    have just reverted its pending-approval hours, and saving the stale
+    //    entity would resurrect them.
+    await this.projectRepo.update(projectId, {
+      status: 'rejected',
+      isGolden: false,
+    });
+
+    // 3. Save review record
     const review = this.reviewRepo.create({
       projectId,
       reviewerId,
@@ -550,11 +659,6 @@ export class AdminService {
       overrideJustification: overrideJustification || null,
     });
     await this.reviewRepo.save(review);
-
-    // 3. Ban the user — pass the requester's tier so a non-Super-Admin (e.g. a
-    //    Fraud Reviewer) cannot ban a Fulfiller/Super Admin through the project
-    //    -review path, matching the direct /ban endpoint's elevated-target guard.
-    await this.banUser(project.userId, undefined, requesterIsSuperAdmin);
 
     // 4. Audit logs
     await this.auditLogService.log(project.userId, 'project_reviewed', `Project "${project.name}" was rejected`);
