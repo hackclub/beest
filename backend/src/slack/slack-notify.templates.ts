@@ -97,7 +97,7 @@ export function reviewApprovedDm(input: ReviewDmInput): DmMessage {
       elements: [
         {
           type: 'mrkdwn',
-          text: 'Your project will be fraud-checked next, and your Pipes should arrive soon. :yay:',
+          text: 'Your Pipes have been added to your balance. :yay:',
         },
       ],
     },

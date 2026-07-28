@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Not, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { Session } from '../entities/session.entity';
 import { Project } from '../entities/project.entity';
@@ -29,7 +29,6 @@ import { SlackService } from '../slack/slack.service';
 import { Cron } from '@nestjs/schedule';
 import { SlackNotifyService } from '../slack/slack-notify.service';
 import {
-  reviewApprovedDm,
   reviewChangesNeededDm,
   reviewRejectedDm,
   goldenBackfillDm,
@@ -1041,11 +1040,11 @@ export class AdminService implements OnApplicationBootstrap {
     // generic user-facing message.
     project.status = status === 'approved' ? 'fraud_pending' : status;
     // Golden is decided per approval: the checkbox value on an approve review
-    // sets or clears it. Non-approve reviews leave it alone here (revocation
-    // of an approval clears it below, alongside the pipes clawback).
-    if (status === 'approved' && golden !== null) {
-      project.isGolden = golden;
-    }
+    // is recorded on the review row (step 4) and applied to the project only
+    // when the approval is finalised at second-pass audit — a first-pass
+    // verdict is not authoritative and must not unlock the golden perks
+    // (black market access, ★ badge) yet. Revocation of a finalised approval
+    // clears it below, alongside the pipes clawback.
     if (status === 'approved') {
       if (overrideHours !== null && overrideHours !== undefined) {
         const delta = Math.round(overrideHours * 10) / 10;
@@ -1166,6 +1165,7 @@ export class AdminService implements OnApplicationBootstrap {
       reviewerId,
       submissionId: submission?.id ?? null,
       status,
+      golden: status === 'approved' ? golden : null,
       feedback: feedback || null,
       internalNote: internalNote || null,
       hideReviewerName,
@@ -1174,9 +1174,12 @@ export class AdminService implements OnApplicationBootstrap {
     await this.reviewRepo.save(review);
 
     // 5. DM the builder about the decision (best-effort; never blocks review).
-    // The reviewer-facing outcomes notify here — 'approved', 'changes_needed'
-    // and 'rejected' (hard reject). The reviewer name is omitted when hidden.
-    if (status === 'approved' || status === 'changes_needed' || status === 'rejected') {
+    // Only the outcomes that are FINAL at first pass notify here —
+    // 'changes_needed' and 'rejected'. The approved path stays silent: a
+    // first-pass approval isn't authoritative until second-pass audit
+    // finalises it (it may yet be returned), so the approval DM is sent from
+    // AuditService.approve / FraudReviewService.completeApproval instead.
+    if (status === 'changes_needed' || status === 'rejected') {
       const reviewerName = hideReviewerName
         ? null
         : (
@@ -1185,30 +1188,16 @@ export class AdminService implements OnApplicationBootstrap {
               select: ['name'],
             })
           )?.name ?? null;
-      // Surfaced only on the approved path — reflects the golden mark applied
-      // above so the builder is told the moment their project becomes golden.
-      const isGolden = status === 'approved' && project.isGolden;
-      // Whether they had another golden project before this one, so the callout
-      // congratulates instead of re-explaining perks they already have.
-      const goldenAlreadyHad =
-        isGolden &&
-        (await this.projectRepo.count({
-          where: { userId: project.userId, isGolden: true, id: Not(projectId) },
-        })) > 0;
       const dmInput = {
         projectName: project.name,
         projectLink: project.codeUrl ?? project.demoUrl ?? null,
         reviewerName,
         feedback: feedback || null,
-        isGolden,
-        goldenAlreadyHad,
       };
       const message =
-        status === 'approved'
-          ? reviewApprovedDm(dmInput)
-          : status === 'rejected'
-            ? reviewRejectedDm(dmInput)
-            : reviewChangesNeededDm(dmInput);
+        status === 'rejected'
+          ? reviewRejectedDm(dmInput)
+          : reviewChangesNeededDm(dmInput);
       await this.slackNotify.dm(
         project.user?.slackId,
         message.text,
@@ -1216,14 +1205,18 @@ export class AdminService implements OnApplicationBootstrap {
       );
     }
 
-    // 6. Audit log to the project owner (not the reviewer)
-    const label =
-      status === 'approved'
-        ? `Project "${project.name}" was approved by reviewer`
-        : status === 'rejected'
+    // 6. Audit log to the project owner (not the reviewer). The audit log is
+    // user-visible (GET /api/audit-log), so the approved path logs nothing
+    // here — the first-pass approval isn't authoritative yet, and the
+    // finalisers (AuditService.approve / fraud poller) log the approval when
+    // it actually lands. The review row itself keeps the forensic trail.
+    if (status !== 'approved') {
+      const label =
+        status === 'rejected'
           ? `Project "${project.name}" was rejected`
           : `Project "${project.name}" received feedback`;
-    await this.auditLogService.log(project.userId, 'project_reviewed', label);
+      await this.auditLogService.log(project.userId, 'project_reviewed', label);
+    }
 
     // A decided project no longer needs to be claimed — free it.
     await this.projectRepo.update(projectId, {

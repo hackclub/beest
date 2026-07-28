@@ -539,6 +539,14 @@ export class FraudReviewService implements OnApplicationBootstrap, OnApplication
       row.justification,
     );
 
+    // Apply the first-pass reviewer's golden decision now that the approval
+    // is final — first pass records it on the review row without touching the
+    // project, since golden unlocks user-visible perks.
+    if (beestReview?.golden != null && project.isGolden !== beestReview.golden) {
+      project.isGolden = beestReview.golden;
+      await this.projectRepo.save(project);
+    }
+
     // 5. Loops sync + Airtable Projects push.
     if (project.user?.email) {
       this.rsvpService.updateDateField(

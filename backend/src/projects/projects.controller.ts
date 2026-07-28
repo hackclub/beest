@@ -248,20 +248,33 @@ export class ProjectsController {
     // Verify the project belongs to the authenticated user
     const project = await this.projectRepo.findOne({
       where: { id, userId },
-      select: ['id'],
+      select: ['id', 'status'],
     });
     if (!project) throw new UnauthorizedException('Project not found');
 
     const reviews = await this.reviewRepo.find({
       where: { projectId: id },
       order: { createdAt: 'DESC' },
-      relations: ['reviewer'],
+      relations: ['reviewer', 'submission'],
     });
 
     // Never expose internal notes to the user. 'returned' rows are first-pass
     // approvals invalidated at second-pass review — internal, never shown.
+    // An 'approved' row whose submission is still 'unreviewed' is a first-pass
+    // approval awaiting second-pass audit: not authoritative (the audit may
+    // yet return it), so it must not be shown either. The submissionless
+    // fallback covers legacy approve rows while the project sits in the
+    // audit queue.
     return reviews
       .filter((r) => r.status !== 'returned')
+      .filter(
+        (r) =>
+          !(
+            r.status === 'approved' &&
+            (r.submission?.status === 'unreviewed' ||
+              (!r.submissionId && project.status === 'fraud_pending'))
+          ),
+      )
       .map((r) => ({
       id: r.id,
       status: r.status,
