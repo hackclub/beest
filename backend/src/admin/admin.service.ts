@@ -2464,6 +2464,7 @@ export class AdminService implements OnApplicationBootstrap {
     detailedDescription?: string | null;
     imageUrl: string;
     priceHours: number;
+    regionalPrices?: Record<string, number> | null;
     stock?: number | null;
     estimatedShip?: string | null;
     isActive?: boolean;
@@ -2483,6 +2484,7 @@ export class AdminService implements OnApplicationBootstrap {
       detailedDescription: data.detailedDescription ?? null,
       imageUrl: data.imageUrl,
       priceHours: data.priceHours,
+      regionalPrices: data.regionalPrices ?? null,
       stock: data.stock ?? null,
       estimatedShip: data.estimatedShip ?? null,
       isActive: data.isActive ?? true,
@@ -2511,6 +2513,7 @@ export class AdminService implements OnApplicationBootstrap {
     detailedDescription?: string | null;
     imageUrl?: string;
     priceHours?: number;
+    regionalPrices?: Record<string, number> | null;
     stock?: number | null;
     estimatedShip?: string | null;
     isActive?: boolean;
@@ -2527,6 +2530,25 @@ export class AdminService implements OnApplicationBootstrap {
     if (data.priceHours !== undefined && data.priceHours !== item.priceHours) {
       changes.push(`price ${item.priceHours}→${data.priceHours}`);
     }
+    // Regional overrides are as economically sensitive as the base price —
+    // the same edit-down/buy/edit-back collusion applies per country.
+    const fmtRegional = (rp: Record<string, number> | null | undefined) =>
+      rp && Object.keys(rp).length
+        ? Object.entries(rp)
+            // Sorted so the same map always formats identically — jsonb does
+            // not preserve the key order the request body used.
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([c, p]) => `${c}:${p}`)
+            .join(' ')
+        : 'none';
+    if (
+      data.regionalPrices !== undefined &&
+      fmtRegional(data.regionalPrices) !== fmtRegional(item.regionalPrices)
+    ) {
+      changes.push(
+        `regional prices ${fmtRegional(item.regionalPrices)}→${fmtRegional(data.regionalPrices)}`,
+      );
+    }
     if (data.stock !== undefined && data.stock !== item.stock) {
       changes.push(`stock ${item.stock ?? '∞'}→${data.stock ?? '∞'}`);
     }
@@ -2538,6 +2560,7 @@ export class AdminService implements OnApplicationBootstrap {
     if (data.detailedDescription !== undefined) item.detailedDescription = data.detailedDescription;
     if (data.imageUrl !== undefined) item.imageUrl = data.imageUrl;
     if (data.priceHours !== undefined) item.priceHours = data.priceHours;
+    if (data.regionalPrices !== undefined) item.regionalPrices = data.regionalPrices;
     if (data.stock !== undefined) item.stock = data.stock;
     if (data.estimatedShip !== undefined) item.estimatedShip = data.estimatedShip;
     if (data.isActive !== undefined) item.isActive = data.isActive;

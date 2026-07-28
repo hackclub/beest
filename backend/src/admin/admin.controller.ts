@@ -25,6 +25,45 @@ import { ShopService } from '../shop/shop.service';
 import { DevlogsService } from '../devlogs/devlogs.service';
 import { LookoutService } from '../lookout/lookout.service';
 import { AttendService } from '../attend/attend.service';
+import { normalizeCountry } from '../country.util';
+
+/**
+ * Validates and normalizes the regionalPrices body field for shop item
+ * create/update. Returns undefined when absent (leave unchanged), null to
+ * clear all overrides, or a map with normalized-uppercase country keys and
+ * positive-integer prices. Throws BadRequestException on anything else.
+ */
+function parseRegionalPrices(
+  input: unknown,
+): Record<string, number> | null | undefined {
+  if (input === undefined) return undefined;
+  if (input === null) return null;
+  if (typeof input !== 'object' || Array.isArray(input)) {
+    throw new BadRequestException(
+      'regionalPrices must be an object mapping country to price, or null',
+    );
+  }
+  const entries = Object.entries(input as Record<string, unknown>);
+  if (entries.length > 300) {
+    throw new BadRequestException('regionalPrices has too many entries');
+  }
+  const out: Record<string, number> = {};
+  for (const [rawKey, value] of entries) {
+    const key = normalizeCountry(rawKey);
+    if (!key) {
+      throw new BadRequestException(
+        'regionalPrices keys must be non-empty country names',
+      );
+    }
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+      throw new BadRequestException(
+        'regionalPrices values must be positive integers',
+      );
+    }
+    out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
 
 @Controller('api/admin')
 export class AdminController {
@@ -578,6 +617,7 @@ export class AdminController {
     detailedDescription?: string | null;
     imageUrl?: string;
     priceHours?: number;
+    regionalPrices?: Record<string, number> | null;
     stock?: number | null;
     estimatedShip?: string | null;
     isActive?: boolean;
@@ -602,6 +642,7 @@ export class AdminController {
       detailedDescription: body.detailedDescription,
       imageUrl: body.imageUrl,
       priceHours: body.priceHours,
+      regionalPrices: parseRegionalPrices(body.regionalPrices),
       stock: body.stock,
       estimatedShip: body.estimatedShip,
       isActive: body.isActive,
@@ -636,6 +677,7 @@ export class AdminController {
       detailedDescription?: string | null;
       imageUrl?: string;
       priceHours?: number;
+      regionalPrices?: Record<string, number> | null;
       stock?: number | null;
       estimatedShip?: string | null;
       isActive?: boolean;
@@ -655,7 +697,11 @@ export class AdminController {
         throw new BadRequestException('stock must be a non-negative integer or null');
       }
     }
-    return this.adminService.updateShopItem(id, body, (req as any).user?.uid);
+    return this.adminService.updateShopItem(
+      id,
+      { ...body, regionalPrices: parseRegionalPrices(body.regionalPrices) },
+      (req as any).user?.uid,
+    );
   }
 
   @UseGuards(FulfillerGuard)

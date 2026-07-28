@@ -1560,6 +1560,7 @@
 		detailedDescription: string | null;
 		imageUrl: string;
 		priceHours: number;
+		regionalPrices: Record<string, number> | null;
 		stock: number | null;
 		sortOrder: number;
 		isActive: boolean;
@@ -1577,6 +1578,10 @@
 	let newShopDetailedDesc = $state('');
 	let newShopImage = $state('');
 	let newShopPrice = $state(0);
+	let newShopRegional = $state('');
+	// Text form of editingShop.regionalPrices, kept separately because the
+	// map is edited as a "US:120, IN:80" string and parsed on save.
+	let editingShopRegional = $state('');
 	let newShopStock = $state('');
 	let newShopShip = $state('');
 	let newShopActive = $state(true);
@@ -1587,6 +1592,26 @@
 	let dragOverIdx: number | null = $state(null);
 	// Shop item whose buyer list is open in the ItemBuyersModal, if any.
 	let buyersModalItem = $state<{ id: string; name: string } | null>(null);
+
+	function formatRegionalPrices(rp: Record<string, number> | null): string {
+		return Object.entries(rp ?? {}).map(([c, p]) => `${c}:${p}`).join(', ');
+	}
+
+	// Parses "US:120, IN:80" into a map; returns null for an empty string
+	// (no overrides) and undefined when the text is malformed.
+	function parseRegionalPricesInput(text: string): Record<string, number> | null | undefined {
+		const out: Record<string, number> = {};
+		for (const part of text.split(',')) {
+			const p = part.trim();
+			if (!p) continue;
+			const idx = p.lastIndexOf(':');
+			const country = idx > 0 ? p.slice(0, idx).trim().toUpperCase() : '';
+			const price = idx > 0 ? Number(p.slice(idx + 1).trim()) : NaN;
+			if (!country || !Number.isInteger(price) || price < 1) return undefined;
+			out[country] = price;
+		}
+		return Object.keys(out).length ? out : null;
+	}
 
 	async function loadShop() {
 		shopLoading = true;
@@ -1600,6 +1625,11 @@
 
 	async function createShopItem() {
 		if (!newShopName.trim() || !newShopDesc.trim() || !newShopImage.trim() || !newShopPrice) return;
+		const regionalPrices = parseRegionalPricesInput(newShopRegional);
+		if (regionalPrices === undefined) {
+			alert('Regional prices must look like "US:120, IN:80" (positive whole numbers).');
+			return;
+		}
 		shopSaving = true;
 		try {
 			const res = await fetch('/api/admin/shop', {
@@ -1611,6 +1641,7 @@
 					detailedDescription: newShopDetailedDesc.trim() || null,
 					imageUrl: newShopImage,
 					priceHours: newShopPrice,
+					regionalPrices,
 					stock: newShopStock.trim() === '' ? null : parseInt(newShopStock),
 					estimatedShip: newShopShip.trim() || null,
 					isActive: newShopActive,
@@ -1625,6 +1656,7 @@
 				newShopDetailedDesc = '';
 				newShopImage = '';
 				newShopPrice = 0;
+				newShopRegional = '';
 				newShopStock = '';
 				newShopShip = '';
 				newShopActive = true;
@@ -1640,6 +1672,11 @@
 
 	async function saveShopEdit() {
 		if (!editingShop) return;
+		const regionalPrices = parseRegionalPricesInput(editingShopRegional);
+		if (regionalPrices === undefined) {
+			alert('Regional prices must look like "US:120, IN:80" (positive whole numbers).');
+			return;
+		}
 		shopSaving = true;
 		try {
 			const res = await fetch(`/api/admin/shop/${editingShop.id}`, {
@@ -1651,6 +1688,7 @@
 					detailedDescription: editingShop.detailedDescription,
 					imageUrl: editingShop.imageUrl,
 					priceHours: editingShop.priceHours,
+					regionalPrices,
 					stock: editingShop.stock,
 					estimatedShip: editingShop.estimatedShip,
 					isActive: editingShop.isActive,
@@ -2711,6 +2749,10 @@
 								<span>Est. shipping</span>
 								<input type="text" placeholder="e.g. 2-3 weeks" bind:value={newShopShip} class="shop-input shop-input-sm" />
 							</label>
+							<label class="shop-field">
+								<span>Regional prices (country:hours, matches HCA address)</span>
+								<input type="text" placeholder="e.g. US:120, IN:80" bind:value={newShopRegional} class="shop-input" />
+							</label>
 						</div>
 						<div class="shop-form-row">
 							<label class="shop-checkbox">
@@ -2775,6 +2817,10 @@
 												<span>Est. ship</span>
 												<input type="text" bind:value={editingShop.estimatedShip} class="shop-input shop-input-sm" placeholder="e.g. 2-3 weeks" />
 											</label>
+											<label class="shop-field">
+												<span>Regional prices</span>
+												<input type="text" bind:value={editingShopRegional} class="shop-input" placeholder="e.g. US:120, IN:80" />
+											</label>
 										</div>
 										<div class="shop-form-row">
 											<label class="shop-checkbox">
@@ -2804,12 +2850,12 @@
 										<img src={item.imageUrl} alt={item.name} class="shop-item-thumb" />
 										<div class="shop-item-info">
 											<strong>{item.name}</strong>
-											<span class="shop-item-meta">{item.priceHours}h · {item.stock === null ? '∞' : item.stock} stock{item.estimatedShip ? ` · ${item.estimatedShip}` : ''}{item.isSuperFeatured ? ' · SUPER FEATURED' : ''}{item.isFeatured ? ' · FEATURED' : ''}{item.isBlackMarket ? ' · BLACK MARKET' : ''}{!item.isActive ? ' · HIDDEN' : ''}</span>
+											<span class="shop-item-meta">{item.priceHours}h{item.regionalPrices && Object.keys(item.regionalPrices).length ? ` (${formatRegionalPrices(item.regionalPrices)})` : ''} · {item.stock === null ? '∞' : item.stock} stock{item.estimatedShip ? ` · ${item.estimatedShip}` : ''}{item.isSuperFeatured ? ' · SUPER FEATURED' : ''}{item.isFeatured ? ' · FEATURED' : ''}{item.isBlackMarket ? ' · BLACK MARKET' : ''}{!item.isActive ? ' · HIDDEN' : ''}</span>
 										</div>
 									</div>
 									<div class="shop-item-actions">
 										<button class="btn btn-edit" onclick={() => buyersModalItem = { id: item.id, name: item.name }}>Buyers</button>
-										<button class="btn btn-edit" onclick={() => editingShop = { ...item }}>Edit</button>
+										<button class="btn btn-edit" onclick={() => { editingShop = { ...item }; editingShopRegional = formatRegionalPrices(item.regionalPrices); }}>Edit</button>
 										<button class="btn btn-delete" onclick={() => deleteShopItem(item.id)} disabled={shopSaving}>Delete</button>
 									</div>
 								{/if}

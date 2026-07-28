@@ -45,6 +45,13 @@ export class ShopItem {
   @Column({ name: 'is_black_market', type: 'boolean', default: false })
   isBlackMarket: boolean;
 
+  // Per-country price overrides keyed by normalized country (uppercase, the
+  // same form normalizeCountry() produces from Hack Club Auth addresses),
+  // e.g. { "US": 120, "IN": 80 }. Users whose users.country matches a key pay
+  // that price instead of priceHours; everyone else pays priceHours.
+  @Column({ name: 'regional_prices', type: 'jsonb', nullable: true, default: null })
+  regionalPrices: Record<string, number> | null;
+
   @Column({ name: 'detailed_description', type: 'text', nullable: true, default: null })
   detailedDescription: string | null;
 
