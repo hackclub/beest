@@ -1529,6 +1529,8 @@
 		approved: number;
 		changesNeeded: number;
 		banned: number;
+		rejected: number;
+		returned: number;
 		approvalPercent: number;
 	}
 	let leaderboardRows: LeaderboardRow[] = $state([]);
@@ -3620,6 +3622,8 @@
 								<th>Approved</th>
 								<th>Changes Needed</th>
 								<th>Banned</th>
+								<th>Rejected</th>
+								<th>Returned</th>
 								<th>Approval %</th>
 							</tr>
 						</thead>
@@ -3631,6 +3635,8 @@
 									<td>{row.approved}</td>
 									<td>{row.changesNeeded}</td>
 									<td>{row.banned}</td>
+									<td>{row.rejected}</td>
+									<td>{row.returned}</td>
 									<td>{row.approvalPercent}%</td>
 								</tr>
 							{/each}
