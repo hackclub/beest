@@ -141,12 +141,18 @@
 
   // Prevent scrolling past the bottom back into the scrollymation
   $effect(() => {
+    // Depend on scrollY so this reruns on scroll, but read window.scrollY for
+    // the actual value: the scrollY binding lags the native scroll event, so
+    // right when `locked` flips true it can still read stale (near-zero) and
+    // clamp us up to `top` before the real position is ever reflected.
+    void scrollY;
     if (locked && skyEl) {
       const top = skyEl.offsetTop + innerHeight;
       const bottom = skyEl.offsetTop + skyEl.offsetHeight - innerHeight;
-      if (scrollY < top) {
+      const current = window.scrollY;
+      if (current < top) {
         window.scrollTo(0, top);
-      } else if (scrollY > bottom) {
+      } else if (current > bottom) {
         window.scrollTo(0, bottom);
       }
     }
