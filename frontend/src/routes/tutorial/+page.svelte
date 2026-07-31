@@ -117,21 +117,21 @@
     // Start one section below landing, animate scroll up to landing
     const landingPos = skyEl!.offsetTop + skyEl!.offsetHeight - innerHeight * 2;
     const startPos = landingPos + innerHeight;
-    window.scrollTo(0, startPos);
+    window.scrollTo({ top: startPos, behavior: 'instant' });
     await tick();
     const duration = 2400;
     const startTime = performance.now();
     function animateScroll(now: number) {
       const t = Math.min((now - startTime) / duration, 1);
       const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      window.scrollTo(0, startPos + (landingPos - startPos) * ease);
+      window.scrollTo({ top: startPos + (landingPos - startPos) * ease, behavior: 'instant' });
       if (t < 1) {
         requestAnimationFrame(animateScroll);
       } else {
         locked = true;
         tick().then(() => {
           if (skyEl) {
-            window.scrollTo(0, skyEl.offsetTop + skyEl.offsetHeight - innerHeight * 2);
+            window.scrollTo({ top: skyEl.offsetTop + skyEl.offsetHeight - innerHeight * 2, behavior: 'instant' });
           }
         });
       }
@@ -141,19 +141,15 @@
 
   // Prevent scrolling past the bottom back into the scrollymation
   $effect(() => {
-    // Depend on scrollY so this reruns on scroll, but read window.scrollY for
-    // the actual value: the scrollY binding lags the native scroll event, so
-    // right when `locked` flips true it can still read stale (near-zero) and
-    // clamp us up to `top` before the real position is ever reflected.
     void scrollY;
     if (locked && skyEl) {
       const top = skyEl.offsetTop + innerHeight;
       const bottom = skyEl.offsetTop + skyEl.offsetHeight - innerHeight;
       const current = window.scrollY;
       if (current < top) {
-        window.scrollTo(0, top);
+        window.scrollTo({ top, behavior: 'instant' });
       } else if (current > bottom) {
-        window.scrollTo(0, bottom);
+        window.scrollTo({ top: bottom, behavior: 'instant' });
       }
     }
   });
@@ -254,12 +250,12 @@
       locked = true;
       tick().then(() => {
         if (skyEl) {
-          window.scrollTo(0, skyEl.offsetTop + sectionMultipliers[data.stage!] * innerHeight);
+          window.scrollTo({ top: skyEl.offsetTop + sectionMultipliers[data.stage!] * innerHeight, behavior: 'instant' });
         }
       });
     } else {
       // Auto-play the intro animation
-      window.scrollTo(0, 0);
+      window.scrollTo({ top: 0, behavior: 'instant' });
       setTimeout(startIntroAnimation, 500);
     }
 
