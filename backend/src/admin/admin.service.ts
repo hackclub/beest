@@ -1399,6 +1399,8 @@ export class AdminService implements OnApplicationBootstrap {
       .addSelect("COUNT(*) FILTER (WHERE r.status = 'approved')::int", 'approved')
       .addSelect("COUNT(*) FILTER (WHERE r.status = 'changes_needed')::int", 'changesNeeded')
       .addSelect("COUNT(*) FILTER (WHERE r.status = 'ban')::int", 'banned')
+      .addSelect("COUNT(*) FILTER (WHERE r.status = 'rejected')::int", 'rejected')
+      .addSelect("COUNT(*) FILTER (WHERE r.status = 'returned')::int", 'returned')
       .groupBy('r.reviewer_id')
       .addGroupBy('u.name')
       .addGroupBy('u.slack_id')
@@ -1420,6 +1422,8 @@ export class AdminService implements OnApplicationBootstrap {
         approved,
         changesNeeded: Number(r.changesNeeded),
         banned: Number(r.banned),
+        rejected: Number(r.rejected),
+        returned: Number(r.returned),
         approvalPercent: total > 0 ? Math.round((approved / total) * 100) : 0,
       };
     });
