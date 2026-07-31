@@ -63,6 +63,19 @@ export class ShopItem {
   @Column({ name: 'fulfiller_context', type: 'text', nullable: true, default: null })
   fulfillerContext: string | null;
 
+  // When true, this item is fulfilled by issuing an HCB card grant — the grant
+  // options (single "Card grant" button + bulk "Grant cards" panel) only appear
+  // for orders of grant items. The grant amount is pipes spent × the per-pipe
+  // rate ($5/pipe by default, override via HCB_CENTS_PER_PIPE).
+  @Column({ name: 'is_grant', type: 'boolean', default: false })
+  isGrant: boolean;
+
+  // Per-item instructions sent to HCB on the card grant (shown to the recipient,
+  // incl. during pre-authorization). Blank → a default is used. Set in the shop
+  // panel; shared across all grants of this item.
+  @Column({ name: 'grant_instructions', type: 'text', nullable: true, default: null })
+  grantInstructions: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

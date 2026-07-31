@@ -624,6 +624,8 @@ export class AdminController {
     isFeatured?: boolean;
     isSuperFeatured?: boolean;
     isBlackMarket?: boolean;
+    isGrant?: boolean;
+    grantInstructions?: string | null;
   }, @Req() req: Request) {
     if (!body.name || !body.description || !body.imageUrl || body.priceHours == null) {
       throw new BadRequestException('name, description, imageUrl, and priceHours are required');
@@ -649,6 +651,8 @@ export class AdminController {
       isFeatured: body.isFeatured,
       isSuperFeatured: body.isSuperFeatured,
       isBlackMarket: body.isBlackMarket,
+      isGrant: body.isGrant,
+      grantInstructions: body.grantInstructions,
     }, (req as any).user?.uid);
   }
 
@@ -684,6 +688,8 @@ export class AdminController {
       isFeatured?: boolean;
       isSuperFeatured?: boolean;
       isBlackMarket?: boolean;
+      isGrant?: boolean;
+      grantInstructions?: string | null;
     },
     @Req() req: Request,
   ) {

@@ -884,6 +884,49 @@ export class AdminService implements OnApplicationBootstrap {
     };
   }
 
+  // joe.fraud web base (its UI host, not the API). Overridable for staging.
+  private joeWebBase(): string {
+    return (
+      this.configService.get<string>('FRAUD_REVIEW_WEB_URL') ??
+      'https://joe.fraud.hackclub.com'
+    ).replace(/\/+$/, '');
+  }
+
+  /**
+   * Builder's fraud profile. joe keys users by Hackatime id, falling back to
+   * Slack id (mirrors sidekick's UserCard). Reviewers share this with HQ /
+   * Fraud Squad — joe gates access on its own end.
+   */
+  private buildJoeProfileUrl(
+    hackatimeUserId?: string | null,
+    slackId?: string | null,
+  ): string | null {
+    const id = hackatimeUserId || slackId;
+    return id ? `${this.joeWebBase()}/profile/${encodeURIComponent(id)}` : null;
+  }
+
+  /**
+   * Per-day Hackatime activity view ("billy"), the date-scoped link:
+   * u=Hackatime user, d=YYYY-MM-DD, p=comma-joined Hackatime project keys.
+   * beest has no per-project "day being reviewed", so we approximate the date
+   * from the latest submission (falling back to project creation).
+   */
+  private buildJoeHackatimeUrl(
+    hackatimeUserId: string | null | undefined,
+    hackatimeProjects: string[] | null | undefined,
+    activityDate: Date | string,
+  ): string | null {
+    const projects = hackatimeProjects ?? [];
+    if (!hackatimeUserId || projects.length === 0) return null;
+    const d = new Date(activityDate).toISOString().slice(0, 10);
+    const params = new URLSearchParams({
+      u: hackatimeUserId,
+      d,
+      p: projects.join(','),
+    });
+    return `${this.joeWebBase()}/billy?${params.toString()}`;
+  }
+
   // ── Projects ──
 
   async listAllProjects(isSuperAdmin: boolean) {
@@ -944,6 +987,15 @@ export class AdminService implements OnApplicationBootstrap {
           claimedByReviewerId: p.claimedByReviewerId,
           claimedByReviewerName: p.claimedByReviewerName,
           claimedAt: p.claimedAt,
+          joeProfileUrl: this.buildJoeProfileUrl(
+            p.user?.hackatimeUserId,
+            p.user?.slackId,
+          ),
+          joeHackatimeUrl: this.buildJoeHackatimeUrl(
+            p.user?.hackatimeUserId,
+            p.hackatimeProjectName,
+            latestSub?.createdAt ?? p.createdAt,
+          ),
           user: {
             id: p.user?.id,
             name: isSuperAdmin ? p.user?.name : null,
@@ -2471,6 +2523,8 @@ export class AdminService implements OnApplicationBootstrap {
     isFeatured?: boolean;
     isSuperFeatured?: boolean;
     isBlackMarket?: boolean;
+    isGrant?: boolean;
+    grantInstructions?: string | null;
   }, adminId?: string): Promise<ShopItem> {
     const maxOrder = await this.shopRepo
       .createQueryBuilder('s')
@@ -2491,6 +2545,8 @@ export class AdminService implements OnApplicationBootstrap {
       isFeatured: data.isFeatured ?? false,
       isSuperFeatured: data.isSuperFeatured ?? false,
       isBlackMarket: data.isBlackMarket ?? false,
+      isGrant: data.isGrant ?? false,
+      grantInstructions: data.grantInstructions ?? null,
       sortOrder,
     });
     if (item.isSuperFeatured) {
@@ -2520,6 +2576,8 @@ export class AdminService implements OnApplicationBootstrap {
     isFeatured?: boolean;
     isSuperFeatured?: boolean;
     isBlackMarket?: boolean;
+    isGrant?: boolean;
+    grantInstructions?: string | null;
   }, adminId?: string): Promise<ShopItem> {
     const item = await this.shopRepo.findOne({ where: { id } });
     if (!item) throw new NotFoundException('Shop item not found');
@@ -2574,6 +2632,8 @@ export class AdminService implements OnApplicationBootstrap {
       item.isSuperFeatured = data.isSuperFeatured;
     }
     if (data.isBlackMarket !== undefined) item.isBlackMarket = data.isBlackMarket;
+    if (data.isGrant !== undefined) item.isGrant = data.isGrant;
+    if (data.grantInstructions !== undefined) item.grantInstructions = data.grantInstructions;
     const saved = await this.shopRepo.save(item);
     if (adminId) {
       const detail = changes.length ? ` [${changes.join(', ')}]` : '';

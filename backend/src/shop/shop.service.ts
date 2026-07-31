@@ -566,6 +566,7 @@ export class ShopService {
     const qb = this.orderRepo
       .createQueryBuilder('order')
       .leftJoinAndSelect('order.user', 'user')
+      .leftJoin('order.shopItem', 'shopItem')
       .select([
         'order.id',
         'order.userId',
@@ -583,6 +584,8 @@ export class ShopService {
         'user.nickname',
         'user.slackId',
         'user.email',
+        'shopItem.id',
+        'shopItem.isGrant',
       ]);
 
     if (options?.shopItemId) {
@@ -613,6 +616,9 @@ export class ShopService {
       status: o.status,
       hcbCardGrantId: o.hcbCardGrantId ?? null,
       siloGrantId: o.siloGrantId ?? null,
+      // Whether this order's item is a grant item — drives the grant options in
+      // the fulfillment dashboard. False if the item was since deleted.
+      isGrant: !!o.shopItem?.isGrant,
       createdAt: o.createdAt,
       updatedAt: o.updatedAt,
       userName: o.user?.nickname || o.user?.name || 'Unknown',
@@ -709,6 +715,14 @@ export class ShopService {
 
   /** Mark an order as fulfilled — uses pessimistic lock to prevent double-fulfill */
   async fulfillOrder(orderId: string) {
+    // Grant orders are fulfilled by issuing an HCB card grant, not by shipping —
+    // word the notifications accordingly. Cosmetic, so read outside the lock.
+    const preRead = await this.orderRepo.findOne({
+      where: { id: orderId },
+      relations: ['shopItem'],
+    });
+    const isGrant = !!preRead?.shopItem?.isGrant;
+
     return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
       const order = await manager.findOne(Order, {
         where: { id: orderId },
@@ -728,7 +742,9 @@ export class ShopService {
       const update = manager.create(FulfillmentUpdate, {
         userId: order.userId,
         orderId: order.id,
-        message: "Hey! I've sent out your order, its on the way to you :)",
+        message: isGrant
+          ? "Hey! Your grant card has been issued 💳 Check your email to accept it in HCB."
+          : "Hey! I've sent out your order, its on the way to you :)",
         isRead: false,
       });
       await manager.save(FulfillmentUpdate, update);
@@ -753,6 +769,7 @@ export class ShopService {
           itemName: order.itemName,
           quantity: order.quantity,
           cost: `${order.pipesSpent} Pipes`,
+          isGrant,
         }),
       );
 

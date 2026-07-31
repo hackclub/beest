@@ -98,4 +98,28 @@ export class HcbController {
       this.admin(req),
     );
   }
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('card-grant/bulk')
+  async createBulkCardGrants(
+    @Req() req: Request,
+    @Body()
+    body: {
+      orderIds?: string[];
+      oneTimeUse?: boolean;
+    },
+  ) {
+    if (!Array.isArray(body.orderIds) || body.orderIds.length === 0) {
+      throw new BadRequestException('orderIds is required and must be a non-empty array');
+    }
+    if (body.orderIds.length > 100 ){
+      throw new BadRequestException('Cannot process more than 100 orderIds at once');
+    }
+    return this.hcbService.createGrantForOrders(
+      body.orderIds,
+      {
+        oneTimeUse: body.oneTimeUse !== false
+      },
+      this.admin(req),
+    );
+  }
 }
