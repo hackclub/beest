@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <title>Beest by Hack Club Certificate</title>
+  <style>
+    /* Load site fonts so certificate matches site typography */
+    @font-face {
+      font-family: 'Stone Breaker';
+      src: url('/fonts/Stone%20Breaker.woff2') format('woff2');
+      font-weight: 700 900;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'Sunny Mood';
+      src: url('/fonts/SunnyMood.woff2') format('woff2');
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root { --red: #ef3340; --red-dark: #d61f31; --ink: #111114; --paper: #fcfbf8; }
+    /* Use site UI font stack so certificate text matches /projects and home */
+    body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 18px; background: linear-gradient(135deg,#f7efe6 0%,#fcfbf8 55%,#f2ede6 100%); color: var(--ink); font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+    .certificate { position: relative; width: min(1050px,100%); aspect-ratio: 1.414/1; overflow: hidden; border-radius: 18px; background: linear-gradient(180deg,#fff 0%,var(--paper) 100%); box-shadow: 0 28px 60px rgba(0,0,0,0.22); border:1px solid rgba(17,17,20,0.08); }
+    .brand { top: 26px; left: 30px; line-height:0.95; z-index:1; position: absolute; }
+    .brand .flag { width:124px; display:block; }
+    .brand .beest { display:block; font-size:44px; font-weight:900; color:var(--ink); text-transform:lowercase; }
+    .main { position:relative; z-index:1; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; text-align:center; padding:78px 40px 72px; }
+    .eyebrow { color: rgba(17,17,20,0.56); letter-spacing:0.32em; font-size:11px; text-transform:uppercase; }
+    /* use Stone Breaker for the big display title to match site branding */
+    .title { margin-top:6px; font-family: 'Stone Breaker', Impact, "Arial Narrow", Arial, sans-serif; font-size:clamp(54px,7.2vw,80px); line-height:0.92; color:var(--ink); text-transform:uppercase; }
+    /* recipient retains decorative script but body font aligns with site */
+    .recipient { margin-top:10px; font-family: "Brush Script MT", cursive; font-size:clamp(50px,7.4vw,82px); color:var(--red); }
+    .body-copy { max-width:760px; margin-top:12px; font-size:clamp(15px,1.65vw,19px); color:rgba(17,17,20,0.9); font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+    .footer-signatures { display:flex; justify-content:center; gap:82px; margin-top:24px; }
+    .signature-line { width:150px; height:34px; margin:0 auto 4px; border-bottom:1px solid rgba(239,51,64,0.55); }
+    .certificate-no { position:absolute; left:28px; bottom:72px; padding:8px 10px; border-radius:14px; border:1px dashed rgba(239,51,64,0.45); background: rgba(255,255,255,0.86); }
+  </style>
+</head>
+<body>
+  <!-- capture area id used by html2canvas when parent injects this content -->
+  <div id="capture-area">
+    <div class="certificate">
+      <div class="brand">
+        <img class="flag" src="https://camo.githubusercontent.com/952e19cabf08f8b6b181def3e9c7476d3b50ee6668f0af1e93931d8f4082ce0f/68747470733a2f2f6173736574732e6861636b636c75622e636f6d2f666c61672d7374616e64616c6f6e652e737667" alt="Hack Club flag">
+        <span class="beest">beest</span>
+      </div>
+
+      <div class="main">
+        <div class="eyebrow">Hack Club Recognition</div>
+        <div class="title">Certificate</div>
+        <div class="intro">This certificate is proudly presented to</div>
+        <div id="recipient" class="recipient">{{NAME}}</div>
+
+        <div id="body-copy" class="body-copy">
+          This certificate recognizes <strong id="body-name">{{NAME}}</strong>'s fulfilled Beest by Hack Club shop order. <strong id="body-name-2">{{NAME}}</strong> is hereby awarded <strong id="body-award">{{AWARD}}</strong>, purchased for <strong id="body-hours">{{HOURS}} Pipes</strong>.
+        </div>
+
+        <div class="footer-signatures">
+          <div class="signature">
+            <div class="signature-line"></div>
+            <div class="signature-name">Euan Ripper</div>
+            <div class="signature-role"><strong>Euan Ripper</strong><br>Organizer<br>YSWS</div>
+          </div>
+          <div class="signature">
+            <div class="signature-line"></div>
+            <div class="signature-name">Zach Latta</div>
+            <div class="signature-role"><strong>Zach Latta</strong><br>CEO<br>Hack Club</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="certificate-no">
+        <div class="label">Certificate No.</div>
+        <div id="certno" class="number">{{CERTNO}}</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Replace placeholders from query string if present
+    (function(){
+      function q(name){
+        try{
+          const u = new URL(location.href);
+          return u.searchParams.get(name);
+        }catch(e){return null}
+      }
+      const name = q('name');
+      const award = q('award');
+      const hours = q('hours');
+      const no = q('no');
+      if(name) {
+        const els = document.querySelectorAll('#recipient, #body-name, #body-name-2');
+        els.forEach(el => el.textContent = decodeURIComponent(name));
+      }
+      if(award) document.getElementById('body-award').textContent = decodeURIComponent(award);
+      if(hours) document.getElementById('body-hours').textContent = decodeURIComponent(hours);
+      if(no) document.getElementById('certno').textContent = decodeURIComponent(no);
+    })();
+  </script>
+</body>
+</html>

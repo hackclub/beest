@@ -50,6 +50,7 @@
     faq: '/faq',
     me: '/me',
     devlogs: '/devlogs',
+    certificate: '/me/certificates',
     tutorial: '/tutorial'
   };
   const pathSections: Record<string, string> = {
@@ -61,7 +62,8 @@
     '/leaderboard': 'leaderboard',
     '/faq': 'faq',
     '/me': 'me',
-    '/devlogs': 'devlogs'
+    '/devlogs': 'devlogs',
+    '/me/certificates': 'certificate'
   };
   const sectionFromPath = (pathname: string) => pathSections[pathname] ?? 'projects';
 
@@ -1332,8 +1334,11 @@
     { id: 'faq', label: 'FAQ', mobile: false, icon: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>' },
     { id: 'me', label: 'Me', mobile: true, icon: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' },
     { id: 'devlogs', label: 'Devlogs', mobile: false, icon: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>' },
+    { id: 'certificate', label: 'Certificates', mobile: false, icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/><path d="m16 16 1.5 1.5L20 15"/>' },
     { id: 'tutorial', label: 'Tutorial', mobile: false, icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' }
   ];
+
+  // lazy-load certificate component when user opens the section is handled in navigate()
 
   function loadSectionData(id: string) {
     if (id === 'shop') { fetchShopItems(); fetchPipes(); fetchUserOrders(); }
@@ -1342,6 +1347,10 @@
   }
 
   function navigate(id: string) {
+    if (id === 'certificate') {
+      goto('/me/certificates');
+      return;
+    }
     if (id === 'tutorial') { goto('/tutorial'); return; }
     if (creatingProject || editingProject || reviewProject) resetForm();
     activeSection = id;

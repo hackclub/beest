@@ -20,6 +20,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { RsvpService } from '../rsvp/rsvp.service';
 import { SlackNotifyService } from '../slack/slack-notify.service';
 import { AttendService } from '../attend/attend.service';
+import { CertificateService } from '../certificates/certificate.service';
 import {
   orderPendingDm,
   orderFulfilledDm,
@@ -62,6 +63,7 @@ export class ShopService {
     private readonly rsvpService: RsvpService,
     private readonly slackNotify: SlackNotifyService,
     private readonly attendService: AttendService,
+    private readonly certificateService: CertificateService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -634,6 +636,14 @@ export class ShopService {
         'order_fulfilled',
         `Order for ${order.quantity}x ${order.itemName} was fulfilled`,
       );
+
+      // Generate certificate for non-granted orders
+      try {
+        await this.certificateService.generateCertificateForOrder(order.id);
+      } catch (error) {
+        this.logger.error(`Failed to generate certificate for order ${order.id}:`, error);
+        // Don't throw - certificate generation is non-critical
+      }
 
       // Sync fulfillment date to Airtable for Loops
       this.userRepo.findOne({ where: { id: order.userId }, select: ['email'] }).then((u) => {

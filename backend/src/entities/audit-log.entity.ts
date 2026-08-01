@@ -29,6 +29,7 @@ export const AUDIT_ACTIONS = [
   'order_fulfilled',
   'order_refunded',
   'order_merged',
+  'certificate_generated',
   'devlog_created',
   'devlog_deleted',
   'devlog_reviewed',

@@ -73,7 +73,6 @@
     }, 1000);
 
     return () => {
-      observer.disconnect();
       window.removeEventListener('resize', updateTop);
       clearTimeout(hintTimer);
       clearTimeout(animDelay);

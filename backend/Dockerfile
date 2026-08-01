@@ -1,4 +1,5 @@
 FROM node:22-alpine AS build
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -6,7 +7,9 @@ COPY . .
 RUN npm run build
 
 FROM node:22-alpine
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl chromium nss freetype harfbuzz ttf-freefont
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/package*.json ./
