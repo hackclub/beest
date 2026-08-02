@@ -547,25 +547,6 @@
 		}
 	}
 
-	let resyncLoading = $state(false);
-	async function resyncAirtable() {
-		if (!expandedProjectId || resyncLoading) return;
-		resyncLoading = true;
-		try {
-			const res = await fetch(`/api/admin/projects/${expandedProjectId}/resync-airtable`, { method: 'POST' });
-			if (res.ok) {
-				alert('Project re-pushed to Airtable.');
-			} else {
-				const data = await res.json().catch(() => null);
-				alert(data?.message ?? 'Failed to re-push to Airtable.');
-			}
-		} catch {
-			alert('Failed to re-push to Airtable.');
-		} finally {
-			resyncLoading = false;
-		}
-	}
-
 	async function loadReviews(projectId: string) {
 		try {
 			const res = await fetch(`/api/admin/projects/${projectId}/reviews`);
@@ -3844,14 +3825,6 @@
 									{/each}
 								{/if}
 
-								{#if selectedProject.status === 'approved'}
-									<hr class="proj-divider" />
-									<div class="review-actions">
-										<button class="review-btn review-btn-resync" onclick={resyncAirtable} disabled={resyncLoading || !isSuperAdmin} title={!isSuperAdmin ? 'Re-push is Super Admin only' : ''}>
-											{resyncLoading ? 'Pushing...' : 'Re-push to Airtable'}
-										</button>
-									</div>
-								{/if}
 							{:else}
 								<div class="proj-main-empty">
 									<p>Select a project to review</p>
@@ -5650,10 +5623,6 @@
 		color: #c44040;
 	}
 
-	.review-btn-resync {
-		background: #3a6a9a;
-	}
-
 	.leaderboard {
 		padding: 0.5rem 0;
 	}
@@ -6853,7 +6822,6 @@
 	.admin-shell.light .review-btn-approve { background: #3a8a4a; }
 	.admin-shell.light .review-btn-reject { background: #b83030; }
 	.admin-shell.light .review-btn-ban { background: #fff; border-color: #b83030; color: #b83030; }
-	.admin-shell.light .review-btn-resync { background: #2a5a8a; }
 
 	/* Review cards */
 	.admin-shell.light .reviews-heading { color: #333; }
