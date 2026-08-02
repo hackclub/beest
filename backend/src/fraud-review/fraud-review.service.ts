@@ -18,6 +18,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { ProjectAirtableSyncService } from '../projects/project-airtable-sync.service';
 import { RsvpService } from '../rsvp/rsvp.service';
 import { SlackNotifyService } from '../slack/slack-notify.service';
+import { SettingsService } from '../settings/settings.service';
 import {
   fraudClearedDm,
   reviewChangesNeededDm,
@@ -73,6 +74,7 @@ export class FraudReviewService implements OnApplicationBootstrap, OnApplication
     private readonly airtableSync: ProjectAirtableSyncService,
     private readonly rsvpService: RsvpService,
     private readonly slackNotify: SlackNotifyService,
+    private readonly settingsService: SettingsService,
   ) {
     this.apiBaseUrl = (
       this.config.get('FRAUD_REVIEW_API_URL') ??
@@ -440,6 +442,7 @@ export class FraudReviewService implements OnApplicationBootstrap, OnApplication
       projectLink: project.codeUrl ?? project.demoUrl ?? null,
       reviewerName: null,
       feedback: USER_FACING_FRAUD_FEEDBACK,
+      resubmissionPaused: await this.settingsService.isResubmissionPaused(),
     });
     await this.slackNotify.dm(
       project.user?.slackId,

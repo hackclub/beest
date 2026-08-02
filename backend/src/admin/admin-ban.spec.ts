@@ -74,6 +74,7 @@ function build(overrides: {
     {} as any, // slackService
     {} as any, // slackNotify
     { refundOrder: jest.fn() } as any, // shopService
+    { isResubmissionPaused: jest.fn().mockResolvedValue(false) } as any, // settingsService
   );
 
   return { service, saved, submissionUpdates };

@@ -7,6 +7,12 @@
 
 export type DmMessage = { text: string; blocks: Record<string, unknown>[] };
 
+// Shown on changes-needed DMs while resubmission is paused to clear the
+// review queue (toggled from the admin panel). Kept in the builder's own
+// words so it doesn't read as an automated system notice.
+export const RESUBMISSION_PAUSED_NOTE =
+  ":hey_pika: This is Euan, I need to clear the review queue, so resubmission is paused for about 24 hours and will be open soon";
+
 interface ReviewDmInput {
   projectName: string;
   /** Link shown on the "View Project" button; omitted when null. */
@@ -16,6 +22,11 @@ interface ReviewDmInput {
   feedback: string | null;
   /** True when this approval marks the project golden — adds a callout. */
   isGolden?: boolean;
+  /**
+   * True while resubmission is paused to clear the review queue — adds a
+   * callout to changes-needed DMs so builders know not to resubmit yet.
+   */
+  resubmissionPaused?: boolean;
   /**
    * True when the builder already had another golden project before this one,
    * so the golden callout congratulates rather than explains the perks (which
@@ -130,6 +141,13 @@ export function reviewChangesNeededDm(input: ReviewDmInput): DmMessage {
     blocks.push({
       type: 'section',
       text: { type: 'mrkdwn', text: `*Feedback:* ${input.feedback}` },
+    });
+  }
+
+  if (input.resubmissionPaused) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: RESUBMISSION_PAUSED_NOTE },
     });
   }
 

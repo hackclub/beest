@@ -23,6 +23,7 @@ import { ProjectAirtableSyncModule } from '../projects/project-airtable-sync.mod
 import { IdentityModule } from '../identity/identity.module';
 import { SlackModule } from '../slack/slack.module';
 import { AttendModule } from '../attend/attend.module';
+import { SettingsModule } from '../settings/settings.module';
 import { AdminController } from './admin.controller';
 import { AuditInternalController } from './audit-internal.controller';
 import { AdminService } from './admin.service';
@@ -49,6 +50,7 @@ import { AuditServiceKeyGuard } from './audit-service-key.guard';
     IdentityModule,
     SlackModule,
     AttendModule,
+    SettingsModule,
   ],
   controllers: [AdminController, AuditInternalController],
   providers: [
