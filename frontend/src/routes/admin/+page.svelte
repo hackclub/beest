@@ -759,7 +759,7 @@
 		isSuperAdmin || !ELEVATED_PERMS.includes(userDetail?.perms ?? '')
 	);
 
-	const PROJECT_TYPES = ['web', 'windows', 'mac', 'linux', 'cross-platform', 'python', 'android', 'ios', 'other'];
+	const PROJECT_TYPES = ['web', 'windows', 'mac', 'linux', 'cross-platform', 'python', 'cad', 'hardware', 'android', 'ios', 'other'];
 
 	let filteredProjects = $derived.by(() => {
 		let result = allProjects;
