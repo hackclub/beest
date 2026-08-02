@@ -452,6 +452,26 @@ export class FraudReviewService implements OnApplicationBootstrap, OnApplication
     );
   }
 
+  /**
+   * Sum of approved devlog hours across the user's "earned" projects (approved,
+   * or already partially paid out) — the same project set the pipe reconcile
+   * counts override_hours over. Kept as a separate aggregate (not a JOIN into
+   * the override_hours SUM) so devlog rows can't fan out and inflate the
+   * project-hours total.
+   */
+  private async approvedDevlogHoursForUser(userId: string): Promise<number> {
+    const rows: Array<{ h: string }> = await this.projectRepo.manager.query(
+      `SELECT COALESCE(SUM(d.approved_hours), 0) AS h
+         FROM devlogs d
+         JOIN projects p ON p.id = d.project_id
+        WHERE p.user_id = $1
+          AND d.approved = true
+          AND (p.status = 'approved' OR (p.status <> 'approved' AND p.pipes_granted > 0))`,
+      [userId],
+    );
+    return Number(rows?.[0]?.h ?? 0);
+  }
+
   private async completeApproval(row: FraudReview): Promise<void> {
     const project = await this.projectRepo.findOne({
       where: { id: row.projectId },
@@ -476,8 +496,11 @@ export class FraudReviewService implements OnApplicationBootstrap, OnApplication
     }
 
     // 3. Grant pipes — same delta logic as AdminService.reviewProject. Target =
-    //    floor(sum of override_hours across the user's earned projects), delta =
-    //    target − sum(pipes_granted) across all the user's projects.
+    //    floor(earned hours across the user's earned projects), delta =
+    //    target − sum(pipes_granted) across all the user's projects. Earned
+    //    hours = project override_hours PLUS approved devlog hours: devlog hours
+    //    count exactly like normal hours, and (like all hours) they only mint
+    //    pipes here, at fraud review.
     if ((project.overrideHours ?? 0) > 0) {
       const totals = await this.projectRepo
         .createQueryBuilder('p')
@@ -488,7 +511,8 @@ export class FraudReviewService implements OnApplicationBootstrap, OnApplication
           `(p.status = 'approved' OR (p.status <> 'approved' AND p.pipes_granted > 0))`,
         )
         .getRawOne<{ earnedHours: string; granted: string }>();
-      const target = Math.floor(Number(totals?.earnedHours ?? 0));
+      const devlogHours = await this.approvedDevlogHoursForUser(project.userId);
+      const target = Math.floor(Number(totals?.earnedHours ?? 0) + devlogHours);
       const previouslyGranted = Number(totals?.granted ?? 0);
       const delta = target - previouslyGranted;
       if (delta > 0) {
@@ -514,6 +538,14 @@ export class FraudReviewService implements OnApplicationBootstrap, OnApplication
       row.trustScore,
       row.justification,
     );
+
+    // Apply the first-pass reviewer's golden decision now that the approval
+    // is final — first pass records it on the review row without touching the
+    // project, since golden unlocks user-visible perks.
+    if (beestReview?.golden != null && project.isGolden !== beestReview.golden) {
+      project.isGolden = beestReview.golden;
+      await this.projectRepo.save(project);
+    }
 
     // 5. Loops sync + Airtable Projects push.
     if (project.user?.email) {

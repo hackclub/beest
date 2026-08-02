@@ -2052,8 +2052,11 @@
             </button>
           </div>
         {:else if editingProject?.status === 'fraud_pending'}
+          <!-- fraud_pending means a first-pass approval is awaiting the second-pass
+               audit. That verdict isn't authoritative yet (it can be returned), so
+               the copy must stay indistinguishable from a plain in-review state. -->
           <div class="in-review-notice">
-            <p class="in-review-text">This project has been reviewed and is awaiting fraud checks. You'll be notified once the fraud team finishes their review.</p>
+            <p class="in-review-text">This project is currently in review. You'll be notified once the review is complete.</p>
           </div>
         {/if}
         <div class="form-actions">

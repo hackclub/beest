@@ -6,6 +6,7 @@ import { RsvpModule } from '../rsvp/rsvp.module';
 import { SlackModule } from '../slack/slack.module';
 import { AttendModule } from '../attend/attend.module';
 import { CertificateModule } from '../certificates/certificate.module';
+import { HcaModule } from '../hca/hca.module';
 import { ShopItem } from '../entities/shop-item.entity';
 import { Order } from '../entities/order.entity';
 import { FulfillmentUpdate } from '../entities/fulfillment-update.entity';
@@ -24,6 +25,7 @@ import { ShopService } from './shop.service';
     SlackModule,
     AttendModule,
     CertificateModule,
+    HcaModule,
   ],
   controllers: [ShopController],
   providers: [ShopService],

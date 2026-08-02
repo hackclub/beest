@@ -97,7 +97,7 @@ export function reviewApprovedDm(input: ReviewDmInput): DmMessage {
       elements: [
         {
           type: 'mrkdwn',
-          text: 'Your project will be fraud-checked next, and your Pipes should arrive soon. :yay:',
+          text: 'Your Pipes have been added to your balance. :yay:',
         },
       ],
     },
@@ -222,6 +222,8 @@ interface OrderDmInput {
   quantity: number | string;
   /** Pre-formatted cost string, e.g. "5 Pipes". */
   cost: string;
+  /** When true, word the message for an HCB card grant, not a shipped item. */
+  isGrant?: boolean;
 }
 
 function orderFields(input: OrderDmInput): Record<string, unknown>[] {
@@ -284,7 +286,9 @@ export function orderFulfilledDm(input: OrderDmInput): DmMessage {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '*Your order status:* Fulfilled and on its way to you!',
+          text: input.isGrant
+            ? '*Your order status:* Fulfilled — your grant card has been issued! :credit_card: Check your email to accept it in HCB.'
+            : '*Your order status:* Fulfilled and on its way to you!',
         },
       },
       {

@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Not, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { Session } from '../entities/session.entity';
 import { Project } from '../entities/project.entity';
@@ -29,7 +29,6 @@ import { SlackService } from '../slack/slack.service';
 import { Cron } from '@nestjs/schedule';
 import { SlackNotifyService } from '../slack/slack-notify.service';
 import {
-  reviewApprovedDm,
   reviewChangesNeededDm,
   reviewRejectedDm,
   goldenBackfillDm,
@@ -885,6 +884,49 @@ export class AdminService implements OnApplicationBootstrap {
     };
   }
 
+  // joe.fraud web base (its UI host, not the API). Overridable for staging.
+  private joeWebBase(): string {
+    return (
+      this.configService.get<string>('FRAUD_REVIEW_WEB_URL') ??
+      'https://joe.fraud.hackclub.com'
+    ).replace(/\/+$/, '');
+  }
+
+  /**
+   * Builder's fraud profile. joe keys users by Hackatime id, falling back to
+   * Slack id (mirrors sidekick's UserCard). Reviewers share this with HQ /
+   * Fraud Squad — joe gates access on its own end.
+   */
+  private buildJoeProfileUrl(
+    hackatimeUserId?: string | null,
+    slackId?: string | null,
+  ): string | null {
+    const id = hackatimeUserId || slackId;
+    return id ? `${this.joeWebBase()}/profile/${encodeURIComponent(id)}` : null;
+  }
+
+  /**
+   * Per-day Hackatime activity view ("billy"), the date-scoped link:
+   * u=Hackatime user, d=YYYY-MM-DD, p=comma-joined Hackatime project keys.
+   * beest has no per-project "day being reviewed", so we approximate the date
+   * from the latest submission (falling back to project creation).
+   */
+  private buildJoeHackatimeUrl(
+    hackatimeUserId: string | null | undefined,
+    hackatimeProjects: string[] | null | undefined,
+    activityDate: Date | string,
+  ): string | null {
+    const projects = hackatimeProjects ?? [];
+    if (!hackatimeUserId || projects.length === 0) return null;
+    const d = new Date(activityDate).toISOString().slice(0, 10);
+    const params = new URLSearchParams({
+      u: hackatimeUserId,
+      d,
+      p: projects.join(','),
+    });
+    return `${this.joeWebBase()}/billy?${params.toString()}`;
+  }
+
   // ── Projects ──
 
   async listAllProjects(isSuperAdmin: boolean) {
@@ -945,6 +987,15 @@ export class AdminService implements OnApplicationBootstrap {
           claimedByReviewerId: p.claimedByReviewerId,
           claimedByReviewerName: p.claimedByReviewerName,
           claimedAt: p.claimedAt,
+          joeProfileUrl: this.buildJoeProfileUrl(
+            p.user?.hackatimeUserId,
+            p.user?.slackId,
+          ),
+          joeHackatimeUrl: this.buildJoeHackatimeUrl(
+            p.user?.hackatimeUserId,
+            p.hackatimeProjectName,
+            latestSub?.createdAt ?? p.createdAt,
+          ),
           user: {
             id: p.user?.id,
             name: isSuperAdmin ? p.user?.name : null,
@@ -1041,11 +1092,11 @@ export class AdminService implements OnApplicationBootstrap {
     // generic user-facing message.
     project.status = status === 'approved' ? 'fraud_pending' : status;
     // Golden is decided per approval: the checkbox value on an approve review
-    // sets or clears it. Non-approve reviews leave it alone here (revocation
-    // of an approval clears it below, alongside the pipes clawback).
-    if (status === 'approved' && golden !== null) {
-      project.isGolden = golden;
-    }
+    // is recorded on the review row (step 4) and applied to the project only
+    // when the approval is finalised at second-pass audit — a first-pass
+    // verdict is not authoritative and must not unlock the golden perks
+    // (black market access, ★ badge) yet. Revocation of a finalised approval
+    // clears it below, alongside the pipes clawback.
     if (status === 'approved') {
       if (overrideHours !== null && overrideHours !== undefined) {
         const delta = Math.round(overrideHours * 10) / 10;
@@ -1166,6 +1217,7 @@ export class AdminService implements OnApplicationBootstrap {
       reviewerId,
       submissionId: submission?.id ?? null,
       status,
+      golden: status === 'approved' ? golden : null,
       feedback: feedback || null,
       internalNote: internalNote || null,
       hideReviewerName,
@@ -1174,9 +1226,12 @@ export class AdminService implements OnApplicationBootstrap {
     await this.reviewRepo.save(review);
 
     // 5. DM the builder about the decision (best-effort; never blocks review).
-    // The reviewer-facing outcomes notify here — 'approved', 'changes_needed'
-    // and 'rejected' (hard reject). The reviewer name is omitted when hidden.
-    if (status === 'approved' || status === 'changes_needed' || status === 'rejected') {
+    // Only the outcomes that are FINAL at first pass notify here —
+    // 'changes_needed' and 'rejected'. The approved path stays silent: a
+    // first-pass approval isn't authoritative until second-pass audit
+    // finalises it (it may yet be returned), so the approval DM is sent from
+    // AuditService.approve / FraudReviewService.completeApproval instead.
+    if (status === 'changes_needed' || status === 'rejected') {
       const reviewerName = hideReviewerName
         ? null
         : (
@@ -1185,30 +1240,16 @@ export class AdminService implements OnApplicationBootstrap {
               select: ['name'],
             })
           )?.name ?? null;
-      // Surfaced only on the approved path — reflects the golden mark applied
-      // above so the builder is told the moment their project becomes golden.
-      const isGolden = status === 'approved' && project.isGolden;
-      // Whether they had another golden project before this one, so the callout
-      // congratulates instead of re-explaining perks they already have.
-      const goldenAlreadyHad =
-        isGolden &&
-        (await this.projectRepo.count({
-          where: { userId: project.userId, isGolden: true, id: Not(projectId) },
-        })) > 0;
       const dmInput = {
         projectName: project.name,
         projectLink: project.codeUrl ?? project.demoUrl ?? null,
         reviewerName,
         feedback: feedback || null,
-        isGolden,
-        goldenAlreadyHad,
       };
       const message =
-        status === 'approved'
-          ? reviewApprovedDm(dmInput)
-          : status === 'rejected'
-            ? reviewRejectedDm(dmInput)
-            : reviewChangesNeededDm(dmInput);
+        status === 'rejected'
+          ? reviewRejectedDm(dmInput)
+          : reviewChangesNeededDm(dmInput);
       await this.slackNotify.dm(
         project.user?.slackId,
         message.text,
@@ -1216,14 +1257,18 @@ export class AdminService implements OnApplicationBootstrap {
       );
     }
 
-    // 6. Audit log to the project owner (not the reviewer)
-    const label =
-      status === 'approved'
-        ? `Project "${project.name}" was approved by reviewer`
-        : status === 'rejected'
+    // 6. Audit log to the project owner (not the reviewer). The audit log is
+    // user-visible (GET /api/audit-log), so the approved path logs nothing
+    // here — the first-pass approval isn't authoritative yet, and the
+    // finalisers (AuditService.approve / fraud poller) log the approval when
+    // it actually lands. The review row itself keeps the forensic trail.
+    if (status !== 'approved') {
+      const label =
+        status === 'rejected'
           ? `Project "${project.name}" was rejected`
           : `Project "${project.name}" received feedback`;
-    await this.auditLogService.log(project.userId, 'project_reviewed', label);
+      await this.auditLogService.log(project.userId, 'project_reviewed', label);
+    }
 
     // A decided project no longer needs to be claimed — free it.
     await this.projectRepo.update(projectId, {
@@ -1354,6 +1399,8 @@ export class AdminService implements OnApplicationBootstrap {
       .addSelect("COUNT(*) FILTER (WHERE r.status = 'approved')::int", 'approved')
       .addSelect("COUNT(*) FILTER (WHERE r.status = 'changes_needed')::int", 'changesNeeded')
       .addSelect("COUNT(*) FILTER (WHERE r.status = 'ban')::int", 'banned')
+      .addSelect("COUNT(*) FILTER (WHERE r.status = 'rejected')::int", 'rejected')
+      .addSelect("COUNT(*) FILTER (WHERE r.status = 'returned')::int", 'returned')
       .groupBy('r.reviewer_id')
       .addGroupBy('u.name')
       .addGroupBy('u.slack_id')
@@ -1375,6 +1422,8 @@ export class AdminService implements OnApplicationBootstrap {
         approved,
         changesNeeded: Number(r.changesNeeded),
         banned: Number(r.banned),
+        rejected: Number(r.rejected),
+        returned: Number(r.returned),
         approvalPercent: total > 0 ? Math.round((approved / total) * 100) : 0,
       };
     });
@@ -2471,12 +2520,15 @@ export class AdminService implements OnApplicationBootstrap {
     detailedDescription?: string | null;
     imageUrl: string;
     priceHours: number;
+    regionalPrices?: Record<string, number> | null;
     stock?: number | null;
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
     isSuperFeatured?: boolean;
     isBlackMarket?: boolean;
+    isGrant?: boolean;
+    grantInstructions?: string | null;
   }, adminId?: string): Promise<ShopItem> {
     const maxOrder = await this.shopRepo
       .createQueryBuilder('s')
@@ -2490,12 +2542,15 @@ export class AdminService implements OnApplicationBootstrap {
       detailedDescription: data.detailedDescription ?? null,
       imageUrl: data.imageUrl,
       priceHours: data.priceHours,
+      regionalPrices: data.regionalPrices ?? null,
       stock: data.stock ?? null,
       estimatedShip: data.estimatedShip ?? null,
       isActive: data.isActive ?? true,
       isFeatured: data.isFeatured ?? false,
       isSuperFeatured: data.isSuperFeatured ?? false,
       isBlackMarket: data.isBlackMarket ?? false,
+      isGrant: data.isGrant ?? false,
+      grantInstructions: data.grantInstructions ?? null,
       sortOrder,
     });
     if (item.isSuperFeatured) {
@@ -2518,12 +2573,15 @@ export class AdminService implements OnApplicationBootstrap {
     detailedDescription?: string | null;
     imageUrl?: string;
     priceHours?: number;
+    regionalPrices?: Record<string, number> | null;
     stock?: number | null;
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
     isSuperFeatured?: boolean;
     isBlackMarket?: boolean;
+    isGrant?: boolean;
+    grantInstructions?: string | null;
   }, adminId?: string): Promise<ShopItem> {
     const item = await this.shopRepo.findOne({ where: { id } });
     if (!item) throw new NotFoundException('Shop item not found');
@@ -2533,6 +2591,25 @@ export class AdminService implements OnApplicationBootstrap {
     const changes: string[] = [];
     if (data.priceHours !== undefined && data.priceHours !== item.priceHours) {
       changes.push(`price ${item.priceHours}→${data.priceHours}`);
+    }
+    // Regional overrides are as economically sensitive as the base price —
+    // the same edit-down/buy/edit-back collusion applies per country.
+    const fmtRegional = (rp: Record<string, number> | null | undefined) =>
+      rp && Object.keys(rp).length
+        ? Object.entries(rp)
+            // Sorted so the same map always formats identically — jsonb does
+            // not preserve the key order the request body used.
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([c, p]) => `${c}:${p}`)
+            .join(' ')
+        : 'none';
+    if (
+      data.regionalPrices !== undefined &&
+      fmtRegional(data.regionalPrices) !== fmtRegional(item.regionalPrices)
+    ) {
+      changes.push(
+        `regional prices ${fmtRegional(item.regionalPrices)}→${fmtRegional(data.regionalPrices)}`,
+      );
     }
     if (data.stock !== undefined && data.stock !== item.stock) {
       changes.push(`stock ${item.stock ?? '∞'}→${data.stock ?? '∞'}`);
@@ -2545,6 +2622,7 @@ export class AdminService implements OnApplicationBootstrap {
     if (data.detailedDescription !== undefined) item.detailedDescription = data.detailedDescription;
     if (data.imageUrl !== undefined) item.imageUrl = data.imageUrl;
     if (data.priceHours !== undefined) item.priceHours = data.priceHours;
+    if (data.regionalPrices !== undefined) item.regionalPrices = data.regionalPrices;
     if (data.stock !== undefined) item.stock = data.stock;
     if (data.estimatedShip !== undefined) item.estimatedShip = data.estimatedShip;
     if (data.isActive !== undefined) item.isActive = data.isActive;
@@ -2558,6 +2636,8 @@ export class AdminService implements OnApplicationBootstrap {
       item.isSuperFeatured = data.isSuperFeatured;
     }
     if (data.isBlackMarket !== undefined) item.isBlackMarket = data.isBlackMarket;
+    if (data.isGrant !== undefined) item.isGrant = data.isGrant;
+    if (data.grantInstructions !== undefined) item.grantInstructions = data.grantInstructions;
     const saved = await this.shopRepo.save(item);
     if (adminId) {
       const detail = changes.length ? ` [${changes.join(', ')}]` : '';

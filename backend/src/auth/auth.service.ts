@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { fetchWithTimeout } from '../fetch.util';
+import { countryFromHcaUserinfo } from '../country.util';
 import { RsvpService } from '../rsvp/rsvp.service';
 import { User } from '../entities/user.entity';
 import { Session } from '../entities/session.entity';
@@ -433,6 +434,10 @@ export class AuthService {
       userinfo.address ||
       (Array.isArray(userinfo.addresses) && userinfo.addresses.length > 0)
     );
+    // Refreshed on every login so regional shop pricing follows the user's
+    // current HCA address. Deliberately overwritten even when null: a removed
+    // address must also remove the override eligibility.
+    const country = countryFromHcaUserinfo(userinfo);
     const hasBirthdate = !!(
       userinfo.birthdate && userinfo.birthdate.trim() !== ''
     );
@@ -453,6 +458,7 @@ export class AuthService {
       user.slackId = userinfo.slack_id;
       user.hasAddress = hasAddress;
       user.hasBirthdate = hasBirthdate;
+      user.country = country;
       if (hcaAccessToken) user.hcaAccessToken = hcaAccessToken;
       if (hcaRefreshToken) user.hcaRefreshToken = hcaRefreshToken;
       return this.userRepo.save(user);
@@ -469,6 +475,7 @@ export class AuthService {
         slackId: userinfo.slack_id,
         hasAddress,
         hasBirthdate,
+        country,
         hcaAccessToken: hcaAccessToken ?? undefined,
         hcaRefreshToken: hcaRefreshToken ?? undefined,
         utmSource: trim(attribution?.utm_source),
@@ -491,6 +498,7 @@ export class AuthService {
         user.slackId = userinfo.slack_id;
         user.hasAddress = hasAddress;
         user.hasBirthdate = hasBirthdate;
+        user.country = country;
         if (hcaAccessToken) user.hcaAccessToken = hcaAccessToken;
         if (hcaRefreshToken) user.hcaRefreshToken = hcaRefreshToken;
         return this.userRepo.save(user);

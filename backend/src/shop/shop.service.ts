@@ -16,6 +16,8 @@ import { FulfillmentUpdate } from '../entities/fulfillment-update.entity';
 import { User } from '../entities/user.entity';
 import { ShopSuggestion } from '../entities/shop-suggestion.entity';
 import { ShopSuggestionVote } from '../entities/shop-suggestion-vote.entity';
+import { normalizeCountry, countryFromHcaUserinfo } from '../country.util';
+import { HcaService } from '../hca/hca.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { RsvpService } from '../rsvp/rsvp.service';
 import { SlackNotifyService } from '../slack/slack-notify.service';
@@ -65,7 +67,58 @@ export class ShopService {
     private readonly attendService: AttendService,
     private readonly certificateService: CertificateService,
     private readonly configService: ConfigService,
+    private readonly hcaService: HcaService,
   ) {}
+
+  /**
+   * Per-user cooldown on failed country backfills, so users whose HCA tokens
+   * are dead (getIdentity fails until they re-login) don't pay an HCA
+   * round-trip on every shop load. Successful lookups clear the entry.
+   */
+  private readonly countryBackfillFailedAt = new Map<string, number>();
+  private static readonly COUNTRY_BACKFILL_RETRY_MS = 15 * 60 * 1000;
+
+  /**
+   * Country used for regional pricing, lazily backfilled from HCA for users
+   * who last logged in before country capture existed. Both listActive() and
+   * purchase() go through this, so a user can never buy at the base price
+   * merely because their row hasn't been refreshed yet — if they have an
+   * address in HCA and their stored tokens work, the override applies to the
+   * very first purchase. Returns null when the user has no HCA address or
+   * their tokens are dead (re-login required); those users pay base price.
+   */
+  private async ensureUserCountry(userId: string): Promise<string | null> {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['id', 'country', 'hasAddress', 'hcaSub'],
+    });
+    if (!user) return null;
+    if (user.country) return user.country;
+    // hasAddress reflects the last login's userinfo: false means HCA had no
+    // address to take a country from, so there is nothing to backfill.
+    if (!user.hasAddress) return null;
+
+    const failedAt = this.countryBackfillFailedAt.get(userId);
+    if (
+      failedAt !== undefined &&
+      Date.now() - failedAt < ShopService.COUNTRY_BACKFILL_RETRY_MS
+    ) {
+      return null;
+    }
+
+    const identity = await this.hcaService.getIdentity(user.hcaSub);
+    const country = countryFromHcaUserinfo(identity);
+    if (!country) {
+      // Either the token fetch failed or HCA no longer has a country on file;
+      // both are worth retrying, but not on every request.
+      this.countryBackfillFailedAt.set(userId, Date.now());
+      return null;
+    }
+
+    this.countryBackfillFailedAt.delete(userId);
+    await this.userRepo.update(userId, { country });
+    return country;
+  }
 
   /** Fire-and-forget order-status DM to the buyer (best-effort). */
   private notifyOrder(
@@ -237,6 +290,26 @@ export class ShopService {
     return { success: true };
   }
 
+  /**
+   * Price the user actually pays for one unit: the regional override matching
+   * their HCA country when one exists, the base priceHours otherwise. Users
+   * with no country on file (no HCA address yet, or last login predates
+   * country capture) always pay the base price. Ignores malformed override
+   * values as defense-in-depth — admin input is validated on write, but a
+   * bad value must never produce a free or NaN-priced item.
+   */
+  private effectivePriceHours(
+    item: Pick<ShopItem, 'priceHours' | 'regionalPrices'>,
+    country: string | null,
+  ): number {
+    const key = normalizeCountry(country);
+    if (!key || !item.regionalPrices) return item.priceHours;
+    const override = item.regionalPrices[key];
+    return Number.isInteger(override) && override > 0
+      ? override
+      : item.priceHours;
+  }
+
   /** True when the user has authored at least one golden project. */
   private async hasGoldenProject(userId: string): Promise<boolean> {
     const count = await this.dataSource
@@ -246,11 +319,33 @@ export class ShopService {
   }
 
   async listActive(userId: string) {
-    const items = await this.shopRepo.find({
+    const rows = await this.shopRepo.find({
       where: { isActive: true },
-      order: { isSuperFeatured: 'DESC', isFeatured: 'DESC', priceHours: 'ASC' },
-      select: ['id', 'name', 'description', 'detailedDescription', 'imageUrl', 'priceHours', 'stock', 'sortOrder', 'isFeatured', 'isSuperFeatured', 'isBlackMarket', 'estimatedShip'],
+      select: ['id', 'name', 'description', 'detailedDescription', 'imageUrl', 'priceHours', 'regionalPrices', 'stock', 'sortOrder', 'isFeatured', 'isSuperFeatured', 'isBlackMarket', 'estimatedShip'],
     });
+    const country = await this.ensureUserCountry(userId);
+
+    // priceHours is the *effective* price for this user — regional overrides
+    // are resolved server-side so the client never sees (or chooses between)
+    // per-country prices. The full override map stays private to admins.
+    const items = rows
+      .map(({ regionalPrices: _regionalPrices, ...item }) => ({
+        ...item,
+        priceHours: this.effectivePriceHours(
+          { priceHours: item.priceHours, regionalPrices: _regionalPrices },
+          country,
+        ),
+      }))
+      // Sorted here rather than in SQL because the order key is the
+      // user-specific effective price.
+      .sort(
+        (a, b) =>
+          Number(b.isSuperFeatured) - Number(a.isSuperFeatured) ||
+          Number(b.isFeatured) - Number(a.isFeatured) ||
+          a.priceHours - b.priceHours ||
+          a.sortOrder - b.sortOrder,
+      );
+
     // Black-market items are visible to everyone (they're the incentive), but
     // only unlocked for golden-project authors — purchase() enforces this
     // server-side; the flag here just drives the UI's locked state.
@@ -271,6 +366,12 @@ export class ShopService {
     if (quantity > 100) {
       throw new BadRequestException('Maximum quantity per order is 100');
     }
+
+    // Resolved BEFORE the transaction: the backfill can hit HCA over the
+    // network, which must not happen while holding row locks. The result is
+    // threaded into the price computation below so a user whose row predates
+    // country capture still pays their regional price on this very purchase.
+    const backfilledCountry = await this.ensureUserCountry(userId);
 
     return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
       // Lock the user row
@@ -311,8 +412,13 @@ export class ShopService {
         }
       }
 
-      // Check budget (pipes)
-      const totalCost = item.priceHours * quantity;
+      // Check budget (pipes). Regional pricing is resolved from the locked
+      // user + item rows (falling back to the pre-transaction backfill in
+      // case its UPDATE isn't visible to this snapshot yet) — the client
+      // never sends a price.
+      const totalCost =
+        this.effectivePriceHours(item, user.country ?? backfilledCountry) *
+        quantity;
       if (user.pipes < totalCost) {
         throw new BadRequestException(
           `Not enough Pipes. You have ${user.pipes}, need ${totalCost}`,
@@ -462,6 +568,7 @@ export class ShopService {
     const qb = this.orderRepo
       .createQueryBuilder('order')
       .leftJoinAndSelect('order.user', 'user')
+      .leftJoin('order.shopItem', 'shopItem')
       .select([
         'order.id',
         'order.userId',
@@ -479,6 +586,8 @@ export class ShopService {
         'user.nickname',
         'user.slackId',
         'user.email',
+        'shopItem.id',
+        'shopItem.isGrant',
       ]);
 
     if (options?.shopItemId) {
@@ -509,6 +618,9 @@ export class ShopService {
       status: o.status,
       hcbCardGrantId: o.hcbCardGrantId ?? null,
       siloGrantId: o.siloGrantId ?? null,
+      // Whether this order's item is a grant item — drives the grant options in
+      // the fulfillment dashboard. False if the item was since deleted.
+      isGrant: !!o.shopItem?.isGrant,
       createdAt: o.createdAt,
       updatedAt: o.updatedAt,
       userName: o.user?.nickname || o.user?.name || 'Unknown',
@@ -605,6 +717,14 @@ export class ShopService {
 
   /** Mark an order as fulfilled — uses pessimistic lock to prevent double-fulfill */
   async fulfillOrder(orderId: string) {
+    // Grant orders are fulfilled by issuing an HCB card grant, not by shipping —
+    // word the notifications accordingly. Cosmetic, so read outside the lock.
+    const preRead = await this.orderRepo.findOne({
+      where: { id: orderId },
+      relations: ['shopItem'],
+    });
+    const isGrant = !!preRead?.shopItem?.isGrant;
+
     return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
       const order = await manager.findOne(Order, {
         where: { id: orderId },
@@ -624,7 +744,9 @@ export class ShopService {
       const update = manager.create(FulfillmentUpdate, {
         userId: order.userId,
         orderId: order.id,
-        message: "Hey! I've sent out your order, its on the way to you :)",
+        message: isGrant
+          ? "Hey! Your grant card has been issued 💳 Check your email to accept it in HCB."
+          : "Hey! I've sent out your order, its on the way to you :)",
         isRead: false,
       });
       await manager.save(FulfillmentUpdate, update);
@@ -657,6 +779,7 @@ export class ShopService {
           itemName: order.itemName,
           quantity: order.quantity,
           cost: `${order.pipesSpent} Pipes`,
+          isGrant,
         }),
       );
 

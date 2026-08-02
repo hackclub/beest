@@ -142,43 +142,49 @@ export class DevlogsService {
     return { ok: true };
   }
 
+  /**
+   * A reviewer approves (or un-approves) a devlog and sets its hours. Devlog
+   * hours are treated exactly like normal project hours, but this only RECORDS
+   * them on the devlog — it deliberately does NOT touch `project.overrideHours`
+   * or mint pipes. Pipes are minted solely at fraud review by a Fraud Reviewer
+   * or Super Admin, where the reconcile folds approved devlog hours into the
+   * payout base (see FraudReviewService.completeApproval / AuditService). This
+   * keeps the pipe-minting gate in one fraud-gated place and avoids a reviewer
+   * side-channel into the balance.
+   *
+   * The devlog row is locked FOR UPDATE so two concurrent reviews of the same
+   * devlog can't race on its approved state.
+   */
   async reviewDevlog(
     devlogId: string,
     reviewerId: string,
-    dto: { approved: boolean; approvedHours: number | null }) {
-      const devlog = await this.devlogRepo.findOne({ where: { id: devlogId } });
-      if (!devlog) throw new BadRequestException('Devlog not found'); 
+    dto: { approved: boolean; approvedHours: number | null },
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      const devlog = await manager.findOne(Devlog, {
+        where: { id: devlogId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!devlog) throw new BadRequestException('Devlog not found');
       if (!devlog.projectId) throw new BadRequestException('Devlog is not linked to a project');
 
-      const hours = 
+      const hours =
         dto.approved && typeof dto.approvedHours === 'number' && dto.approvedHours >= 0
           ? Math.round(Math.min(dto.approvedHours, 1000) * 10) / 10
           : 0;
 
-      const previous = devlog.approved ? devlog.approvedHours ?? 0 : 0;
-      const delta = Math.round((hours - previous) * 10) / 10;
+      devlog.approved = dto.approved;
+      devlog.approvedHours = dto.approved ? hours : null;
+      devlog.approvedByReviewerId = reviewerId;
+      devlog.approvedAt = new Date();
+      await manager.save(Devlog, devlog);
 
-      return this.dataSource.transaction(async (manager) => {
-        if (delta != 0) {
-          const project = await manager.findOne(Project, { where: { id: devlog.projectId! }, lock: { mode: 'pessimistic_write' } });
-          if (project) {
-            const next = Math.round(((project.overrideHours ?? 0) + delta) * 10) / 10;
-            project.overrideHours = Math.max(0, next);
-            await manager.save(Project, project);
-          }
-        }
-        devlog.approved = dto.approved;
-        devlog.approvedHours = dto.approved ? hours : null;
-        devlog.approvedByReviewerId = reviewerId;
-        devlog.approvedAt = new Date();
-        await manager.save(Devlog, devlog);
-
-        await this.auditLogService.log(
-          reviewerId,
-          'devlog_reviewed',
-          `${dto.approved ? 'Approved' : 'Unapproved'} devlog "${devlog.title}" (${hours}h, Δ${delta}h) on project ${devlog.projectId}`,
+      await this.auditLogService.log(
+        reviewerId,
+        'devlog_reviewed',
+        `${dto.approved ? 'Approved' : 'Unapproved'} devlog "${devlog.title}" (${dto.approved ? hours : 0}h) on project ${devlog.projectId} — pipes mint at fraud review`,
       );
-      return { id: devlog.id, approved: devlog.approved, approvedHours: devlog.approvedHours};
+      return { id: devlog.id, approved: devlog.approved, approvedHours: devlog.approvedHours };
     });
   }
   

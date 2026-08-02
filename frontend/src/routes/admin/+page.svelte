@@ -60,6 +60,7 @@
 		Both: 'Hackathon + Shop',
 	};
 
+
 	// Fulfiller is reviewer-tier for the tab layout (Projects + Leaderboard, none
 	// of the Super-Admin-only tabs), but additionally gets the Fulfillment tab via
 	// canFulfill below. It has no audit access.
@@ -189,6 +190,8 @@
 		claimedByReviewerId: string | null;
 		claimedByReviewerName: string | null;
 		claimedAt: string | null;
+		joeProfileUrl: string | null;
+		joeHackatimeUrl: string | null;
 	}
 
 	interface StatusCounts {
@@ -1176,6 +1179,22 @@
 		}
 	}
 
+	async function sendAttendInvite() {
+		if (!selectedUser || !confirm(`Send ${selectedUser.name ?? selectedUser.hcaSub} an Attend invite for the in-person event?`)) return;
+		actionLoading = 'attend-invite';
+		try {
+			const res = await fetch(`/api/admin/users/${selectedUser.id}/attend-invite`, { method: 'POST' });
+			const data = await res.json().catch(() => ({}));
+			if (res.ok && data.success) {
+				alert('Attend invite sent.');
+			} else {
+				alert('Attend invite failed — check the Attend admin panel or try again shortly.');
+			}
+		} finally {
+			actionLoading = '';
+		}
+	}
+
 	async function updatePerms(perms: string) {
 		if (!selectedUser || !confirm(`Change this user's permissions to "${perms}"?`)) return;
 		actionLoading = 'perms';
@@ -1513,6 +1532,8 @@
 		approved: number;
 		changesNeeded: number;
 		banned: number;
+		rejected: number;
+		returned: number;
 		approvalPercent: number;
 	}
 	let leaderboardRows: LeaderboardRow[] = $state([]);
@@ -1544,12 +1565,15 @@
 		detailedDescription: string | null;
 		imageUrl: string;
 		priceHours: number;
+		regionalPrices: Record<string, number> | null;
 		stock: number | null;
 		sortOrder: number;
 		isActive: boolean;
 		isFeatured: boolean;
 		isSuperFeatured: boolean;
 		isBlackMarket: boolean;
+		isGrant: boolean;
+		grantInstructions: string | null;
 		estimatedShip: string | null;
 	}
 	let shopItemsList: ShopItemAdmin[] = $state([]);
@@ -1561,16 +1585,42 @@
 	let newShopDetailedDesc = $state('');
 	let newShopImage = $state('');
 	let newShopPrice = $state(0);
+	let newShopRegional = $state('');
+	// Text form of editingShop.regionalPrices, kept separately because the
+	// map is edited as a "US:120, IN:80" string and parsed on save.
+	let editingShopRegional = $state('');
 	let newShopStock = $state('');
 	let newShopShip = $state('');
 	let newShopActive = $state(true);
 	let newShopFeatured = $state(false);
 	let newShopSuperFeatured = $state(false);
 	let newShopBlackMarket = $state(false);
+	let newShopIsGrant = $state(false);
+	let newShopGrantInstructions = $state('');
 	let dragIdx: number | null = $state(null);
 	let dragOverIdx: number | null = $state(null);
 	// Shop item whose buyer list is open in the ItemBuyersModal, if any.
 	let buyersModalItem = $state<{ id: string; name: string } | null>(null);
+
+	function formatRegionalPrices(rp: Record<string, number> | null): string {
+		return Object.entries(rp ?? {}).map(([c, p]) => `${c}:${p}`).join(', ');
+	}
+
+	// Parses "US:120, IN:80" into a map; returns null for an empty string
+	// (no overrides) and undefined when the text is malformed.
+	function parseRegionalPricesInput(text: string): Record<string, number> | null | undefined {
+		const out: Record<string, number> = {};
+		for (const part of text.split(',')) {
+			const p = part.trim();
+			if (!p) continue;
+			const idx = p.lastIndexOf(':');
+			const country = idx > 0 ? p.slice(0, idx).trim().toUpperCase() : '';
+			const price = idx > 0 ? Number(p.slice(idx + 1).trim()) : NaN;
+			if (!country || !Number.isInteger(price) || price < 1) return undefined;
+			out[country] = price;
+		}
+		return Object.keys(out).length ? out : null;
+	}
 
 	async function loadShop() {
 		shopLoading = true;
@@ -1584,6 +1634,11 @@
 
 	async function createShopItem() {
 		if (!newShopName.trim() || !newShopDesc.trim() || !newShopImage.trim() || !newShopPrice) return;
+		const regionalPrices = parseRegionalPricesInput(newShopRegional);
+		if (regionalPrices === undefined) {
+			alert('Regional prices must look like "US:120, IN:80" (positive whole numbers).');
+			return;
+		}
 		shopSaving = true;
 		try {
 			const res = await fetch('/api/admin/shop', {
@@ -1595,12 +1650,15 @@
 					detailedDescription: newShopDetailedDesc.trim() || null,
 					imageUrl: newShopImage,
 					priceHours: newShopPrice,
+					regionalPrices,
 					stock: newShopStock.trim() === '' ? null : parseInt(newShopStock),
 					estimatedShip: newShopShip.trim() || null,
 					isActive: newShopActive,
 					isFeatured: newShopFeatured,
 					isSuperFeatured: newShopSuperFeatured,
-					isBlackMarket: newShopBlackMarket
+					isBlackMarket: newShopBlackMarket,
+					isGrant: newShopIsGrant,
+					grantInstructions: newShopGrantInstructions.trim() || null
 				})
 			});
 			if (res.ok) {
@@ -1609,12 +1667,15 @@
 				newShopDetailedDesc = '';
 				newShopImage = '';
 				newShopPrice = 0;
+				newShopRegional = '';
 				newShopStock = '';
 				newShopShip = '';
 				newShopActive = true;
 				newShopFeatured = false;
 				newShopSuperFeatured = false;
 				newShopBlackMarket = false;
+				newShopIsGrant = false;
+				newShopGrantInstructions = '';
 				await loadShop();
 			}
 		} finally {
@@ -1624,6 +1685,11 @@
 
 	async function saveShopEdit() {
 		if (!editingShop) return;
+		const regionalPrices = parseRegionalPricesInput(editingShopRegional);
+		if (regionalPrices === undefined) {
+			alert('Regional prices must look like "US:120, IN:80" (positive whole numbers).');
+			return;
+		}
 		shopSaving = true;
 		try {
 			const res = await fetch(`/api/admin/shop/${editingShop.id}`, {
@@ -1635,12 +1701,15 @@
 					detailedDescription: editingShop.detailedDescription,
 					imageUrl: editingShop.imageUrl,
 					priceHours: editingShop.priceHours,
+					regionalPrices,
 					stock: editingShop.stock,
 					estimatedShip: editingShop.estimatedShip,
 					isActive: editingShop.isActive,
 					isFeatured: editingShop.isFeatured,
 					isSuperFeatured: editingShop.isSuperFeatured,
-					isBlackMarket: editingShop.isBlackMarket
+					isBlackMarket: editingShop.isBlackMarket,
+					isGrant: editingShop.isGrant,
+					grantInstructions: editingShop.grantInstructions
 				})
 			});
 			if (res.ok) {
@@ -1711,6 +1780,7 @@
 		status: string;
 		hcbCardGrantId: string | null;
 		siloGrantId: string | null;
+		isGrant: boolean;
 		createdAt: string;
 		updatedAt: string;
 		userName: string;
@@ -1723,6 +1793,9 @@
 	let fulfillmentItemFilter = $state('');
 	let fulfillmentStatusFilter = $state('pending');
 	let fulfillmentSortBy = $state<'oldest' | 'newest'>('oldest');
+	// Fulfillment splits into two sub-views: the full orders table and a
+	// dedicated bulk card-grant section (Super Admin only).
+	let fulfillmentSubTab = $state<'orders' | 'grants'>('orders');
 	let fulfillmentMsg = $state<Record<string, string>>({});
 	let fulfillmentActionLoading = $state('');
 
@@ -1832,6 +1905,70 @@
 		}
 		return result;
 	});
+
+	// ── Grant cards (bulk card grants) ──
+	// A "grant card" order is one whose shop item is flagged as a grant item
+	// (set in the shop panel). The grant amount is pipes spent × $5 (matches the
+	// backend); this is a display estimate — the backend re-computes on issue.
+	const GRANT_CENTS_PER_PIPE = 500;
+	function grantCentsForOrder(o: AdminOrder): number {
+		return o.pipesSpent * GRANT_CENTS_PER_PIPE;
+	}
+	function isGrantOrder(o: AdminOrder): boolean {
+		return o.isGrant;
+	}
+
+	// Auto-sorted queue: pending grant orders that don't have a grant yet.
+	let grantQueue = $derived(
+		filteredFulfillment.filter((o) => o.status === 'pending' && isGrantOrder(o) && !o.hcbCardGrantId)
+	);
+	let grantQueueTotalCents = $derived(
+		grantQueue.reduce((s, o) => s + grantCentsForOrder(o), 0)
+	);
+
+	// Batch controls: pre-auth is fixed ON server-side; one-time-use is the toggle.
+	let grantBatchOneTimeUse = $state(true);
+	let grantBatchRunning = $state(false);
+	let grantBatchResults = $state<
+		Array<{ orderId: string; itemName: string; ok: boolean; grantId?: string; error?: string; fulfilled?: boolean }>
+	>([]);
+
+	async function fulfillAllGrants() {
+		if (grantQueue.length === 0) return;
+		const confirmed = confirm(
+			`Issue ${grantQueue.length} REAL card grant(s) totaling ` +
+				`$${(grantQueueTotalCents / 100).toFixed(2)}?\n\n` +
+				`Pre-authorization: required.  One-time use: ${grantBatchOneTimeUse ? 'ON' : 'OFF'}.\n` +
+				`This moves real money and cannot be undone here.`
+		);
+		if (!confirmed) return;
+
+		grantBatchRunning = true;
+		grantBatchResults = [];
+		try {
+			const res = await fetch('/api/admin/hcb/card-grant/bulk', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					orderIds: grantQueue.map((o) => o.id),
+					oneTimeUse: grantBatchOneTimeUse
+				})
+			});
+			const body = await res.json().catch(() => ({}));
+			if (res.ok) {
+				grantBatchResults = body.results ?? [];
+				await loadFulfillment(); // refresh — granted orders drop out of the queue
+			} else {
+				grantBatchResults = [
+					{ orderId: '', itemName: '', ok: false, error: body?.message ?? 'Bulk grant failed' }
+				];
+			}
+		} catch {
+			grantBatchResults = [{ orderId: '', itemName: '', ok: false, error: 'Network error' }];
+		} finally {
+			grantBatchRunning = false;
+		}
+	}
 
 	// For each pending order, count other pending orders by the same user for
 	// the same shop item — these are mergeable into one fulfillment.
@@ -2119,6 +2256,10 @@
 										{#if isSuperAdmin}
 											<button class="btn btn-impersonate" onclick={impersonateUser} disabled={actionLoading !== '' || userDetail.perms === 'Banned'}>
 												{actionLoading === 'impersonate' ? 'Starting...' : 'Impersonate'}
+											</button>
+
+											<button class="btn btn-promote" onclick={sendAttendInvite} disabled={actionLoading !== ''} title="Manually (re)send the Attend in-person event invite — use this when an automatic invite failed">
+												{actionLoading === 'attend-invite' ? 'Sending...' : 'Send Attend Invite'}
 											</button>
 										{/if}
 									</div>
@@ -2470,26 +2611,99 @@
 						{/if}
 					</div>
 				{/if}
+				{#if isSuperAdmin}
+					<div class="fulfillment-subtabs">
+						<button class="fulfillment-subtab" class:active={fulfillmentSubTab === 'orders'} onclick={() => fulfillmentSubTab = 'orders'}>
+							Orders
+						</button>
+						<button class="fulfillment-subtab" class:active={fulfillmentSubTab === 'grants'} onclick={() => {
+							fulfillmentSubTab = 'grants';
+							// Grants are always pending; make sure pending orders are loaded even
+							// if the Orders view was left filtered to fulfilled/cancelled.
+							if (fulfillmentStatusFilter && fulfillmentStatusFilter !== 'pending') {
+								fulfillmentStatusFilter = 'pending';
+								loadFulfillment();
+							}
+						}}>
+							Bulk grants
+							{#if grantQueue.length > 0}<span class="subtab-badge">{grantQueue.length}</span>{/if}
+						</button>
+					</div>
+				{/if}
+
 				<div class="fulfillment-toolbar">
-					<select bind:value={fulfillmentStatusFilter} class="users-perms-filter" onchange={() => loadFulfillment()}>
-						<option value="">All Statuses</option>
-						<option value="pending">Pending</option>
-						<option value="fulfilled">Fulfilled</option>
-						<option value="cancelled">Cancelled</option>
-					</select>
+					{#if !(isSuperAdmin && fulfillmentSubTab === 'grants')}
+						<select bind:value={fulfillmentStatusFilter} class="users-perms-filter" onchange={() => loadFulfillment()}>
+							<option value="">All Statuses</option>
+							<option value="pending">Pending</option>
+							<option value="fulfilled">Fulfilled</option>
+							<option value="cancelled">Cancelled</option>
+						</select>
+					{/if}
 					<select bind:value={fulfillmentItemFilter} class="users-perms-filter">
 						<option value="">All Items</option>
 						{#each fulfillmentItemOptions as item}
 							<option value={item}>{item}</option>
 						{/each}
 					</select>
-					<select bind:value={fulfillmentSortBy} class="users-perms-filter" onchange={() => loadFulfillment()}>
-						<option value="oldest">Oldest First</option>
-						<option value="newest">Newest First</option>
-					</select>
+					{#if !(isSuperAdmin && fulfillmentSubTab === 'grants')}
+						<select bind:value={fulfillmentSortBy} class="users-perms-filter" onchange={() => loadFulfillment()}>
+							<option value="oldest">Oldest First</option>
+							<option value="newest">Newest First</option>
+						</select>
+					{/if}
 				</div>
 
-				{#if fulfillmentLoading}
+				{#if isSuperAdmin && fulfillmentSubTab === 'grants'}
+					{#if !hcbStatus?.connected}
+						<p class="placeholder">Connect HCB to issue card grants.</p>
+					{:else if grantQueue.length === 0}
+						<p class="placeholder">No pending grants{fulfillmentItemFilter ? ` for “${fulfillmentItemFilter}”` : ''} right now.</p>
+					{:else}
+						<div class="grant-batch">
+							<div class="grant-batch-head">
+								<h3>Grant cards <span class="grant-batch-count">{grantQueue.length}</span></h3>
+								<p class="grant-batch-sub">
+									Every pending order for a grant-flagged item — review here and send together as HCB card grants.
+								</p>
+							</div>
+
+							<ul class="grant-batch-list">
+								{#each grantQueue as o}
+									<li>
+										<span class="grant-batch-item">{o.itemName}</span>
+										<span class="grant-batch-user">{o.userName}{o.userEmail ? ` · ${o.userEmail}` : ''}</span>
+										<span class="grant-batch-amt">${(grantCentsForOrder(o) / 100).toFixed(2)}</span>
+									</li>
+								{/each}
+							</ul>
+
+							<div class="grant-batch-controls">
+								<label class="grant-batch-toggle">
+									<input type="checkbox" bind:checked={grantBatchOneTimeUse} disabled={grantBatchRunning} />
+									One-time use <span class="cg-hint">— card locks after the first transaction</span>
+								</label>
+								<span class="grant-batch-preauth">Pre-authorization: <strong>required</strong></span>
+								<span class="grant-batch-total">Total ${(grantQueueTotalCents / 100).toFixed(2)}</span>
+								<button class="btn btn-primary" onclick={fulfillAllGrants} disabled={grantBatchRunning}>
+									{grantBatchRunning ? 'Issuing…' : `Fulfill all grants (${grantQueue.length})`}
+								</button>
+							</div>
+
+							{#if grantBatchResults.length}
+								<ul class="grant-batch-results">
+									{#each grantBatchResults as r}
+										<li class:ok={r.ok} class:fail={!r.ok}>
+											{r.itemName ? `${r.itemName}: ` : ''}{r.ok
+												? `✓ ${r.grantId}${r.fulfilled ? ' · fulfilled' : ' · grant issued, order left pending'}`
+												: `✗ ${r.error ?? 'failed'}`}
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
+					{/if}
+				{:else if fulfillmentLoading}
 					<p class="placeholder">Loading orders...</p>
 				{:else if filteredFulfillment.length === 0}
 					<p class="placeholder">No orders found.</p>
@@ -2535,7 +2749,7 @@
 										<button class="btn btn-sm btn-danger" onclick={() => refundOrder(order)} disabled={fulfillmentActionLoading === order.id}>
 											{fulfillmentActionLoading === order.id ? '...' : 'Refund'}
 										</button>
-										{#if hcbStatus?.connected}
+										{#if hcbStatus?.connected && order.isGrant}
 											<button
 												class="btn btn-sm btn-grant"
 												onclick={() => (grantModalOrder = order)}
@@ -2691,6 +2905,10 @@
 								<span>Est. shipping</span>
 								<input type="text" placeholder="e.g. 2-3 weeks" bind:value={newShopShip} class="shop-input shop-input-sm" />
 							</label>
+							<label class="shop-field">
+								<span>Regional prices (country:hours, matches HCA address)</span>
+								<input type="text" placeholder="e.g. US:120, IN:80" bind:value={newShopRegional} class="shop-input" />
+							</label>
 						</div>
 						<div class="shop-form-row">
 							<label class="shop-checkbox">
@@ -2709,6 +2927,16 @@
 								<input type="checkbox" bind:checked={newShopBlackMarket} />
 								<span>Black market (golden-project authors only)</span>
 							</label>
+							<label class="shop-checkbox">
+								<input type="checkbox" bind:checked={newShopIsGrant} />
+								<span>Grant item (fulfilled by issuing an HCB card grant)</span>
+							</label>
+							{#if newShopIsGrant}
+								<label class="shop-field" style="flex-basis:100%">
+									<span>Grant instructions (shown to the recipient on the HCB grant, incl. pre-auth; blank = default)</span>
+									<textarea bind:value={newShopGrantInstructions} class="shop-input shop-textarea" rows="3" placeholder="e.g. Use this grant only for … Upload a receipt in HCB for every purchase."></textarea>
+								</label>
+							{/if}
 							<button class="btn btn-add-shop" onclick={createShopItem} disabled={shopSaving || !newShopName.trim() || !newShopImage.trim() || !newShopPrice}>
 								{shopSaving ? 'Saving...' : 'Add Item'}
 							</button>
@@ -2755,6 +2983,10 @@
 												<span>Est. ship</span>
 												<input type="text" bind:value={editingShop.estimatedShip} class="shop-input shop-input-sm" placeholder="e.g. 2-3 weeks" />
 											</label>
+											<label class="shop-field">
+												<span>Regional prices</span>
+												<input type="text" bind:value={editingShopRegional} class="shop-input" placeholder="e.g. US:120, IN:80" />
+											</label>
 										</div>
 										<div class="shop-form-row">
 											<label class="shop-checkbox">
@@ -2773,6 +3005,16 @@
 												<input type="checkbox" bind:checked={editingShop.isBlackMarket} />
 												<span>Black market</span>
 											</label>
+											<label class="shop-checkbox">
+												<input type="checkbox" bind:checked={editingShop.isGrant} />
+												<span>Grant item (HCB card grant)</span>
+											</label>
+											{#if editingShop.isGrant}
+												<label class="shop-field" style="flex-basis:100%">
+													<span>Grant instructions (shown to recipient; blank = default)</span>
+													<textarea bind:value={editingShop.grantInstructions} class="shop-input shop-textarea" rows="3" placeholder="Use this grant only for … Upload a receipt in HCB."></textarea>
+												</label>
+											{/if}
 											<div class="shop-edit-actions">
 												<button class="btn btn-save" onclick={saveShopEdit} disabled={shopSaving}>Save</button>
 												<button class="btn btn-cancel" onclick={() => editingShop = null}>Cancel</button>
@@ -2784,12 +3026,12 @@
 										<img src={item.imageUrl} alt={item.name} class="shop-item-thumb" />
 										<div class="shop-item-info">
 											<strong>{item.name}</strong>
-											<span class="shop-item-meta">{item.priceHours}h · {item.stock === null ? '∞' : item.stock} stock{item.estimatedShip ? ` · ${item.estimatedShip}` : ''}{item.isSuperFeatured ? ' · SUPER FEATURED' : ''}{item.isFeatured ? ' · FEATURED' : ''}{item.isBlackMarket ? ' · BLACK MARKET' : ''}{!item.isActive ? ' · HIDDEN' : ''}</span>
+											<span class="shop-item-meta">{item.priceHours}h{item.regionalPrices && Object.keys(item.regionalPrices).length ? ` (${formatRegionalPrices(item.regionalPrices)})` : ''} · {item.stock === null ? '∞' : item.stock} stock{item.estimatedShip ? ` · ${item.estimatedShip}` : ''}{item.isSuperFeatured ? ' · SUPER FEATURED' : ''}{item.isFeatured ? ' · FEATURED' : ''}{item.isBlackMarket ? ' · BLACK MARKET' : ''}{item.isGrant ? ' · GRANT' : ''}{!item.isActive ? ' · HIDDEN' : ''}</span>
 										</div>
 									</div>
 									<div class="shop-item-actions">
 										<button class="btn btn-edit" onclick={() => buyersModalItem = { id: item.id, name: item.name }}>Buyers</button>
-										<button class="btn btn-edit" onclick={() => editingShop = { ...item }}>Edit</button>
+										<button class="btn btn-edit" onclick={() => { editingShop = { ...item }; editingShopRegional = formatRegionalPrices(item.regionalPrices); }}>Edit</button>
 										<button class="btn btn-delete" onclick={() => deleteShopItem(item.id)} disabled={shopSaving}>Delete</button>
 									</div>
 								{/if}
@@ -2890,6 +3132,37 @@
 										<div class="proj-main-header">
 											<h3 class="proj-main-title">{selectedProject.name}</h3>
 											<span class="badge badge-{selectedProject.status}">{selectedProject.status}</span>
+
+											<div class="joe-link-wrap">
+												{#if selectedProject.joeProfileUrl}
+													<a
+														class="joe-link-btn"
+														href={selectedProject.joeProfileUrl}
+														target="_blank"
+														rel="noopener noreferrer"
+														title="Builder's fraud profile in Joe"
+													>
+														Joe Profile ↗
+													</a>
+												{/if}
+												{#if selectedProject.joeHackatimeUrl}
+													<a
+														class="joe-link-btn joe-link-btn--alt"
+														href={selectedProject.joeHackatimeUrl}
+														target="_blank"
+														rel="noopener noreferrer"
+														title="Hackatime activity for this project in Joe"
+													>
+														Joe Hackatime ↗
+													</a>
+												{/if}
+												{#if !selectedProject.joeProfileUrl && !selectedProject.joeHackatimeUrl}
+													<span class="joe-link-btn joe-link-btn--disabled" title="No Hackatime or Slack identity on file for this builder">
+														No Joe link
+													</span>
+												{/if}
+												<span class="joe-link-note">HQ &amp; Fraud Squad only</span>
+											</div>
 										</div>
 
 										<p class="proj-main-desc">{selectedProject.description}</p>
@@ -3554,6 +3827,8 @@
 								<th>Approved</th>
 								<th>Changes Needed</th>
 								<th>Banned</th>
+								<th>Rejected</th>
+								<th>Returned</th>
 								<th>Approval %</th>
 							</tr>
 						</thead>
@@ -3565,6 +3840,8 @@
 									<td>{row.approved}</td>
 									<td>{row.changesNeeded}</td>
 									<td>{row.banned}</td>
+									<td>{row.rejected}</td>
+									<td>{row.returned}</td>
 									<td>{row.approvalPercent}%</td>
 								</tr>
 							{/each}
@@ -4705,6 +4982,51 @@
 		align-items: center;
 		gap: 0.75rem;
 		margin-bottom: 0.5rem;
+	}
+
+	.joe-link-wrap {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-left: auto;
+	}
+
+	.joe-link-btn {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.25rem 0.6rem;
+		font-size: 0.8rem;
+		font-weight: 600;
+		border-radius: 6px;
+		background: #7c3aed;
+		color: #fff;
+		text-decoration: none;
+		white-space: nowrap;
+	}
+
+	.joe-link-btn:hover {
+		background: #6d28d9;
+	}
+
+	.joe-link-btn--alt {
+		background: #0d9488;
+	}
+
+	.joe-link-btn--alt:hover {
+		background: #0f766e;
+	}
+
+	.joe-link-btn--disabled {
+		background: #3a3a3a;
+		color: #888;
+		cursor: not-allowed;
+	}
+
+	.joe-link-note {
+		font-size: 0.7rem;
+		color: #9ca3af;
+		font-style: italic;
+		white-space: nowrap;
 	}
 
 	.proj-main-title {
@@ -6403,6 +6725,8 @@
 	.admin-shell.light .proj-main-desc { color: #333; }
 	.admin-shell.light .proj-main-meta { color: #555; }
 	.admin-shell.light .proj-main-meta strong { color: #1a1a1a; }
+	.admin-shell.light .joe-link-btn--disabled { background: #e5e7eb; color: #6b7280; }
+	.admin-shell.light .joe-link-note { color: #6b7280; }
 
 	.admin-shell.light .proj-divider { border-top-color: #666; }
 	.admin-shell.light .proj-screenshot { border-color: #555; }
@@ -6515,6 +6839,62 @@
 
 	/* ── Fulfillment ─────────────────────────────────── */
 	.fulfillment-admin { padding: 0; }
+
+	/* Sub-tabs: Orders | Bulk grants */
+	.fulfillment-subtabs {
+		display: flex; gap: 0.25rem;
+		border-bottom: 1px solid #333;
+		margin-bottom: 1rem;
+	}
+	.fulfillment-subtab {
+		display: inline-flex; align-items: center; gap: 0.4rem;
+		padding: 0.45rem 0.85rem; background: none; border: none;
+		color: #888; cursor: pointer; font-size: 0.88rem;
+		border-bottom: 2px solid transparent; margin-bottom: -1px;
+		transition: color 0.15s, border-color 0.15s;
+	}
+	.fulfillment-subtab:hover { color: #ccc; }
+	.fulfillment-subtab.active { color: #fff; border-bottom-color: #7c3aed; }
+	.subtab-badge {
+		background: #7c3aed; color: #fff; font-size: 0.7rem; font-weight: 600;
+		border-radius: 999px; padding: 0.02rem 0.42rem; line-height: 1.4;
+	}
+	.admin-shell.light .fulfillment-subtabs { border-bottom-color: #d9d3c8; }
+	.admin-shell.light .fulfillment-subtab { color: #666; }
+	.admin-shell.light .fulfillment-subtab:hover { color: #222; }
+	.admin-shell.light .fulfillment-subtab.active { color: #1a1a1a; border-bottom-color: #7c3aed; }
+
+	/* Grant cards (bulk card grants) */
+	.grant-batch {
+		border: 1px solid rgba(124, 58, 237, 0.4);
+		background: rgba(124, 58, 237, 0.08);
+		border-radius: 8px;
+		padding: 0.85rem 1rem;
+		margin-bottom: 1rem;
+	}
+	.grant-batch-head h3 { margin: 0; font-size: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+	.grant-batch-count {
+		background: #7c3aed; color: #fff; font-size: 0.75rem;
+		border-radius: 999px; padding: 0.05rem 0.5rem;
+	}
+	.grant-batch-sub { margin: 0.25rem 0 0.75rem; font-size: 0.8rem; opacity: 0.75; }
+	.grant-batch-list { list-style: none; margin: 0 0 0.75rem; padding: 0; max-height: 220px; overflow-y: auto; }
+	.grant-batch-list li {
+		display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.75rem;
+		padding: 0.3rem 0; border-top: 1px solid rgba(124, 58, 237, 0.18);
+		font-size: 0.82rem; align-items: center;
+	}
+	.grant-batch-list li:first-child { border-top: 0; }
+	.grant-batch-user { opacity: 0.75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.grant-batch-amt { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+	.grant-batch-controls { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+	.grant-batch-toggle { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; }
+	.grant-batch-preauth { font-size: 0.8rem; opacity: 0.85; }
+	.grant-batch-total { font-size: 0.8rem; font-variant-numeric: tabular-nums; margin-left: auto; }
+	.grant-batch .cg-hint { opacity: 0.6; font-weight: 400; }
+	.grant-batch-results { list-style: none; margin: 0.75rem 0 0; padding: 0; font-size: 0.8rem; }
+	.grant-batch-results li.ok { color: #6bd968; }
+	.grant-batch-results li.fail { color: #ff6b6b; }
 
 	.fulfillment-toolbar {
 		display: flex;

@@ -22,6 +22,7 @@ import { FraudReviewModule } from '../fraud-review/fraud-review.module';
 import { ProjectAirtableSyncModule } from '../projects/project-airtable-sync.module';
 import { IdentityModule } from '../identity/identity.module';
 import { SlackModule } from '../slack/slack.module';
+import { AttendModule } from '../attend/attend.module';
 import { AdminController } from './admin.controller';
 import { AuditInternalController } from './audit-internal.controller';
 import { AdminService } from './admin.service';
@@ -47,6 +48,7 @@ import { AuditServiceKeyGuard } from './audit-service-key.guard';
     ProjectAirtableSyncModule,
     IdentityModule,
     SlackModule,
+    AttendModule,
   ],
   controllers: [AdminController, AuditInternalController],
   providers: [

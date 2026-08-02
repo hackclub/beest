@@ -24,6 +24,46 @@ import { AuthService } from '../auth/auth.service';
 import { ShopService } from '../shop/shop.service';
 import { DevlogsService } from '../devlogs/devlogs.service';
 import { LookoutService } from '../lookout/lookout.service';
+import { AttendService } from '../attend/attend.service';
+import { normalizeCountry } from '../country.util';
+
+/**
+ * Validates and normalizes the regionalPrices body field for shop item
+ * create/update. Returns undefined when absent (leave unchanged), null to
+ * clear all overrides, or a map with normalized-uppercase country keys and
+ * positive-integer prices. Throws BadRequestException on anything else.
+ */
+function parseRegionalPrices(
+  input: unknown,
+): Record<string, number> | null | undefined {
+  if (input === undefined) return undefined;
+  if (input === null) return null;
+  if (typeof input !== 'object' || Array.isArray(input)) {
+    throw new BadRequestException(
+      'regionalPrices must be an object mapping country to price, or null',
+    );
+  }
+  const entries = Object.entries(input as Record<string, unknown>);
+  if (entries.length > 300) {
+    throw new BadRequestException('regionalPrices has too many entries');
+  }
+  const out: Record<string, number> = {};
+  for (const [rawKey, value] of entries) {
+    const key = normalizeCountry(rawKey);
+    if (!key) {
+      throw new BadRequestException(
+        'regionalPrices keys must be non-empty country names',
+      );
+    }
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+      throw new BadRequestException(
+        'regionalPrices values must be positive integers',
+      );
+    }
+    out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
 
 @Controller('api/admin')
 export class AdminController {
@@ -35,6 +75,7 @@ export class AdminController {
     private readonly shopService: ShopService,
     private readonly devlogsService: DevlogsService,
     private readonly lookoutService: LookoutService,
+    private readonly attendService: AttendService,
   ) {}
 
   @UseGuards(FulfillerGuard)
@@ -147,6 +188,33 @@ export class AdminController {
     await this.auditLogService.log(id, 'admin_impersonate', `Admin ${adminName} started impersonating this account`);
 
     return this.authService.issueImpersonationToken(id, adminUid, adminName);
+  }
+
+  // Manual escape hatch for AttendService.inviteParticipant failures (see
+  // ShopService.alertAttendInviteFailure) — lets a Super Admin retry from the
+  // user panel instead of needing DB/console access.
+  @UseGuards(SuperAdminGuard)
+  @Post('users/:id/attend-invite')
+  async sendAttendInvite(@Param('id', ParseUUIDPipe) id: string) {
+    const targetUser = await this.adminService.getUser(id);
+    if (!targetUser.email) {
+      throw new BadRequestException('User has no email on file');
+    }
+
+    const invited = await this.attendService.inviteParticipant(
+      targetUser.email,
+      targetUser.name,
+    );
+
+    await this.auditLogService.log(
+      id,
+      invited ? 'attend_invite_manual' : 'attend_invite_failed',
+      invited
+        ? `Admin manually sent an Attend invite to ${targetUser.email}`
+        : `Attend invite failed for ${targetUser.email} — needs manual follow-up`,
+    );
+
+    return { success: invited };
   }
 
   @UseGuards(FulfillerGuard)
@@ -549,12 +617,15 @@ export class AdminController {
     detailedDescription?: string | null;
     imageUrl?: string;
     priceHours?: number;
+    regionalPrices?: Record<string, number> | null;
     stock?: number | null;
     estimatedShip?: string | null;
     isActive?: boolean;
     isFeatured?: boolean;
     isSuperFeatured?: boolean;
     isBlackMarket?: boolean;
+    isGrant?: boolean;
+    grantInstructions?: string | null;
   }, @Req() req: Request) {
     if (!body.name || !body.description || !body.imageUrl || body.priceHours == null) {
       throw new BadRequestException('name, description, imageUrl, and priceHours are required');
@@ -573,12 +644,15 @@ export class AdminController {
       detailedDescription: body.detailedDescription,
       imageUrl: body.imageUrl,
       priceHours: body.priceHours,
+      regionalPrices: parseRegionalPrices(body.regionalPrices),
       stock: body.stock,
       estimatedShip: body.estimatedShip,
       isActive: body.isActive,
       isFeatured: body.isFeatured,
       isSuperFeatured: body.isSuperFeatured,
       isBlackMarket: body.isBlackMarket,
+      isGrant: body.isGrant,
+      grantInstructions: body.grantInstructions,
     }, (req as any).user?.uid);
   }
 
@@ -607,12 +681,15 @@ export class AdminController {
       detailedDescription?: string | null;
       imageUrl?: string;
       priceHours?: number;
+      regionalPrices?: Record<string, number> | null;
       stock?: number | null;
       estimatedShip?: string | null;
       isActive?: boolean;
       isFeatured?: boolean;
       isSuperFeatured?: boolean;
       isBlackMarket?: boolean;
+      isGrant?: boolean;
+      grantInstructions?: string | null;
     },
     @Req() req: Request,
   ) {
@@ -626,7 +703,11 @@ export class AdminController {
         throw new BadRequestException('stock must be a non-negative integer or null');
       }
     }
-    return this.adminService.updateShopItem(id, body, (req as any).user?.uid);
+    return this.adminService.updateShopItem(
+      id,
+      { ...body, regionalPrices: parseRegionalPrices(body.regionalPrices) },
+      (req as any).user?.uid,
+    );
   }
 
   @UseGuards(FulfillerGuard)

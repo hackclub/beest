@@ -8,12 +8,14 @@ import { Order } from '../entities/order.entity';
 import { HcbService } from './hcb.service';
 import { HcbController } from './hcb.controller';
 import { SuperAdminGuard } from '../admin/super-admin.guard';
+import { ShopModule } from '../shop/shop.module';
 
 @Module({
   imports: [
     AuthModule,
     RsvpModule,
     AuditLogModule,
+    ShopModule,
     TypeOrmModule.forFeature([HcbCredential, Order]),
   ],
   controllers: [HcbController],

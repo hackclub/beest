@@ -45,6 +45,13 @@ export class ShopItem {
   @Column({ name: 'is_black_market', type: 'boolean', default: false })
   isBlackMarket: boolean;
 
+  // Per-country price overrides keyed by normalized country (uppercase, the
+  // same form normalizeCountry() produces from Hack Club Auth addresses),
+  // e.g. { "US": 120, "IN": 80 }. Users whose users.country matches a key pay
+  // that price instead of priceHours; everyone else pays priceHours.
+  @Column({ name: 'regional_prices', type: 'jsonb', nullable: true, default: null })
+  regionalPrices: Record<string, number> | null;
+
   @Column({ name: 'detailed_description', type: 'text', nullable: true, default: null })
   detailedDescription: string | null;
 
@@ -55,6 +62,19 @@ export class ShopItem {
   // Sidekick). Shared across all orders of this item.
   @Column({ name: 'fulfiller_context', type: 'text', nullable: true, default: null })
   fulfillerContext: string | null;
+
+  // When true, this item is fulfilled by issuing an HCB card grant — the grant
+  // options (single "Card grant" button + bulk "Grant cards" panel) only appear
+  // for orders of grant items. The grant amount is pipes spent × the per-pipe
+  // rate ($5/pipe by default, override via HCB_CENTS_PER_PIPE).
+  @Column({ name: 'is_grant', type: 'boolean', default: false })
+  isGrant: boolean;
+
+  // Per-item instructions sent to HCB on the card grant (shown to the recipient,
+  // incl. during pre-authorization). Blank → a default is used. Set in the shop
+  // panel; shared across all grants of this item.
+  @Column({ name: 'grant_instructions', type: 'text', nullable: true, default: null })
+  grantInstructions: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

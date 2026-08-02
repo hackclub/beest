@@ -54,6 +54,14 @@ export class ProjectReview {
   @JoinColumn({ name: 'returned_by_id' })
   returnedBy: User | null;
 
+  // The reviewer's golden decision on an 'approved' first-pass row. Recorded
+  // here at first pass but applied to project.is_golden only when the approval
+  // is finalised at second-pass audit (like pipes) — a first-pass verdict is
+  // not authoritative and must not unlock user-visible perks. NULL on
+  // non-approve rows and legacy data.
+  @Column({ type: 'boolean', nullable: true })
+  golden: boolean | null;
+
   @Column({ type: 'text', nullable: true })
   feedback: string | null;
 

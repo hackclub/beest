@@ -13,12 +13,37 @@ import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { fetchWithTimeout } from '../fetch.util';
 import { HcbCredential } from '../entities/hcb-credential.entity';
 import { Order } from '../entities/order.entity';
-import { User } from '../entities/user.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { ShopService } from '../shop/shop.service';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Refresh proactively when the access token has under this long to live.
 const EXPIRY_SKEW_MS = 60 * 1000;
+// Default grant value: $5 per pipe spent. Used when HCB_CENTS_PER_PIPE is unset.
+const DEFAULT_CENTS_PER_PIPE = 500;
+
+// How many grants to issue in parallel in the bulk flow. Each order is an
+// independent row (its own pessimistic lock + idempotency guard), so bounded
+// concurrency only shortens wall-clock time; keep it modest to stay gentle on
+// HCB. Override with HCB_GRANT_CONCURRENCY.
+const DEFAULT_GRANT_CONCURRENCY = 4;
+const MAX_GRANT_CONCURRENCY = 8;
+
+// Grant instructions are set per shop item in the shop panel
+// (ShopItem.grantInstructions) and sent to HCB on the card grant (shown to the
+// recipient, incl. during pre-authorization). Items with no instructions set
+// fall back to this default.
+const DEFAULT_GRANT_INSTRUCTIONS = [
+  'This is your beest reward grant card — use it only for the item you redeemed.',
+  'Upload a receipt in HCB for every transaction, or the charge may be reversed.',
+  'If the card needs pre-authorization it activates once approved. Questions? Ask in the Hack Club Slack.',
+].join('\n');
+
+// The item's own instructions if set, else the default.
+function resolveGrantInstructions(raw: string | null | undefined): string {
+  const text = (raw ?? '').trim();
+  return text || DEFAULT_GRANT_INSTRUCTIONS;
+}
 
 export type GrantAdmin = { uid: string; email: string };
 
@@ -56,6 +81,20 @@ export type CardGrantPrefill = {
   existingGrantId: string | null;
 };
 
+export type BulkGrantResult = {
+  orderId: string;
+  itemName: string;
+  ok: boolean;
+  grantId?: string;
+  amountCents?: number;
+  error?: string;
+  skipped?: 'not_pending' | 'already_granted' | 'not_a_grant';
+  // True once the order was marked fulfilled after a successful grant. False
+  // means the grant succeeded (money moved) but the fulfill step failed — the
+  // grant is never rolled back for a fulfill failure.
+  fulfilled?: boolean;
+}
+
 @Injectable()
 export class HcbService {
   private readonly logger = new Logger(HcbService.name);
@@ -70,6 +109,13 @@ export class HcbService {
   // the grant at twice that value when configured.
   private readonly centsPerPipe: number | undefined;
 
+  // Max grants issued in parallel by the bulk flow (clamped, env-overridable).
+  private readonly grantConcurrency: number;
+
+  // Single-flight guard so concurrent callers share one token refresh instead
+  // of racing HCB's refresh-token rotation.
+  private refreshInFlight: Promise<string> | null = null;
+
   private readonly scope = 'read write';
 
   constructor(
@@ -79,6 +125,7 @@ export class HcbService {
     @InjectRepository(Order)
     private readonly orderRepo: Repository<Order>,
     private readonly auditLogService: AuditLogService,
+    private readonly shopService: ShopService,
   ) {
     this.baseUrl = (this.config.get<string>('HCB_BASE_URL') ?? 'https://hcb.hackclub.com').replace(/\/$/, '');
     this.clientId = this.config.get<string>('HCB_CLIENT_ID')?.trim() || undefined;
@@ -86,10 +133,14 @@ export class HcbService {
     this.redirectUri = this.config.get<string>('HCB_REDIRECT_URI', 'http://localhost:5173/oauth/hcb/callback');
     this.orgId = this.config.get<string>('HCB_ORG_ID')?.trim() || undefined;
     this.jwtSecret = this.config.getOrThrow<string>('JWT_SECRET');
-    // Cents per pipe, e.g. 500 = $5 per pipe. Drives the suggested amount and
-    // the cap (twice the pipe value).
+    // Cents per pipe, e.g. 500 = $5 per pipe. Drives the grant amount, the
+    // suggested amount, and the cap. Defaults to $5/pipe when unset.
     this.centsPerPipe = this.parsePositiveInt(
       this.config.get<string>('HCB_CENTS_PER_PIPE') ?? this.config.get<string>('HCB_PIPES_TO_CENTS'),
+    ) ?? DEFAULT_CENTS_PER_PIPE;
+    this.grantConcurrency = Math.min(
+      MAX_GRANT_CONCURRENCY,
+      this.parsePositiveInt(this.config.get<string>('HCB_GRANT_CONCURRENCY')) ?? DEFAULT_GRANT_CONCURRENCY,
     );
 
     if (!this.isConfigured) {
@@ -226,7 +277,14 @@ export class HcbService {
     if (cred.expiresAt.getTime() - EXPIRY_SKEW_MS > Date.now()) {
       return cred.accessToken;
     }
-    return this.refresh(cred);
+    // Coalesce concurrent refreshes: HCB rotates the refresh token on use, so
+    // two simultaneous refreshes would invalidate each other. Share one.
+    if (!this.refreshInFlight) {
+      this.refreshInFlight = this.refresh(cred).finally(() => {
+        this.refreshInFlight = null;
+      });
+    }
+    return this.refreshInFlight;
   }
 
   private async refresh(cred: HcbCredential): Promise<string> {
@@ -323,6 +381,8 @@ export class HcbService {
       throw new ServiceUnavailableException('HCB is not configured');
     }
 
+
+  
     // Validate email + purpose up front (cheap, no lock held).
     const email = (input.email ?? '').trim().toLowerCase();
     if (!EMAIL_RE.test(email)) {
@@ -349,10 +409,14 @@ export class HcbService {
     // so a slightly stale read is fine; the locked re-read still guards money.
     const orderForChecks = await this.orderRepo.findOne({
       where: { id: orderId },
-      relations: ['user'],
+      relations: ['user', 'shopItem'],
     });
     if (!orderForChecks) throw new NotFoundException('Order not found');
     const ownerEmail = (orderForChecks.user?.email ?? '').trim().toLowerCase();
+    // Instructions come from the order's shop item (set in the shop panel).
+    const instructions = resolveGrantInstructions(
+      orderForChecks.shopItem?.grantInstructions,
+    );
 
     // 1) An admin may not issue a grant to their own email.
     if (email === admin.email.trim().toLowerCase()) {
@@ -403,6 +467,7 @@ export class HcbService {
           email,
           one_time_use: oneTimeUse,
           pre_authorization_required: preAuthorizationRequired,
+          instructions,
         };
         if (purpose) body.purpose = purpose;
         if (merchantLock) body.merchant_lock = merchantLock;
@@ -499,6 +564,104 @@ export class HcbService {
     return { grantId: result.grantId, amountCents: result.amountCents, status: result.status };
   }
 
+  async createGrantForOrders(
+    orderIds: string[],
+    opts: { oneTimeUse?: boolean; preAuthorizationRequired?: boolean },
+    admin: GrantAdmin,
+  ): Promise<{ results: BulkGrantResult[] }> {
+    if (!this.isConfigured || !this.orgId) {
+      throw new ServiceUnavailableException('HCB is not configured');
+    }
+
+    // Prime the OAuth token once up front. The workers below run in parallel and
+    // each calls getValidAccessToken(); priming (plus the refresh single-flight)
+    // means they hit the cached token instead of racing to refresh mid-batch.
+    await this.getValidAccessToken();
+
+    // Issue grants with bounded concurrency. Orders are independent rows — each
+    // guarded by its own pessimistic lock + idempotency — so this only shortens
+    // wall-clock time; it does not weaken the per-order money safety. Results are
+    // written by original index so the response order matches the request.
+    const results: BulkGrantResult[] = new Array(orderIds.length);
+    let cursor = 0;
+    const worker = async () => {
+      for (let i = cursor++; i < orderIds.length; i = cursor++) {
+        try {
+          results[i] = await this.processGrantOrder(orderIds[i], opts, admin);
+        } catch (err) {
+          // processGrantOrder is defensive, but guarantee no undefined slots.
+          results[i] = {
+            orderId: orderIds[i],
+            itemName: '',
+            ok: false,
+            error: err instanceof Error ? err.message : 'Grant failed',
+          };
+        }
+      }
+    };
+    const workers = Math.max(1, Math.min(this.grantConcurrency, orderIds.length));
+    await Promise.all(Array.from({ length: workers }, () => worker()));
+    return { results };
+  }
+
+  // Issues a single grant for one order and marks it fulfilled. Never throws —
+  // always resolves to a BulkGrantResult so one failure can't sink the batch.
+  private async processGrantOrder(
+    orderId: string,
+    opts: { oneTimeUse?: boolean; preAuthorizationRequired?: boolean },
+    admin: GrantAdmin,
+  ): Promise<BulkGrantResult> {
+    const order = await this.orderRepo.findOne({ where: { id: orderId }, relations: ['user', 'shopItem'] });
+    if (!order) {
+      return { orderId, itemName: '', ok: false, error: 'Order not found' };
+    }
+    const base = { orderId, itemName: order.itemName };
+
+    if (order.status !== 'pending') {
+      return { ...base, ok: false, skipped: 'not_pending', error: 'Order is not pending' };
+    }
+    if (order.hcbCardGrantId) {
+      return { ...base, ok: false, skipped: 'already_granted', error: `Already granted (${order.hcbCardGrantId})` };
+    }
+    // Only issue grants for items flagged as grant items in the shop panel.
+    if (!order.shopItem?.isGrant) {
+      return { ...base, ok: false, skipped: 'not_a_grant', error: 'Item is not a grant item' };
+    }
+
+    // Grant amount = pipes spent × the per-pipe rate ($5/pipe by default).
+    const amountCents =
+      this.centsPerPipe !== undefined ? order.pipesSpent * this.centsPerPipe : null;
+    if (amountCents === null || amountCents <= 0) {
+      return { ...base, ok: false, skipped: 'not_a_grant', error: 'Grant amount is zero (no pipes spent)' };
+    }
+
+    try {
+      const res = await this.createCardGrantForOrder(orderId, {
+        amountCents,
+        email: (order.user?.email ?? '').trim().toLowerCase(),
+        purpose: this.defaultPurpose(order.itemName),
+        preAuthorizationRequired: true,      // fixed for the batch
+        oneTimeUse: opts.oneTimeUse,          // fixed for the batch
+      }, admin);
+
+      // Grant succeeded (money moved) — now mark the order fulfilled. A
+      // fulfill failure must NOT fail the result: the grant already stands.
+      let fulfilled = false;
+      try {
+        await this.shopService.fulfillOrder(orderId);
+        fulfilled = true;
+      } catch (ferrErr) {
+        this.logger.error(
+          `Grant ${res.grantId} issued for order ${orderId} but auto-fulfill failed ` +
+            `(order left pending): ${ferrErr instanceof Error ? ferrErr.message : String(ferrErr)}`,
+        );
+      }
+
+      return { ...base, ok: true, grantId: res.grantId, amountCents: res.amountCents, fulfilled };
+    } catch (err) {
+      return { ...base, ok: false, error: err instanceof Error ? err.message : 'Grant failed' };
+    }
+  }
   private cleanLock(value: string | null | undefined): string | undefined {
     if (typeof value !== 'string') return undefined;
     const trimmed = value.trim();

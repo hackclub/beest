@@ -237,6 +237,27 @@ export class ProjectsService {
         'updatedAt',
       ],
     });
+
+    // A fraud_pending project carries a not-yet-finalised first-pass approval
+    // whose hours delta was already added to overrideHours. That verdict isn't
+    // authoritative for the user, so report the last finalised value instead —
+    // the payload must not reveal the pending approval (it may yet be
+    // returned to the review queue).
+    for (const p of projects) {
+      if (p.status !== 'fraud_pending') continue;
+      const pendingSub = await this.submissionRepo.findOne({
+        where: { projectId: p.id, status: 'unreviewed' },
+        order: { createdAt: 'DESC' },
+        select: ['id', 'overrideHours'],
+      });
+      const pendingDelta = pendingSub?.overrideHours ?? 0;
+      if (pendingDelta > 0) {
+        p.overrideHours = Math.max(
+          0,
+          Math.round(((p.overrideHours ?? 0) - pendingDelta) * 10) / 10,
+        );
+      }
+    }
     return projects;
   }
 

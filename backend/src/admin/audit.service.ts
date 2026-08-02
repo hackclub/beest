@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { Project } from '../entities/project.entity';
 import { Submission } from '../entities/submission.entity';
 import { ProjectReview } from '../entities/project-review.entity';
@@ -18,6 +18,8 @@ import { RsvpService } from '../rsvp/rsvp.service';
 import { ProjectAirtableSyncService } from '../projects/project-airtable-sync.service';
 import { IdentityService } from '../identity/identity.service';
 import { IframeContextService } from './iframe-context.service';
+import { SlackNotifyService } from '../slack/slack-notify.service';
+import { reviewApprovedDm } from '../slack/slack-notify.templates';
 import { AdminService } from './admin.service';
 import { Inject, forwardRef } from '@nestjs/common';
 
@@ -86,6 +88,7 @@ export class AuditService {
     private readonly rsvpService: RsvpService,
     private readonly airtableSync: ProjectAirtableSyncService,
     private readonly identityService: IdentityService,
+    private readonly slackNotify: SlackNotifyService,
     @Inject(forwardRef(() => AdminService))
     private readonly adminService: AdminService,
   ) {}
@@ -543,6 +546,14 @@ export class AuditService {
       );
     }
 
+    // Apply the first-pass reviewer's golden decision now that the approval
+    // is being finalised. First pass only records it on the review row —
+    // golden unlocks user-visible perks (black market, ★ badge), so it must
+    // not land while the verdict can still be returned.
+    if (priorApproval?.golden != null) {
+      project.isGolden = priorApproval.golden;
+    }
+
     project.status = 'approved';
     await this.projectRepo.save(project);
 
@@ -551,7 +562,10 @@ export class AuditService {
       await this.submissionRepo.save(submission);
     }
 
-    // Grant pipes — delta logic identical to the previous fraud poller path.
+    // Grant pipes — delta logic identical to the fraud poller path. Earned
+    // hours = project override_hours PLUS approved devlog hours (devlog hours
+    // count like normal hours and, like all hours, only mint pipes here at
+    // fraud review).
     if ((project.overrideHours ?? 0) > 0) {
       const totals = await this.projectRepo
         .createQueryBuilder('p')
@@ -562,7 +576,17 @@ export class AuditService {
           `(p.status = 'approved' OR (p.status <> 'approved' AND p.pipes_granted > 0))`,
         )
         .getRawOne<{ earnedHours: string; granted: string }>();
-      const target = Math.floor(Number(totals?.earnedHours ?? 0));
+      const devlogRows: Array<{ h: string }> = await this.projectRepo.manager.query(
+        `SELECT COALESCE(SUM(d.approved_hours), 0) AS h
+           FROM devlogs d
+           JOIN projects p ON p.id = d.project_id
+          WHERE p.user_id = $1
+            AND d.approved = true
+            AND (p.status = 'approved' OR (p.status <> 'approved' AND p.pipes_granted > 0))`,
+        [project.userId],
+      );
+      const devlogHours = Number(devlogRows?.[0]?.h ?? 0);
+      const target = Math.floor(Number(totals?.earnedHours ?? 0) + devlogHours);
       const previouslyGranted = Number(totals?.granted ?? 0);
       const delta = target - previouslyGranted;
       if (delta > 0) {
@@ -612,6 +636,42 @@ export class AuditService {
       );
     }
 
+    // DM the builder (best-effort). This is the FIRST approval notification
+    // they get — the first pass stays silent because its verdict isn't
+    // authoritative until this finalisation. Reviewer attribution and
+    // feedback come from the first-pass review; one-shot approvals speak in
+    // the team's voice and carry the SA's user-facing feedback.
+    const reviewerName =
+      priorApproval && !priorApproval.hideReviewerName && priorApproval.reviewerId
+        ? (
+            await this.userRepo.findOne({
+              where: { id: priorApproval.reviewerId },
+              select: ['name'],
+            })
+          )?.name ?? null
+        : null;
+    const becameGolden = priorApproval?.golden === true;
+    // Whether they had another golden project before this one, so the callout
+    // congratulates instead of re-explaining perks they already have.
+    const goldenAlreadyHad =
+      becameGolden &&
+      (await this.projectRepo.count({
+        where: { userId: project.userId, isGolden: true, id: Not(project.id) },
+      })) > 0;
+    const approvedDm = reviewApprovedDm({
+      projectName: project.name,
+      projectLink: project.codeUrl ?? project.demoUrl ?? null,
+      reviewerName,
+      feedback: priorApproval?.feedback ?? approveUserFeedback,
+      isGolden: becameGolden,
+      goldenAlreadyHad,
+    });
+    await this.slackNotify.dm(
+      project.user?.slackId,
+      approvedDm.text,
+      approvedDm.blocks,
+    );
+
     await this.auditLogService.log(
       project.userId,
       'project_reviewed',
@@ -652,9 +712,10 @@ export class AuditService {
         Math.round(((project.internalHours ?? 0) - subInternal) * 10) / 10,
       );
     }
-    // The first-pass approval (which may have marked the project golden) is
-    // being discarded — the re-review decides golden afresh.
-    project.isGolden = false;
+    // The project's golden flag is untouched here: first pass records its
+    // golden decision on the review row without applying it, so isGolden
+    // still reflects the last FINALISED approval — which this return does
+    // not revoke. The re-review decides golden afresh on its own row.
     project.status = 'unreviewed';
     await this.projectRepo.save(project);
 

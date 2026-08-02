@@ -42,6 +42,7 @@ export const AUDIT_ACTIONS = [
   'sidekick_address_reveal',
   'sidekick_user_note_change',
   'attend_invite_failed',
+  'attend_invite_manual',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

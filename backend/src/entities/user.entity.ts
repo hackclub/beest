@@ -47,6 +47,13 @@ export class User {
   @Column({ name: 'has_address', default: false })
   hasAddress: boolean;
 
+  // Country from the address on the user's Hack Club Auth profile, normalized
+  // via normalizeCountry() and refreshed at every login. Drives regional shop
+  // price overrides. Only this coarse value is persisted — the full address is
+  // always fetched live from HCA (see AdminService.getOrderDetailForFulfillment).
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  country: string | null;
+
   @Column({ name: 'has_birthdate', default: false })
   hasBirthdate: boolean;
 
