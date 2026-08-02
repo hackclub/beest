@@ -1022,6 +1022,48 @@
 		}
 	}
 
+	// Pausing resubmission stops changes-needed builders from re-shipping into
+	// the queue (used to clear a backlog). The changes-needed DM also gets a
+	// callout while this is on — see backend reviewChangesNeededDm.
+	let resubmissionPaused = $state(false);
+	let resubmissionPausedLoading = $state(false);
+	let resubmissionToggleBusy = $state(false);
+	let resubmissionToggleError = $state<string | null>(null);
+
+	async function loadResubmissionPaused() {
+		resubmissionPausedLoading = true;
+		try {
+			const res = await fetch('/api/admin/settings/resubmission-paused');
+			if (res.ok) resubmissionPaused = (await res.json()).paused === true;
+		} finally {
+			resubmissionPausedLoading = false;
+		}
+	}
+
+	async function toggleResubmissionPaused() {
+		if (resubmissionToggleBusy) return;
+		const next = !resubmissionPaused;
+		if (!confirm(next
+			? 'Pause resubmission? Builders with changes-needed projects will not be able to resubmit until this is turned off.'
+			: 'Resume resubmission?')) return;
+		resubmissionToggleBusy = true;
+		resubmissionToggleError = null;
+		try {
+			const res = await fetch('/api/admin/settings/resubmission-paused', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ paused: next })
+			});
+			const j = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
+			resubmissionPaused = j.paused === true;
+		} catch (e) {
+			resubmissionToggleError = e instanceof Error ? e.message : String(e);
+		} finally {
+			resubmissionToggleBusy = false;
+		}
+	}
+
 	let filteredUsers = $derived.by(() => {
 		let result = users;
 		if (permsFilter) {
@@ -2073,7 +2115,7 @@
 		if (activeTab === 'users') { loadUsers(); }
 		// Fulfillers see the charts/funnel only — the user-count cards and unreviewed
 		// hours need Super-Admin-only endpoints (/users, /stats/unreviewed-hours).
-		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); }
+		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); loadResubmissionPaused(); }
 		if (activeTab === 'news') loadNews();
 		if (activeTab === 'events') { loadEvents(); loadUsers(); }
 		if (activeTab === 'projects') { loadProjects(); loadProjectHours(); }
@@ -2437,6 +2479,22 @@
 				</div>
 				<UserFunnel />
 				{#if isSuperAdmin}
+					<div class="golden-backfill" class:golden-backfill-danger={resubmissionPaused}>
+						<div class="golden-backfill-copy">
+							<h3>Resubmission {resubmissionPaused ? 'paused' : 'open'}</h3>
+							<p>When paused, builders with changes-needed projects can't resubmit, and get a note about the pause added to their changes-needed DM. Use this to clear the review queue.</p>
+						</div>
+						<button
+							class="golden-backfill-btn"
+							onclick={toggleResubmissionPaused}
+							disabled={resubmissionToggleBusy || resubmissionPausedLoading}
+						>
+							{resubmissionToggleBusy ? 'Saving…' : resubmissionPaused ? 'Resume resubmission' : 'Pause resubmission'}
+						</button>
+						{#if resubmissionToggleError}
+							<p class="golden-backfill-error">{resubmissionToggleError}</p>
+						{/if}
+					</div>
 					<div class="golden-backfill">
 						<div class="golden-backfill-copy">
 							<h3>Backfill golden for cool builders <span class="gold-star">★</span></h3>
@@ -4027,6 +4085,14 @@
 		border: 1px solid rgba(212, 160, 23, 0.4);
 		border-radius: 10px;
 		background: rgba(212, 160, 23, 0.06);
+	}
+	.golden-backfill-danger {
+		border-color: rgba(224, 102, 102, 0.5);
+		background: rgba(224, 102, 102, 0.08);
+	}
+	.golden-backfill-danger .golden-backfill-btn {
+		background: #e06666;
+		color: #1a0000;
 	}
 	.golden-backfill-copy h3 {
 		margin: 0 0 0.25rem;

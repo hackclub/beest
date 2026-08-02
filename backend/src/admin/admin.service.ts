@@ -35,6 +35,7 @@ import {
 } from '../slack/slack-notify.templates';
 import { ShopService } from '../shop/shop.service';
 import { getFileHoursForProject } from '../hackatime/hackatime-file-breakdown';
+import { SettingsService } from '../settings/settings.service';
 
 const VALID_PERMS = [
   'User',
@@ -128,6 +129,7 @@ export class AdminService implements OnApplicationBootstrap {
     private readonly slackService: SlackService,
     private readonly slackNotify: SlackNotifyService,
     private readonly shopService: ShopService,
+    private readonly settingsService: SettingsService,
   ) {
     this.hackatimeBaseUrl = this.configService.get(
       'HACKATIME_BASE_URL',
@@ -1249,7 +1251,10 @@ export class AdminService implements OnApplicationBootstrap {
       const message =
         status === 'rejected'
           ? reviewRejectedDm(dmInput)
-          : reviewChangesNeededDm(dmInput);
+          : reviewChangesNeededDm({
+              ...dmInput,
+              resubmissionPaused: await this.settingsService.isResubmissionPaused(),
+            });
       await this.slackNotify.dm(
         project.user?.slackId,
         message.text,

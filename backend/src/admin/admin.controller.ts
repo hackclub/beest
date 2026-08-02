@@ -25,6 +25,7 @@ import { ShopService } from '../shop/shop.service';
 import { DevlogsService } from '../devlogs/devlogs.service';
 import { LookoutService } from '../lookout/lookout.service';
 import { AttendService } from '../attend/attend.service';
+import { SettingsService } from '../settings/settings.service';
 import { normalizeCountry } from '../country.util';
 
 /**
@@ -76,6 +77,7 @@ export class AdminController {
     private readonly devlogsService: DevlogsService,
     private readonly lookoutService: LookoutService,
     private readonly attendService: AttendService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   @UseGuards(FulfillerGuard)
@@ -298,6 +300,37 @@ export class AdminController {
   @Get('stats/unreviewed-hours')
   getUnreviewedHours() {
     return this.adminService.getUnreviewedHours();
+  }
+
+  // ── Settings ──
+  // Global operational toggles. Visible to any reviewer (so the review UI can
+  // warn them), flippable only by a Super Admin.
+
+  @UseGuards(ReviewerGuard)
+  @Get('settings/resubmission-paused')
+  async getResubmissionPaused() {
+    return { paused: await this.settingsService.isResubmissionPaused() };
+  }
+
+  @UseGuards(SuperAdminGuard)
+  @Post('settings/resubmission-paused')
+  async setResubmissionPaused(
+    @Body() body: { paused?: boolean },
+    @Req() req: Request,
+  ) {
+    if (typeof body.paused !== 'boolean') {
+      throw new BadRequestException('paused (boolean) is required');
+    }
+    const adminId = (req as any).user?.uid;
+    await this.settingsService.setResubmissionPaused(body.paused, adminId);
+    await this.auditLogService.log(
+      adminId,
+      'admin_settings_change',
+      body.paused
+        ? 'Paused resubmission to clear the review queue'
+        : 'Resumed resubmission',
+    );
+    return { success: true, paused: body.paused };
   }
 
   // ── Projects ──
