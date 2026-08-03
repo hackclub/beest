@@ -1,9 +1,9 @@
 # Certificate preview
 
-This screenshot is the visual test fixture for the certificate template at
-`frontend/static/example-certificate.html`.
+This screenshot is the visual test fixture for the issued certificate template.
+The backend template is aligned with `frontend/static/example-certificate.html`.
 
-![Certificate preview](./certificate-preview.png)
+![Issued certificate preview](./issued-certificate-preview.png)
 
 ## Certificates page
 
