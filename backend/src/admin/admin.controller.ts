@@ -171,6 +171,30 @@ export class AdminController {
     return { success: true, pipes: result.pipes };
   }
 
+  // Manual escape hatch for when identity.hackclub.com's live check is wrong
+  // for a user (e.g. doc linked to the wrong Slack account) — see
+  // AdminService.setIdentityOverride.
+  @UseGuards(SuperAdminGuard)
+  @Patch('users/:id/identity-override')
+  async setIdentityOverride(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { override?: 'eligible' | 'ineligible' | null; reason?: string | null },
+    @Req() req: Request,
+  ) {
+    const validOverrides = ['eligible', 'ineligible', null];
+    if (body.override === undefined || !validOverrides.includes(body.override)) {
+      throw new BadRequestException(
+        `override must be one of: eligible, ineligible, null`,
+      );
+    }
+    const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 500) : null;
+    if (body.override && !reason) {
+      throw new BadRequestException('reason is required when setting an override');
+    }
+    const adminId = (req as any).user?.uid;
+    return this.adminService.setIdentityOverride(id, body.override, reason, adminId);
+  }
+
   @UseGuards(SuperAdminGuard)
   @Post('users/:id/impersonate')
   async impersonateUser(

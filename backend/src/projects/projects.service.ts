@@ -945,6 +945,7 @@ export class ProjectsService {
       select: ['email', 'slackId'],
     });
     const status = await this.identityService.getStatus({
+      userId,
       slackId: user?.slackId,
       email: user?.email,
     });

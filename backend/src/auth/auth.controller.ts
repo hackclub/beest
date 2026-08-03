@@ -113,6 +113,7 @@ export class AuthController {
     const hasAddress = !!user.has_address;
     const hasBirthdate = !!user.has_birthdate;
     const identityStatus = await this.identityService.getStatus({
+      userId: user.uid,
       slackId: user.slack_id,
       email: user.email,
     });

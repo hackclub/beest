@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { fetchWithTimeout } from '../fetch.util';
+import { User } from '../entities/user.entity';
 
 const IDENTITY_CHECK_URL = 'https://identity.hackclub.com/api/external/check';
 
@@ -28,11 +31,34 @@ export type IdentityStatus = 'eligible' | 'ineligible' | 'unverified';
 export class IdentityService {
   private readonly logger = new Logger(IdentityService.name);
 
-  /** Full status — distinguishes eligible from verified-but-ineligible. */
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+  ) {}
+
+  /**
+   * Full status — distinguishes eligible from verified-but-ineligible.
+   *
+   * If `userId` is given and that user has a Super Admin identity override on
+   * file (`User.identityOverride`), it short-circuits the live external check
+   * entirely. This exists for cases where identity.hackclub.com's result is
+   * wrong for reasons on its side (e.g. a doc linked to the wrong Slack
+   * account after an email change) — see AdminService.setIdentityOverride().
+   */
   async getStatus(opts: {
+    userId?: string | null;
     slackId?: string | null;
     email?: string | null;
   }): Promise<IdentityStatus> {
+    if (opts.userId) {
+      const user = await this.userRepo.findOne({
+        where: { id: opts.userId },
+        select: ['identityOverride'],
+      });
+      if (user?.identityOverride === 'eligible' || user?.identityOverride === 'ineligible') {
+        return user.identityOverride;
+      }
+    }
     const result = await this.fetchResult(opts);
     if (typeof result !== 'string' || !result.startsWith('verified')) {
       return 'unverified';
@@ -43,12 +69,12 @@ export class IdentityService {
   }
 
   /** True if the identity document is verified, regardless of YSWS eligibility. */
-  async isVerified(opts: { slackId?: string | null; email?: string | null }): Promise<boolean> {
+  async isVerified(opts: { userId?: string | null; slackId?: string | null; email?: string | null }): Promise<boolean> {
     return (await this.getStatus(opts)) !== 'unverified';
   }
 
   /** True only if verified AND eligible for YSWS rewards. Gate shipping on this. */
-  async isEligible(opts: { slackId?: string | null; email?: string | null }): Promise<boolean> {
+  async isEligible(opts: { userId?: string | null; slackId?: string | null; email?: string | null }): Promise<boolean> {
     return (await this.getStatus(opts)) === 'eligible';
   }
 

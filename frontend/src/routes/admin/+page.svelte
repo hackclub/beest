@@ -25,6 +25,8 @@
 
 	interface UserDetail extends UserSummary {
 		twoEmails: boolean;
+		identityOverride: 'eligible' | 'ineligible' | null;
+		identityOverrideReason: string | null;
 		updatedAt: string;
 		perms: string | null;
 		pipes: number;
@@ -1202,6 +1204,39 @@
 		}
 	}
 
+	let identityOverrideReason = $state('');
+
+	// Manual escape hatch for when identity.hackclub.com's live check is wrong
+	// for a user (e.g. doc linked to the wrong Slack account after an email
+	// change) — see AdminService.setIdentityOverride on the backend.
+	async function setIdentityOverride(override: 'eligible' | 'ineligible' | null) {
+		if (!selectedUser) return;
+		const reason = identityOverrideReason.trim();
+		if (override && !reason) {
+			alert('Enter a reason for the override.');
+			return;
+		}
+		const verb = override ? `Set identity override to "${override}"` : 'Clear the identity override';
+		if (!confirm(`${verb} for ${selectedUser.name ?? selectedUser.hcaSub}?`)) return;
+		actionLoading = 'identity-override';
+		try {
+			const res = await fetch(`/api/admin/users/${selectedUser.id}/identity-override`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ override, reason: reason || null })
+			});
+			if (res.ok) {
+				identityOverrideReason = '';
+				await selectUser(selectedUser);
+			} else {
+				const err = await res.json().catch(() => ({}));
+				alert(`Identity override failed: ${err.message ?? res.statusText}`);
+			}
+		} finally {
+			actionLoading = '';
+		}
+	}
+
 	async function sendAttendInvite() {
 		if (!selectedUser || !confirm(`Send ${selectedUser.name ?? selectedUser.hcaSub} an Attend invite for the in-person event?`)) return;
 		actionLoading = 'attend-invite';
@@ -2347,6 +2382,59 @@
 												>
 													{actionLoading === 'pipes' ? 'Working…' : `Revoke ${Math.max(0, Math.floor(Math.abs(pipesAdjustAmount || 0)))}`}
 												</button>
+											</div>
+										</div>
+									{/if}
+								</section>
+
+								<section class="detail-section">
+									<h3>
+										Identity Override:
+										{#if userDetail.identityOverride}
+											<span class="badge">{userDetail.identityOverride}</span>
+										{:else}
+											none (live identity.hackclub.com check applies)
+										{/if}
+									</h3>
+									{#if userDetail.identityOverride && userDetail.identityOverrideReason}
+										<p class="detail-note">Reason: {userDetail.identityOverrideReason}</p>
+									{/if}
+									{#if isSuperAdmin}
+										<div class="pipes-adjust">
+											<div class="pipes-adjust-row">
+												<input
+													type="text"
+													placeholder="Reason (required to set)"
+													class="pipes-input pipes-input-reason"
+													bind:value={identityOverrideReason}
+													maxlength="500"
+													disabled={actionLoading !== ''}
+												/>
+											</div>
+											<div class="pipes-adjust-row">
+												<button
+													class="btn btn-pipes-grant"
+													onclick={() => setIdentityOverride('eligible')}
+													disabled={actionLoading !== '' || !identityOverrideReason.trim()}
+												>
+													{actionLoading === 'identity-override' ? 'Working…' : 'Force eligible'}
+												</button>
+												<button
+													class="btn btn-pipes-revoke"
+													onclick={() => setIdentityOverride('ineligible')}
+													disabled={actionLoading !== '' || !identityOverrideReason.trim()}
+												>
+													{actionLoading === 'identity-override' ? 'Working…' : 'Force ineligible'}
+												</button>
+												{#if userDetail.identityOverride}
+													<button
+														class="btn"
+														onclick={() => setIdentityOverride(null)}
+														disabled={actionLoading !== ''}
+													>
+														{actionLoading === 'identity-override' ? 'Working…' : 'Clear override'}
+													</button>
+												{/if}
 											</div>
 										</div>
 									{/if}
@@ -4414,6 +4502,12 @@
 		display: flex;
 		gap: 0.5rem;
 		flex-wrap: wrap;
+	}
+
+	.detail-note {
+		font-size: 0.85rem;
+		color: #999;
+		margin: 0.25rem 0 0;
 	}
 
 	.pipes-input {
@@ -6693,6 +6787,7 @@
 
 	.admin-shell.light .pipes-input { background: #fff; color: #1a1a1a; border-color: #666; }
 	.admin-shell.light .pipes-input:focus { border-color: #3b7bb5; }
+	.admin-shell.light .detail-note { color: #555; }
 	.admin-shell.light .btn-pipes-grant { background: #d5eed5; color: #2a7a2a; border-color: #70a070; }
 	.admin-shell.light .btn-pipes-grant:hover:not(:disabled) { background: #c0e0c0; }
 	.admin-shell.light .btn-pipes-revoke { background: #f0dbc0; color: #a05a20; border-color: #b08060; }
