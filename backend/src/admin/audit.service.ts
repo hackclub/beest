@@ -321,6 +321,7 @@ export class AuditService {
     // older queue entries that predate the ship-time eligibility gate.
     const identityStatus = user
       ? await this.identityService.getStatus({
+          userId: user.id,
           slackId: user.slackId,
           email: user.email,
         })
