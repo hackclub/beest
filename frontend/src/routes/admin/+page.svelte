@@ -7376,4 +7376,144 @@
 	.admin-shell.light .review-user-projects-link:hover {
 		background: rgba(147, 180, 205, 0.12);
 	}
+
+	/* ── Mobile layout (reviewer needs to run the queue from a phone) ── */
+	@media (max-width: 760px) {
+		.admin-header {
+			flex-wrap: wrap;
+			gap: 0.4rem;
+			padding: 0.6rem 0.85rem;
+		}
+
+		.admin-header h1 {
+			font-size: 1.05rem;
+		}
+
+		.admin-tabs {
+			padding: 0 0.5rem;
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
+			flex-wrap: nowrap;
+		}
+
+		.tab {
+			padding: 0.5rem 0.6rem;
+			font-size: 0.82rem;
+			white-space: nowrap;
+			flex-shrink: 0;
+		}
+
+		.tab-home {
+			margin-left: 0.5rem;
+		}
+
+		.admin-content {
+			padding: 0.75rem;
+		}
+
+		.users-layout {
+			flex-direction: column;
+		}
+
+		.users-table-wrap {
+			overflow-x: auto;
+		}
+
+		.detail-panel {
+			flex: 1 1 auto;
+			max-height: 60vh;
+		}
+
+		.users-toolbar {
+			flex-wrap: wrap;
+		}
+
+		.users-perms-filter,
+		.type-filter-select {
+			flex: 1 1 auto;
+		}
+
+		.stat-cards {
+			flex-wrap: wrap;
+		}
+
+		.stat-card {
+			flex: 1 1 45%;
+			min-width: 0;
+			padding: 0.75rem 1rem;
+		}
+
+		.stats-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.projects-admin {
+			max-width: 100%;
+		}
+
+		.status-pills {
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
+			padding-bottom: 0.25rem;
+		}
+
+		.pill {
+			flex-shrink: 0;
+		}
+
+		.proj-split {
+			flex-direction: column;
+		}
+
+		.proj-sidebar {
+			width: 100%;
+			max-height: 40vh;
+			overflow-y: auto;
+		}
+
+		.proj-main {
+			padding: 0.75rem;
+		}
+
+		.proj-top-row {
+			flex-direction: column;
+		}
+
+		.proj-main-header {
+			flex-wrap: wrap;
+		}
+
+		.joe-link-wrap {
+			margin-left: 0;
+			flex-wrap: wrap;
+		}
+
+		.leaderboard-header {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+
+		.leaderboard-table,
+		.admin-table {
+			display: block;
+			overflow-x: auto;
+			white-space: nowrap;
+			-webkit-overflow-scrolling: touch;
+		}
+
+		.claims-drawer {
+			width: 100%;
+		}
+
+		.rejected-panel,
+		.quick-reject-head {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+
+		.fulfillment-actions {
+			min-width: 0;
+		}
+	}
 </style>
