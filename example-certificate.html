@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light only">
+  <title>Beest by Hack Club Certificate</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --red: #ef3340;
+      --red-dark: #d61f31;
+      --ink: #111114;
+      --paper: #fcfbf8;
+      --muted: rgba(17, 17, 20, 0.72);
+      --line: rgba(17, 17, 20, 0.12);
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background:
+        radial-gradient(circle at top left, rgba(239, 51, 64, 0.14), transparent 22%),
+        radial-gradient(circle at bottom right, rgba(17, 17, 20, 0.12), transparent 22%),
+        linear-gradient(135deg, #f7efe6 0%, #fcfbf8 55%, #f2ede6 100%);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .certificate {
+      position: relative;
+      width: min(1050px, 100%);
+      aspect-ratio: 1.414 / 1;
+      overflow: hidden;
+      border-radius: 18px;
+      background:
+        linear-gradient(180deg, #ffffff 0%, var(--paper) 100%);
+      box-shadow:
+        0 28px 60px rgba(0, 0, 0, 0.22),
+        inset 0 0 0 8px rgba(255, 255, 255, 0.82),
+        inset 0 0 0 16px rgba(239, 51, 64, 0.12);
+      border: 1px solid rgba(17, 17, 20, 0.08);
+    }
+
+    .certificate::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 2% 50%, rgba(239, 51, 64, 0.9) 0 1.8%, transparent 1.9%),
+        radial-gradient(circle at 98% 50%, rgba(17, 17, 20, 0.9) 0 1.8%, transparent 1.9%),
+        linear-gradient(135deg, rgba(239, 51, 64, 0.04) 0 14%, transparent 14% 100%),
+        linear-gradient(315deg, rgba(17, 17, 20, 0.035) 0 14%, transparent 14% 100%),
+        radial-gradient(circle at 18% 64%, rgba(17, 17, 20, 0.05) 0 1px, transparent 1px 100%),
+        radial-gradient(circle at 82% 44%, rgba(17, 17, 20, 0.05) 0 1px, transparent 1px 100%);
+      background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 8px 8px, 8px 8px;
+      opacity: 0.85;
+      pointer-events: none;
+    }
+
+    .left-wedge,
+    .right-wedge,
+    .corner-dot,
+    .spark,
+    .brand,
+    .drone-wrap,
+    .build-grow,
+    .bottom-h {
+      position: absolute;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .left-wedge {
+      left: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      border-top: 180px solid var(--red);
+      border-right: 46px solid transparent;
+      filter: drop-shadow(0 0 20px rgba(239, 51, 64, 0.16));
+    }
+
+    .left-wedge::after {
+      content: '';
+      position: absolute;
+      left: 14px;
+      top: 20px;
+      width: 0;
+      height: 0;
+      border-top: 24px solid transparent;
+      border-bottom: 24px solid transparent;
+      border-left: 20px solid rgba(255, 255, 255, 0.28);
+      transform: rotate(8deg);
+    }
+
+    .right-wedge {
+      right: 0;
+      bottom: 0;
+      width: 0;
+      height: 0;
+      border-left: 44px solid transparent;
+      border-bottom: 186px solid var(--red);
+      filter: drop-shadow(0 0 20px rgba(239, 51, 64, 0.16));
+    }
+
+    .right-wedge::after {
+      content: '';
+      position: absolute;
+      right: 7px;
+      bottom: 18px;
+      width: 14px;
+      height: 14px;
+      background: rgba(255, 255, 255, 0.92);
+      border-radius: 50%;
+      box-shadow: -14px -16px 0 rgba(255, 255, 255, 0.78), -28px -30px 0 rgba(255, 255, 255, 0.62);
+    }
+
+    .corner-dot {
+      left: 24px;
+      bottom: 22px;
+      width: 82px;
+      height: 82px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.9);
+      border: 3px solid rgba(17, 17, 20, 0.68);
+      display: grid;
+      place-items: center;
+      color: var(--red);
+      font-size: 30px;
+      font-weight: 900;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    .spark {
+      color: var(--red);
+      font-size: 28px;
+      text-shadow: 0 0 10px rgba(239, 51, 64, 0.14);
+    }
+
+    .spark.top {
+      top: 34px;
+      left: 48.7%;
+      transform: translateX(-50%) rotate(15deg);
+    }
+
+    .spark.left {
+      left: 58px;
+      top: 52%;
+      transform: rotate(-12deg);
+      color: var(--ink);
+    }
+
+    .spark.right {
+      right: 78px;
+      bottom: 128px;
+      transform: rotate(8deg);
+      color: var(--red);
+    }
+
+    .brand {
+      top: 26px;
+      left: 30px;
+      line-height: 0.95;
+      z-index: 1;
+    }
+
+    .brand .flag {
+      width: 124px;
+      margin-bottom: 2px;
+      filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.14));
+      display: block;
+    }
+
+    .brand .small {
+      display: block;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--red);
+      letter-spacing: 0.18em;
+      margin-bottom: 6px;
+    }
+
+    .brand .beest {
+      display: block;
+      font-size: 44px;
+      font-weight: 900;
+      letter-spacing: -0.07em;
+      color: var(--ink);
+      text-transform: lowercase;
+    }
+
+    .brand .ysws {
+      display: block;
+      margin-top: 2px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.5em;
+      color: var(--ink);
+    }
+
+    .drone-wrap {
+      position: absolute;
+      top: 18px;
+      right: 20px;
+      width: 280px;
+      height: 220px;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .drone-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transform: rotate(-6deg);
+      filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.14));
+    }
+
+    .main {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 78px 40px 72px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 18px;
+      color: rgba(17, 17, 20, 0.56);
+      letter-spacing: 0.32em;
+      font-size: 11px;
+      text-transform: uppercase;
+      margin-top: 6px;
+    }
+
+    .eyebrow::before,
+    .eyebrow::after {
+      content: '';
+      width: 68px;
+      height: 2px;
+      background: rgba(17, 17, 20, 0.18);
+    }
+
+    .title {
+      margin-top: 6px;
+      font-family: Impact, "Arial Narrow", Arial, sans-serif;
+      font-size: clamp(54px, 7.2vw, 80px);
+      line-height: 0.92;
+      letter-spacing: 0.08em;
+      color: var(--ink);
+      text-transform: uppercase;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.68);
+    }
+
+    .ribbon-line {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: min(640px, 100%);
+      margin-top: 10px;
+    }
+
+    .ribbon-line::before,
+    .ribbon-line::after {
+      content: '';
+      flex: 1;
+      height: 2px;
+      background: rgba(17, 17, 20, 0.16);
+    }
+
+    .ribbon {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 30px;
+      padding: 0 28px;
+      background: linear-gradient(90deg, var(--red-dark), var(--red), var(--red-dark));
+      color: white;
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.34em;
+      text-transform: uppercase;
+      border-radius: 999px;
+      box-shadow: 0 8px 20px rgba(239, 51, 64, 0.24);
+    }
+
+    .ribbon::before,
+    .ribbon::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 28px;
+      background: inherit;
+      clip-path: polygon(0 0, 100% 0, 72% 50%, 100% 100%, 0 100%, 28% 50%);
+    }
+
+    .ribbon::before { left: -12px; }
+    .ribbon::after { right: -12px; }
+
+    .intro {
+      margin-top: 22px;
+      font-size: 12px;
+      letter-spacing: 0.2em;
+      color: rgba(17, 17, 20, 0.72);
+      text-transform: uppercase;
+    }
+
+    .recipient {
+      margin-top: 10px;
+      font-family: "Brush Script MT", "Segoe Script", "Snell Roundhand", cursive;
+      font-size: clamp(50px, 7.4vw, 82px);
+      line-height: 0.96;
+      color: var(--red);
+      text-shadow: 0 2px 0 rgba(255, 255, 255, 0.58);
+      white-space: nowrap;
+    }
+
+    .recipient-line {
+      width: min(430px, 68vw);
+      height: 4px;
+      margin-top: 10px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, transparent 0%, var(--red) 16%, var(--red-dark) 50%, var(--red) 84%, transparent 100%);
+    }
+
+    .body-copy {
+      max-width: 760px;
+      margin-top: 12px;
+      font-size: clamp(15px, 1.65vw, 19px);
+      line-height: 1.3;
+      color: rgba(17, 17, 20, 0.9);
+    }
+
+    .body-copy strong {
+      font-weight: 900;
+    }
+
+    .footer-signatures {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 82px;
+      margin-top: 24px;
+      width: 100%;
+    }
+
+    .signature {
+      text-align: center;
+      min-width: 160px;
+    }
+
+    .signature-line {
+      width: 150px;
+      height: 34px;
+      margin: 0 auto 4px;
+      border-bottom: 1px solid rgba(239, 51, 64, 0.55);
+      position: relative;
+    }
+
+    .signature-line::before {
+      content: '';
+      position: absolute;
+      inset: 10px 10px 6px;
+      background:
+        radial-gradient(circle at 18% 48%, rgba(17, 17, 20, 0.9) 0 1px, transparent 1px 100%),
+        radial-gradient(circle at 34% 54%, rgba(17, 17, 20, 0.9) 0 1px, transparent 1px 100%),
+        radial-gradient(circle at 49% 46%, rgba(17, 17, 20, 0.9) 0 1px, transparent 1px 100%),
+        radial-gradient(circle at 66% 55%, rgba(17, 17, 20, 0.9) 0 1px, transparent 1px 100%),
+        radial-gradient(circle at 83% 50%, rgba(17, 17, 20, 0.9) 0 1px, transparent 1px 100%);
+      opacity: 0.95;
+    }
+
+    .signature-name {
+      font-family: "Brush Script MT", "Segoe Script", "Snell Roundhand", cursive;
+      font-size: 20px;
+      color: rgba(17, 17, 20, 0.96);
+      line-height: 1;
+      transform: rotate(-3deg);
+      margin-bottom: 6px;
+    }
+
+    .signature-role {
+      font-size: 11px;
+      color: rgba(17, 17, 20, 0.88);
+      line-height: 1.35;
+    }
+
+    .footer-bar {
+      position: absolute;
+      left: 34px;
+      right: 34px;
+      bottom: 14px;
+      display: grid;
+      grid-template-columns: 1fr 1px 1.2fr 1px 1fr;
+      gap: 18px;
+      align-items: center;
+      color: rgba(17, 17, 20, 0.78);
+      font-size: 10px;
+      line-height: 1.25;
+      z-index: 1;
+    }
+
+    .footer-divider {
+      width: 1px;
+      height: 30px;
+      background: rgba(239, 51, 64, 0.45);
+      justify-self: center;
+    }
+
+    .certificate-no {
+      position: absolute;
+      left: 28px;
+      bottom: 72px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 14px;
+      border: 1px dashed rgba(239, 51, 64, 0.45);
+      background: rgba(255, 255, 255, 0.86);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.04);
+      z-index: 1;
+    }
+
+    .certificate-no .label {
+      font-size: 9px;
+      color: var(--red);
+      letter-spacing: 0.1em;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .certificate-no .number {
+      display: block;
+      margin-top: 2px;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      color: var(--ink);
+    }
+
+    .charity {
+      text-align: center;
+      font-size: 11px;
+      color: rgba(17, 17, 20, 0.82);
+    }
+
+    .charity .heart {
+      color: var(--red);
+      font-size: 14px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+
+    .verify-wrap {
+      text-align: center;
+      font-size: 10px;
+      color: rgba(17, 17, 20, 0.82);
+    }
+
+    .verify-trigger {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      padding: 0;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+    }
+
+    .verify-link {
+      color: var(--red);
+      font-weight: 900;
+      letter-spacing: 0.02em;
+    }
+
+    .verify-shield {
+      display: inline-grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid var(--red);
+      color: var(--red);
+      font-size: 11px;
+      margin-left: 8px;
+      vertical-align: middle;
+      background: rgba(255, 255, 255, 0.92);
+    }
+
+    .build-grow {
+      right: 52px;
+      bottom: 112px;
+      color: var(--ink);
+      font-family: "Comic Sans MS", "Trebuchet MS", sans-serif;
+      font-weight: 900;
+      font-size: 26px;
+      line-height: 0.98;
+      text-align: left;
+      transform: rotate(-5deg);
+      z-index: 1;
+    }
+
+    .build-grow span {
+      display: block;
+    }
+
+    .build-grow .grow {
+      color: var(--red);
+    }
+
+    .bottom-h {
+      right: 18px;
+      bottom: 10px;
+      color: #fff;
+      font-size: 30px;
+      font-weight: 900;
+      z-index: 1;
+    }
+
+    .verify-toast {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%) translateY(14px);
+      opacity: 0;
+      pointer-events: none;
+      min-width: min(680px, calc(100vw - 32px));
+      max-width: calc(100vw - 32px);
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(17, 17, 20, 0.12);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+      color: rgba(17, 17, 20, 0.92);
+      font-size: 13px;
+      line-height: 1.45;
+      z-index: 20;
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    .verify-toast.is-visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .verify-toast strong {
+      color: var(--red-dark);
+    }
+
+    @media (max-width: 920px) {
+      .certificate {
+        aspect-ratio: auto;
+        min-height: 100vh;
+        border-radius: 16px;
+      }
+
+      .main {
+        padding: 80px 22px 104px;
+      }
+
+      .drone-wrap {
+        width: 220px;
+        height: 170px;
+      }
+
+      .brand .beest {
+        font-size: 36px;
+      }
+
+      .recipient {
+        white-space: normal;
+      }
+
+      .footer-signatures {
+        gap: 34px;
+      }
+
+      .footer-bar {
+        left: 22px;
+        right: 22px;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .footer-divider {
+        display: none;
+      }
+
+      .certificate-no {
+        left: 18px;
+        right: 18px;
+        bottom: 84px;
+        max-width: calc(100% - 36px);
+      }
+
+      .build-grow,
+      .bottom-h {
+        display: none;
+      }
+    }
+
+    @media print {
+      @page {
+        size: A4 landscape;
+        margin: 0.28in;
+      }
+
+      body {
+        padding: 0;
+        background: white;
+      }
+
+      .certificate {
+        width: 11.69in;
+        height: 8.08in;
+        border-radius: 0;
+        box-shadow: none;
+        transform: scale(0.93);
+        transform-origin: top center;
+      }
+
+      .verify-toast {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="certificate">
+    <div class="left-wedge"></div>
+    <div class="right-wedge"></div>
+    <div class="corner-dot">✦</div>
+    <div class="spark top">✦</div>
+    <div class="spark left">✦</div>
+    <div class="spark right">✦</div>
+
+    <div class="brand">
+      <img class="flag" src="https://camo.githubusercontent.com/952e19cabf08f8b6b181def3e9c7476d3b50ee6668f0af1e93931d8f4082ce0f/68747470733a2f2f6173736574732e6861636b636c75622e636f6d2f666c61672d7374616e64616c6f6e652e737667" alt="Hack Club flag">
+      <span class="small">Hack Club</span>
+      <span class="beest">beest</span>
+      <span class="ysws">YSWS</span>
+    </div>
+
+    <div class="drone-wrap">
+      <img src="https://links.hackclub.com/assets/beest_sticker_transparent.png" alt="Beest sticker">
+    </div>
+
+    <div class="build-grow">
+      <span>BUILD.</span>
+      <span>SHARE.</span>
+      <span class="grow">GROW.</span>
+    </div>
+
+    <div class="bottom-h">h</div>
+
+    <div class="main">
+      <div class="eyebrow">Hack Club Recognition</div>
+      <div class="title">Certificate</div>
+      <div class="ribbon-line"><span class="ribbon">Of Excellence</span></div>
+
+      <div class="intro">This certificate is proudly presented to</div>
+      <div class="recipient">Ketan Gupta</div>
+      <div class="recipient-line"></div>
+
+      <div class="body-copy">
+        This is to certify that <strong>Ketan Gupta</strong> has successfully completed a project comprising <strong>48 approved hours</strong> under the Beest by Hack Club program. In recognition of the successful completion of this project, <strong>Ketan Gupta</strong> is hereby awarded <strong>Bambu Lab A1 Mini 3D Printer</strong> in commendation of their dedication, perseverance, and technical excellence, and in recognition of their exceptional merit and ability.
+      </div>
+
+      <div class="footer-signatures">
+        <div class="signature">
+          <div class="signature-line"></div>
+          <div class="signature-name">Euan Ripper</div>
+          <div class="signature-role"><strong>Euan Ripper</strong><br>Organizer<br>YSWS</div>
+        </div>
+        <div class="signature">
+          <div class="signature-line"></div>
+          <div class="signature-name">Zach Latta</div>
+          <div class="signature-role"><strong>Zach Latta</strong><br>CEO<br>Hack Club</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="certificate-no">
+      <div>
+        <div class="label">Certificate No.</div>
+        <span class="number">BEEST-YSWS-2024-001</span>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <div class="charity"><span class="heart">❤</span>Hack Club is a 501(c)(3) public charity.<br>Our nonprofit EIN is 81-2908499.</div>
+      <div class="footer-divider"></div>
+      <div class="verify-wrap">
+        Verify this certificate at
+        <button id="verify-trigger" class="verify-trigger" type="button"><span class="verify-link">beest.hackclub.com/verify</span></button>
+        <span class="verify-shield">🛡</span>
+      </div>
+      <div class="footer-divider"></div>
+      <div class="charity"></div>
+    </div>
+  </div>
+
+  <div class="verify-toast" id="verify-toast" aria-live="polite"></div>
+
+  <script>
+    const certificates = {
+      'BEEST-YSWS-2024-001': {
+        winner: 'Ketan Gupta',
+        prize: 'Bambu Lab A1 Mini 3D Printer'
+      }
+    };
+
+    const verifyTrigger = document.getElementById('verify-trigger');
+    const toast = document.getElementById('verify-toast');
+
+    function showToast(message) {
+      toast.innerHTML = message;
+      toast.classList.add('is-visible');
+      window.clearTimeout(window.__verifyToastTimer);
+      window.__verifyToastTimer = window.setTimeout(() => {
+        toast.classList.remove('is-visible');
+      }, 4500);
+    }
+
+    function verifyCertificate() {
+      const value = window.prompt('Enter certificate number to verify');
+      if (!value) return;
+
+      const key = value.trim().toUpperCase();
+      const certificate = certificates[key];
+
+      if (!certificate) {
+        showToast(`No certificate was found for <strong>${key}</strong>.`);
+        return;
+      }
+
+      showToast(
+        `<strong>${key}</strong> is valid. Winner: <strong>${certificate.winner}</strong>. Prize: <strong>${certificate.prize}</strong>.`
+      );
+    }
+
+    verifyTrigger.addEventListener('click', verifyCertificate);
+    verifyTrigger.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        verifyCertificate();
+      }
+    });
+  </script>
+</body>
+</html>

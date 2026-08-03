@@ -8,6 +8,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as puppeteer from 'puppeteer';
 import { randomUUID } from 'crypto';
+import { existsSync, readFileSync } from 'fs';
+import { resolve } from 'path';
 import { Certificate } from '../entities/certificate.entity';
 import { Order } from '../entities/order.entity';
 import { User } from '../entities/user.entity';
@@ -489,6 +491,21 @@ export class CertificateService {
     const award = this.escapeHtml(certificate.awardItem);
     const number = this.escapeHtml(certificate.certificateNumber);
     const pipes = certificate.approvedHours;
+
+    // Keep issued certificates visually identical to the approved example.
+    const templatePath = [
+      resolve(process.cwd(), 'example-certificate.html'),
+      resolve(process.cwd(), '..', 'example-certificate.html'),
+      resolve(__dirname, '..', '..', '..', 'example-certificate.html'),
+    ].find(existsSync);
+
+    if (templatePath) {
+      return readFileSync(templatePath, 'utf8')
+        .replaceAll('Ketan Gupta', name)
+        .replaceAll('48 approved hours', `${pipes} approved hours`)
+        .replaceAll('Bambu Lab A1 Mini 3D Printer', award)
+        .replaceAll('BEEST-YSWS-2024-001', number);
+    }
 
     return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="color-scheme" content="light only"><title>Beest Certificate — ${name}</title>
