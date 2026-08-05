@@ -19,6 +19,7 @@ import { HcbModule } from './hcb/hcb.module';
 import { SidekickModule } from './sidekick/sidekick.module';
 import { SiloModule } from './silo/silo.module';
 import { CertificateModule } from './certificates/certificate.module';
+import { SettingsModule } from './settings/settings.module';
 import { User } from './entities/user.entity';
 import { Session } from './entities/session.entity';
 import { Project } from './entities/project.entity';
@@ -38,6 +39,7 @@ import { FraudReview } from './entities/fraud-review.entity';
 import { HcbCredential } from './entities/hcb-credential.entity';
 import { LookoutSession } from './entities/lookout-session.entity';
 import { Certificate } from './entities/certificate.entity';
+import { AppSetting } from './entities/app-setting.entity';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -51,7 +53,7 @@ import { HealthController } from './health.controller';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.getOrThrow('DATABASE_URL'),
-        entities: [User, Session, Project, AuditLog, NewsItem, ProjectReview, Comment, ShopItem, Order, FulfillmentUpdate, Submission, ShopSuggestion, ShopSuggestionVote, Devlog, Event, FraudReview, HcbCredential, LookoutSession, Certificate],
+        entities: [User, Session, Project, AuditLog, NewsItem, ProjectReview, Comment, ShopItem, Order, FulfillmentUpdate, Submission, ShopSuggestion, ShopSuggestionVote, Devlog, Event, FraudReview, HcbCredential, LookoutSession, Certificate, AppSetting],
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
         migrationsRun: true,
         synchronize: false,
@@ -74,6 +76,7 @@ import { HealthController } from './health.controller';
     SidekickModule,
     SiloModule,
     CertificateModule,
+    SettingsModule,
   ],
 })
 export class AppModule {}

@@ -25,6 +25,8 @@
 
 	interface UserDetail extends UserSummary {
 		twoEmails: boolean;
+		identityOverride: 'eligible' | 'ineligible' | null;
+		identityOverrideReason: string | null;
 		updatedAt: string;
 		perms: string | null;
 		pipes: number;
@@ -547,25 +549,6 @@
 		}
 	}
 
-	let resyncLoading = $state(false);
-	async function resyncAirtable() {
-		if (!expandedProjectId || resyncLoading) return;
-		resyncLoading = true;
-		try {
-			const res = await fetch(`/api/admin/projects/${expandedProjectId}/resync-airtable`, { method: 'POST' });
-			if (res.ok) {
-				alert('Project re-pushed to Airtable.');
-			} else {
-				const data = await res.json().catch(() => null);
-				alert(data?.message ?? 'Failed to re-push to Airtable.');
-			}
-		} catch {
-			alert('Failed to re-push to Airtable.');
-		} finally {
-			resyncLoading = false;
-		}
-	}
-
 	async function loadReviews(projectId: string) {
 		try {
 			const res = await fetch(`/api/admin/projects/${projectId}/reviews`);
@@ -778,7 +761,7 @@
 		isSuperAdmin || !ELEVATED_PERMS.includes(userDetail?.perms ?? '')
 	);
 
-	const PROJECT_TYPES = ['web', 'windows', 'mac', 'linux', 'cross-platform', 'python', 'android', 'ios', 'other'];
+	const PROJECT_TYPES = ['web', 'windows', 'mac', 'linux', 'cross-platform', 'python', 'cad', 'hardware', 'android', 'ios', 'other'];
 
 	let filteredProjects = $derived.by(() => {
 		let result = allProjects;
@@ -1022,6 +1005,48 @@
 		}
 	}
 
+	// Pausing resubmission stops changes-needed builders from re-shipping into
+	// the queue (used to clear a backlog). The changes-needed DM also gets a
+	// callout while this is on — see backend reviewChangesNeededDm.
+	let resubmissionPaused = $state(false);
+	let resubmissionPausedLoading = $state(false);
+	let resubmissionToggleBusy = $state(false);
+	let resubmissionToggleError = $state<string | null>(null);
+
+	async function loadResubmissionPaused() {
+		resubmissionPausedLoading = true;
+		try {
+			const res = await fetch('/api/admin/settings/resubmission-paused');
+			if (res.ok) resubmissionPaused = (await res.json()).paused === true;
+		} finally {
+			resubmissionPausedLoading = false;
+		}
+	}
+
+	async function toggleResubmissionPaused() {
+		if (resubmissionToggleBusy) return;
+		const next = !resubmissionPaused;
+		if (!confirm(next
+			? 'Pause resubmission? Builders with changes-needed projects will not be able to resubmit until this is turned off.'
+			: 'Resume resubmission?')) return;
+		resubmissionToggleBusy = true;
+		resubmissionToggleError = null;
+		try {
+			const res = await fetch('/api/admin/settings/resubmission-paused', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ paused: next })
+			});
+			const j = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
+			resubmissionPaused = j.paused === true;
+		} catch (e) {
+			resubmissionToggleError = e instanceof Error ? e.message : String(e);
+		} finally {
+			resubmissionToggleBusy = false;
+		}
+	}
+
 	let filteredUsers = $derived.by(() => {
 		let result = users;
 		if (permsFilter) {
@@ -1173,6 +1198,39 @@
 			} else {
 				const err = await res.json().catch(() => ({}));
 				alert(`Pipes adjustment failed: ${err.message ?? res.statusText}`);
+			}
+		} finally {
+			actionLoading = '';
+		}
+	}
+
+	let identityOverrideReason = $state('');
+
+	// Manual escape hatch for when identity.hackclub.com's live check is wrong
+	// for a user (e.g. doc linked to the wrong Slack account after an email
+	// change) — see AdminService.setIdentityOverride on the backend.
+	async function setIdentityOverride(override: 'eligible' | 'ineligible' | null) {
+		if (!selectedUser) return;
+		const reason = identityOverrideReason.trim();
+		if (override && !reason) {
+			alert('Enter a reason for the override.');
+			return;
+		}
+		const verb = override ? `Set identity override to "${override}"` : 'Clear the identity override';
+		if (!confirm(`${verb} for ${selectedUser.name ?? selectedUser.hcaSub}?`)) return;
+		actionLoading = 'identity-override';
+		try {
+			const res = await fetch(`/api/admin/users/${selectedUser.id}/identity-override`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ override, reason: reason || null })
+			});
+			if (res.ok) {
+				identityOverrideReason = '';
+				await selectUser(selectedUser);
+			} else {
+				const err = await res.json().catch(() => ({}));
+				alert(`Identity override failed: ${err.message ?? res.statusText}`);
 			}
 		} finally {
 			actionLoading = '';
@@ -2073,7 +2131,7 @@
 		if (activeTab === 'users') { loadUsers(); }
 		// Fulfillers see the charts/funnel only — the user-count cards and unreviewed
 		// hours need Super-Admin-only endpoints (/users, /stats/unreviewed-hours).
-		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); }
+		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); loadResubmissionPaused(); }
 		if (activeTab === 'news') loadNews();
 		if (activeTab === 'events') { loadEvents(); loadUsers(); }
 		if (activeTab === 'projects') { loadProjects(); loadProjectHours(); }
@@ -2329,6 +2387,59 @@
 									{/if}
 								</section>
 
+								<section class="detail-section">
+									<h3>
+										Identity Override:
+										{#if userDetail.identityOverride}
+											<span class="badge">{userDetail.identityOverride}</span>
+										{:else}
+											none (live identity.hackclub.com check applies)
+										{/if}
+									</h3>
+									{#if userDetail.identityOverride && userDetail.identityOverrideReason}
+										<p class="detail-note">Reason: {userDetail.identityOverrideReason}</p>
+									{/if}
+									{#if isSuperAdmin}
+										<div class="pipes-adjust">
+											<div class="pipes-adjust-row">
+												<input
+													type="text"
+													placeholder="Reason (required to set)"
+													class="pipes-input pipes-input-reason"
+													bind:value={identityOverrideReason}
+													maxlength="500"
+													disabled={actionLoading !== ''}
+												/>
+											</div>
+											<div class="pipes-adjust-row">
+												<button
+													class="btn btn-pipes-grant"
+													onclick={() => setIdentityOverride('eligible')}
+													disabled={actionLoading !== '' || !identityOverrideReason.trim()}
+												>
+													{actionLoading === 'identity-override' ? 'Working…' : 'Force eligible'}
+												</button>
+												<button
+													class="btn btn-pipes-revoke"
+													onclick={() => setIdentityOverride('ineligible')}
+													disabled={actionLoading !== '' || !identityOverrideReason.trim()}
+												>
+													{actionLoading === 'identity-override' ? 'Working…' : 'Force ineligible'}
+												</button>
+												{#if userDetail.identityOverride}
+													<button
+														class="btn"
+														onclick={() => setIdentityOverride(null)}
+														disabled={actionLoading !== ''}
+													>
+														{actionLoading === 'identity-override' ? 'Working…' : 'Clear override'}
+													</button>
+												{/if}
+											</div>
+										</div>
+									{/if}
+								</section>
+
 								{#if userDetail.orders?.length > 0}
 									<section class="detail-section">
 										<h3>Orders</h3>
@@ -2437,6 +2548,22 @@
 				</div>
 				<UserFunnel />
 				{#if isSuperAdmin}
+					<div class="golden-backfill" class:golden-backfill-danger={resubmissionPaused}>
+						<div class="golden-backfill-copy">
+							<h3>Resubmission {resubmissionPaused ? 'paused' : 'open'}</h3>
+							<p>When paused, builders with changes-needed projects can't resubmit, and get a note about the pause added to their changes-needed DM. Use this to clear the review queue.</p>
+						</div>
+						<button
+							class="golden-backfill-btn"
+							onclick={toggleResubmissionPaused}
+							disabled={resubmissionToggleBusy || resubmissionPausedLoading}
+						>
+							{resubmissionToggleBusy ? 'Saving…' : resubmissionPaused ? 'Resume resubmission' : 'Pause resubmission'}
+						</button>
+						{#if resubmissionToggleError}
+							<p class="golden-backfill-error">{resubmissionToggleError}</p>
+						{/if}
+					</div>
 					<div class="golden-backfill">
 						<div class="golden-backfill-copy">
 							<h3>Backfill golden for cool builders <span class="gold-star">★</span></h3>
@@ -3786,14 +3913,6 @@
 									{/each}
 								{/if}
 
-								{#if selectedProject.status === 'approved'}
-									<hr class="proj-divider" />
-									<div class="review-actions">
-										<button class="review-btn review-btn-resync" onclick={resyncAirtable} disabled={resyncLoading || !isSuperAdmin} title={!isSuperAdmin ? 'Re-push is Super Admin only' : ''}>
-											{resyncLoading ? 'Pushing...' : 'Re-push to Airtable'}
-										</button>
-									</div>
-								{/if}
 							{:else}
 								<div class="proj-main-empty">
 									<p>Select a project to review</p>
@@ -4027,6 +4146,14 @@
 		border: 1px solid rgba(212, 160, 23, 0.4);
 		border-radius: 10px;
 		background: rgba(212, 160, 23, 0.06);
+	}
+	.golden-backfill-danger {
+		border-color: rgba(224, 102, 102, 0.5);
+		background: rgba(224, 102, 102, 0.08);
+	}
+	.golden-backfill-danger .golden-backfill-btn {
+		background: #e06666;
+		color: #1a0000;
 	}
 	.golden-backfill-copy h3 {
 		margin: 0 0 0.25rem;
@@ -4375,6 +4502,12 @@
 		display: flex;
 		gap: 0.5rem;
 		flex-wrap: wrap;
+	}
+
+	.detail-note {
+		font-size: 0.85rem;
+		color: #999;
+		margin: 0.25rem 0 0;
 	}
 
 	.pipes-input {
@@ -5584,10 +5717,6 @@
 		color: #c44040;
 	}
 
-	.review-btn-resync {
-		background: #3a6a9a;
-	}
-
 	.leaderboard {
 		padding: 0.5rem 0;
 	}
@@ -6658,6 +6787,7 @@
 
 	.admin-shell.light .pipes-input { background: #fff; color: #1a1a1a; border-color: #666; }
 	.admin-shell.light .pipes-input:focus { border-color: #3b7bb5; }
+	.admin-shell.light .detail-note { color: #555; }
 	.admin-shell.light .btn-pipes-grant { background: #d5eed5; color: #2a7a2a; border-color: #70a070; }
 	.admin-shell.light .btn-pipes-grant:hover:not(:disabled) { background: #c0e0c0; }
 	.admin-shell.light .btn-pipes-revoke { background: #f0dbc0; color: #a05a20; border-color: #b08060; }
@@ -6787,7 +6917,6 @@
 	.admin-shell.light .review-btn-approve { background: #3a8a4a; }
 	.admin-shell.light .review-btn-reject { background: #b83030; }
 	.admin-shell.light .review-btn-ban { background: #fff; border-color: #b83030; color: #b83030; }
-	.admin-shell.light .review-btn-resync { background: #2a5a8a; }
 
 	/* Review cards */
 	.admin-shell.light .reviews-heading { color: #333; }
@@ -7341,5 +7470,145 @@
 
 	.admin-shell.light .review-user-projects-link:hover {
 		background: rgba(147, 180, 205, 0.12);
+	}
+
+	/* ── Mobile layout (reviewer needs to run the queue from a phone) ── */
+	@media (max-width: 760px) {
+		.admin-header {
+			flex-wrap: wrap;
+			gap: 0.4rem;
+			padding: 0.6rem 0.85rem;
+		}
+
+		.admin-header h1 {
+			font-size: 1.05rem;
+		}
+
+		.admin-tabs {
+			padding: 0 0.5rem;
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
+			flex-wrap: nowrap;
+		}
+
+		.tab {
+			padding: 0.5rem 0.6rem;
+			font-size: 0.82rem;
+			white-space: nowrap;
+			flex-shrink: 0;
+		}
+
+		.tab-home {
+			margin-left: 0.5rem;
+		}
+
+		.admin-content {
+			padding: 0.75rem;
+		}
+
+		.users-layout {
+			flex-direction: column;
+		}
+
+		.users-table-wrap {
+			overflow-x: auto;
+		}
+
+		.detail-panel {
+			flex: 1 1 auto;
+			max-height: 60vh;
+		}
+
+		.users-toolbar {
+			flex-wrap: wrap;
+		}
+
+		.users-perms-filter,
+		.type-filter-select {
+			flex: 1 1 auto;
+		}
+
+		.stat-cards {
+			flex-wrap: wrap;
+		}
+
+		.stat-card {
+			flex: 1 1 45%;
+			min-width: 0;
+			padding: 0.75rem 1rem;
+		}
+
+		.stats-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.projects-admin {
+			max-width: 100%;
+		}
+
+		.status-pills {
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			-webkit-overflow-scrolling: touch;
+			padding-bottom: 0.25rem;
+		}
+
+		.pill {
+			flex-shrink: 0;
+		}
+
+		.proj-split {
+			flex-direction: column;
+		}
+
+		.proj-sidebar {
+			width: 100%;
+			max-height: 40vh;
+			overflow-y: auto;
+		}
+
+		.proj-main {
+			padding: 0.75rem;
+		}
+
+		.proj-top-row {
+			flex-direction: column;
+		}
+
+		.proj-main-header {
+			flex-wrap: wrap;
+		}
+
+		.joe-link-wrap {
+			margin-left: 0;
+			flex-wrap: wrap;
+		}
+
+		.leaderboard-header {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+
+		.leaderboard-table,
+		.admin-table {
+			display: block;
+			overflow-x: auto;
+			white-space: nowrap;
+			-webkit-overflow-scrolling: touch;
+		}
+
+		.claims-drawer {
+			width: 100%;
+		}
+
+		.rejected-panel,
+		.quick-reject-head {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+
+		.fulfillment-actions {
+			min-width: 0;
+		}
 	}
 </style>

@@ -44,6 +44,17 @@ export class User {
   @Column({ name: 'two_emails', default: false })
   twoEmails: boolean;
 
+  // Manual Super Admin override for identity.hackclub.com's live verification
+  // result — set when the external check is wrong for a user (e.g. their
+  // identity doc got linked to the wrong Slack account) while that gets fixed
+  // upstream. null = defer to the live check; otherwise short-circuits it.
+  // See IdentityService.getStatus().
+  @Column({ nullable: true, name: 'identity_override', type: 'varchar', length: 20 })
+  identityOverride: 'eligible' | 'ineligible' | null;
+
+  @Column({ nullable: true, name: 'identity_override_reason', type: 'text' })
+  identityOverrideReason: string | null;
+
   @Column({ name: 'has_address', default: false })
   hasAddress: boolean;
 

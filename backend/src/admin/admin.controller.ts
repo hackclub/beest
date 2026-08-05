@@ -25,6 +25,7 @@ import { ShopService } from '../shop/shop.service';
 import { DevlogsService } from '../devlogs/devlogs.service';
 import { LookoutService } from '../lookout/lookout.service';
 import { AttendService } from '../attend/attend.service';
+import { SettingsService } from '../settings/settings.service';
 import { normalizeCountry } from '../country.util';
 
 /**
@@ -76,6 +77,7 @@ export class AdminController {
     private readonly devlogsService: DevlogsService,
     private readonly lookoutService: LookoutService,
     private readonly attendService: AttendService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   @UseGuards(FulfillerGuard)
@@ -167,6 +169,30 @@ export class AdminController {
     const adminId = (req as any).user?.uid;
     const result = await this.adminService.adjustPipes(id, body.delta, reason || null, adminId);
     return { success: true, pipes: result.pipes };
+  }
+
+  // Manual escape hatch for when identity.hackclub.com's live check is wrong
+  // for a user (e.g. doc linked to the wrong Slack account) — see
+  // AdminService.setIdentityOverride.
+  @UseGuards(SuperAdminGuard)
+  @Patch('users/:id/identity-override')
+  async setIdentityOverride(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { override?: 'eligible' | 'ineligible' | null; reason?: string | null },
+    @Req() req: Request,
+  ) {
+    const validOverrides = ['eligible', 'ineligible', null];
+    if (body.override === undefined || !validOverrides.includes(body.override)) {
+      throw new BadRequestException(
+        `override must be one of: eligible, ineligible, null`,
+      );
+    }
+    const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 500) : null;
+    if (body.override && !reason) {
+      throw new BadRequestException('reason is required when setting an override');
+    }
+    const adminId = (req as any).user?.uid;
+    return this.adminService.setIdentityOverride(id, body.override, reason, adminId);
   }
 
   @UseGuards(SuperAdminGuard)
@@ -298,6 +324,37 @@ export class AdminController {
   @Get('stats/unreviewed-hours')
   getUnreviewedHours() {
     return this.adminService.getUnreviewedHours();
+  }
+
+  // ── Settings ──
+  // Global operational toggles. Visible to any reviewer (so the review UI can
+  // warn them), flippable only by a Super Admin.
+
+  @UseGuards(ReviewerGuard)
+  @Get('settings/resubmission-paused')
+  async getResubmissionPaused() {
+    return { paused: await this.settingsService.isResubmissionPaused() };
+  }
+
+  @UseGuards(SuperAdminGuard)
+  @Post('settings/resubmission-paused')
+  async setResubmissionPaused(
+    @Body() body: { paused?: boolean },
+    @Req() req: Request,
+  ) {
+    if (typeof body.paused !== 'boolean') {
+      throw new BadRequestException('paused (boolean) is required');
+    }
+    const adminId = (req as any).user?.uid;
+    await this.settingsService.setResubmissionPaused(body.paused, adminId);
+    await this.auditLogService.log(
+      adminId,
+      'admin_settings_change',
+      body.paused
+        ? 'Paused resubmission to clear the review queue'
+        : 'Resumed resubmission',
+    );
+    return { success: true, paused: body.paused };
   }
 
   // ── Projects ──

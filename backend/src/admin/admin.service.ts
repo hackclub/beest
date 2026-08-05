@@ -35,6 +35,7 @@ import {
 } from '../slack/slack-notify.templates';
 import { ShopService } from '../shop/shop.service';
 import { getFileHoursForProject } from '../hackatime/hackatime-file-breakdown';
+import { SettingsService } from '../settings/settings.service';
 
 const VALID_PERMS = [
   'User',
@@ -128,6 +129,7 @@ export class AdminService implements OnApplicationBootstrap {
     private readonly slackService: SlackService,
     private readonly slackNotify: SlackNotifyService,
     private readonly shopService: ShopService,
+    private readonly settingsService: SettingsService,
   ) {
     this.hackatimeBaseUrl = this.configService.get(
       'HACKATIME_BASE_URL',
@@ -232,6 +234,8 @@ export class AdminService implements OnApplicationBootstrap {
       email: user.email,
       hackatimeConnected: !!user.hackatimeToken,
       twoEmails: user.twoEmails,
+      identityOverride: user.identityOverride,
+      identityOverrideReason: user.identityOverrideReason,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       pipes: user.pipes ?? 0,
@@ -815,6 +819,41 @@ export class AdminService implements OnApplicationBootstrap {
     return { watchlisted: user.watchlisted, coolBuilder: user.coolBuilder };
   }
 
+  // Manual escape hatch for when identity.hackclub.com's live verification
+  // result is wrong for a user for reasons on its side (e.g. their identity
+  // doc got linked to the wrong Slack account after an email change) — lets a
+  // Super Admin unblock shipping while that gets fixed upstream, instead of
+  // the builder being stuck until someone manually relinks it there.
+  // Consumed by IdentityService.getStatus(), which short-circuits the live
+  // check whenever this is set.
+  async setIdentityOverride(
+    userId: string,
+    override: 'eligible' | 'ineligible' | null,
+    reason: string | null,
+    adminId?: string,
+  ): Promise<{ identityOverride: string | null; identityOverrideReason: string | null }> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    user.identityOverride = override;
+    user.identityOverrideReason = override ? reason : null;
+    await this.userRepo.save(user);
+
+    const identifier = user.name || user.slackId || user.hcaSub;
+    const label = override
+      ? `Set identity override to "${override}" for ${identifier}${reason ? `: ${reason}` : ''}`
+      : `Cleared identity override for ${identifier}`;
+    await this.auditLogService.log(userId, 'admin_identity_override', label);
+    if (adminId) {
+      await this.auditLogService.log(adminId, 'admin_identity_override', label);
+    }
+
+    return {
+      identityOverride: user.identityOverride,
+      identityOverrideReason: user.identityOverrideReason,
+    };
+  }
+
   // One-shot backfill: for every user marked as a cool builder, mark all of
   // their projects golden (granting review-queue priority + black-market access)
   // and DM them about it. Users who already have at least one golden project are
@@ -1249,7 +1288,10 @@ export class AdminService implements OnApplicationBootstrap {
       const message =
         status === 'rejected'
           ? reviewRejectedDm(dmInput)
-          : reviewChangesNeededDm(dmInput);
+          : reviewChangesNeededDm({
+              ...dmInput,
+              resubmissionPaused: await this.settingsService.isResubmissionPaused(),
+            });
       await this.slackNotify.dm(
         project.user?.slackId,
         message.text,

@@ -13,6 +13,7 @@ import { RsvpService } from '../rsvp/rsvp.service';
 import { IdentityService } from '../identity/identity.service';
 import { SlackNotifyService } from '../slack/slack-notify.service';
 import { shipSubmittedDm } from '../slack/slack-notify.templates';
+import { SettingsService } from '../settings/settings.service';
 import { CreateProjectDto } from './create-project.dto';
 import { UpdateProjectDto } from './update-project.dto';
 
@@ -47,6 +48,7 @@ export class ProjectsService {
     private rsvpService: RsvpService,
     private identityService: IdentityService,
     private slackNotify: SlackNotifyService,
+    private settingsService: SettingsService,
     @InjectRepository(Project)
     private projectRepo: Repository<Project>,
     @InjectRepository(Comment)
@@ -524,6 +526,14 @@ export class ProjectsService {
         if (project.status !== 'unshipped' && project.status !== 'changes_needed') {
           throw new BadRequestException('Invalid status transition');
         }
+        if (
+          project.status === 'changes_needed' &&
+          (await this.settingsService.isResubmissionPaused())
+        ) {
+          throw new ForbiddenException(
+            'Resubmission is paused while we clear the review queue. Check back soon.',
+          );
+        }
         await this.requireShipEligibility(userId);
         // Re-verify Hackatime account ownership at submit time, even if the
         // linked names weren't touched in this request. Catches projects that
@@ -935,6 +945,7 @@ export class ProjectsService {
       select: ['email', 'slackId'],
     });
     const status = await this.identityService.getStatus({
+      userId,
       slackId: user?.slackId,
       email: user?.email,
     });
