@@ -501,10 +501,17 @@ export class CertificateService {
 
     if (templatePath) {
       return readFileSync(templatePath, 'utf8')
+        .replaceAll('{{NAME}}', name)
+        .replaceAll('{{AWARD}}', award)
+        .replaceAll('{{HOURS}}', `${pipes} Pipes`)
+        .replaceAll('{{CERTNO}}', number)
         .replaceAll('Ketan Gupta', name)
         .replaceAll('48 approved hours', `${pipes} approved hours`)
+        .replaceAll('150 Pipes', `${pipes} Pipes`)
+        .replaceAll('Arduino Starter Kit', award)
         .replaceAll('Bambu Lab A1 Mini 3D Printer', award)
-        .replaceAll('BEEST-YSWS-2024-001', number);
+        .replaceAll('BEEST-YSWS-2024-001', number)
+        .replaceAll('CERT-2026-DEMO001', number);
     }
 
     return `<!DOCTYPE html>

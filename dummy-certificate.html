@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light only">
-  <title>Beest by Hack Club Certificate </title>
+  <title>Beest by Hack Club Certificate — Demo</title>
   <style>
     @font-face {
       font-family: 'Stone Breaker';
@@ -586,11 +586,11 @@
       <div class="ribbon-line"><span class="ribbon">Of Achievement</span></div>
 
       <div class="intro">This certificate is proudly presented to</div>
-      <div id="recipient" class="recipient">{{NAME}}</div>
+      <div id="recipient" class="recipient">Ketan Gupta</div>
       <div class="recipient-line"></div>
 
       <div id="body-copy" class="body-copy">
-        This certificate recognizes <strong id="body-name">{{NAME}}</strong>'s fulfilled shop order in the <strong>Beest by Hack Club</strong> program. In commendation of outstanding technical achievement and dedication to hardware building, <strong id="body-name-2">{{NAME}}</strong> is hereby awarded <strong id="body-award">{{AWARD}}</strong>, earned through <strong id="body-hours">{{HOURS}}</strong>.
+        This certificate recognizes <strong id="body-name">Ketan Gupta</strong>'s fulfilled shop order in the <strong>Beest by Hack Club</strong> program. In commendation of outstanding technical achievement and dedication to hardware building, <strong id="body-name-2">Ketan Gupta</strong> is hereby awarded <strong id="body-award">Arduino Starter Kit</strong>, earned through <strong id="body-hours">150 Pipes</strong>.
       </div>
 
       <div class="footer-signatures">
@@ -610,7 +610,7 @@
     <div class="certificate-no">
       <div>
         <div class="label">Certificate No.</div>
-        <span id="certno" class="number">{{CERTNO}}</span>
+        <span id="certno" class="number">CERT-2026-DEMO001</span>
       </div>
     </div>
 
@@ -627,36 +627,6 @@
     </div>
   </div>
 
-  <script>
-    // Replace placeholders from query string if present
-    (function(){
-      function q(name){
-        try{
-          const u = new URL(location.href);
-          return u.searchParams.get(name);
-        }catch(e){return null}
-      }
-      const name = q('name');
-      const award = q('award');
-      const hours = q('hours');
-      const no = q('no');
-      if(name) {
-        const els = document.querySelectorAll('#recipient, #body-name, #body-name-2');
-        els.forEach(el => el.textContent = decodeURIComponent(name));
-      }
-      if(award) {
-        const el = document.getElementById('body-award');
-        if(el) el.textContent = decodeURIComponent(award);
-      }
-      if(hours) {
-        const el = document.getElementById('body-hours');
-        if(el) el.textContent = decodeURIComponent(hours);
-      }
-      if(no) {
-        const el = document.getElementById('certno');
-        if(el) el.textContent = decodeURIComponent(no);
-      }
-    })();
-  </script>
+  
 </body>
 </html>
