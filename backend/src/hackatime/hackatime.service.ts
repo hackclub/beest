@@ -10,6 +10,7 @@ import { User } from '../entities/user.entity';
 import { Session } from '../entities/session.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { RsvpService } from '../rsvp/rsvp.service';
+import { HACKATIME_EVENT_START } from './hackatime.constants';
 
 type OwnershipLookups =
   | {
@@ -586,6 +587,78 @@ export class HackatimeService implements OnModuleInit {
       this.logger.error(`Hackatime projects fetch error for ${userId}: ${err}`);
       return [];
     }
+  }
+
+  /**
+   * Per-project-name Hackatime hours logged since the start of Beest
+   * (HACKATIME_EVENT_START), for the project picker on /home. Uses the admin
+   * API + the user's stored Hackatime user ID (same `/heartbeats/spans`
+   * pattern as the admin unreviewed-hours panel), since the user's own OAuth
+   * scope doesn't expose date-ranged stats. Fails soft (empty map) if the
+   * admin key isn't configured or the user has no linked Hackatime ID —
+   * the dropdown just shows project names with no hours in that case.
+   */
+  async getHoursSinceEventStart(
+    userId: string,
+    projectNames: string[],
+  ): Promise<Record<string, number>> {
+    const result: Record<string, number> = {};
+    if (projectNames.length === 0 || !this.adminApiKey) return result;
+
+    const user = await this.userRepo.findOne({
+      where: { hcaSub: userId },
+      select: ['hackatimeUserId'],
+    });
+    const htUserId = user?.hackatimeUserId;
+    if (!htUserId) return result;
+
+    const endDate = new Date(Date.now() + 86400_000).toISOString().slice(0, 10);
+    const batchSize = 10;
+    for (let i = 0; i < projectNames.length; i += batchSize) {
+      const batch = projectNames.slice(i, i + batchSize);
+      await Promise.allSettled(
+        batch.map(async (name) => {
+          try {
+            const res = await fetchWithTimeout(
+              `${this.baseUrl}/api/v1/users/${encodeURIComponent(htUserId)}/heartbeats/spans` +
+                `?start_date=${HACKATIME_EVENT_START}&end_date=${endDate}` +
+                `&project=${encodeURIComponent(name)}`,
+              { headers: { Authorization: `Bearer ${this.adminApiKey}` } },
+            );
+            if (!res.ok) return;
+            const body = await res.json().catch(() => null);
+            const spans: { start_time?: number; end_time?: number; duration?: number }[] =
+              body?.spans ?? [];
+            let seconds = 0;
+            for (const span of spans) {
+              if (
+                typeof span.duration === 'number' &&
+                Number.isFinite(span.duration) &&
+                span.duration > 0
+              ) {
+                seconds += span.duration;
+                continue;
+              }
+              if (
+                typeof span.start_time === 'number' &&
+                typeof span.end_time === 'number' &&
+                Number.isFinite(span.start_time) &&
+                Number.isFinite(span.end_time) &&
+                span.end_time > span.start_time
+              ) {
+                const diff = span.end_time - span.start_time;
+                seconds += diff > 1e9 ? diff / 1000 : diff;
+              }
+            }
+            result[name] = Math.round((seconds / 3600) * 10) / 10;
+          } catch (err) {
+            this.logger.warn(`Hackatime spans fetch failed for project ${name}: ${err}`);
+          }
+        }),
+      );
+    }
+
+    return result;
   }
 
   /**

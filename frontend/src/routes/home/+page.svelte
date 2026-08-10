@@ -114,6 +114,7 @@
   let projects = $state<any[]>([]);
   let catImages = $state<Record<string, string>>({});
   let hackatimeProjects = $state<string[]>([]);
+  let hackatimeHoursSinceStart = $state<Record<string, number>>({});
   let hackatimeLoading = $state(false);
   let hackatimeOpen = $state(false);
   let submitting = $state(false);
@@ -884,6 +885,7 @@
       if (res.ok) {
         const data = await res.json();
         hackatimeProjects = data.projects ?? [];
+        hackatimeHoursSinceStart = data.hoursSinceStart ?? {};
       }
     } catch { /* silently fail — dropdown stays empty */ }
     hackatimeLoading = false;
@@ -1991,6 +1993,9 @@
                             }
                           }} />
                           <span>{proj}</span>
+                          {#if hackatimeHoursSinceStart[proj] !== undefined}
+                            <span class="hackatime-option-hours">{hackatimeHoursSinceStart[proj]}h</span>
+                          {/if}
                         </label>
                       {/each}
                     {/if}
@@ -5227,6 +5232,12 @@
   .hackatime-option input[type="checkbox"]:checked {
     background: #222;
     border-color: #222;
+  }
+
+  .hackatime-option-hours {
+    margin-left: auto;
+    color: #888;
+    font-size: 12px;
   }
 
   .hackatime-empty {
