@@ -71,8 +71,10 @@ export class HackatimeController {
   }
 
   /**
-   * Returns the authenticated user's Hackatime project names.
-   * Only project name strings are returned — no other Hackatime data.
+   * Returns the authenticated user's Hackatime projects with the seconds
+   * tracked since Beest started. Projects with no eligible time are excluded
+   * and the list is sorted by time (descending), so the create/edit picker can
+   * rank them by how much they count. No other Hackatime data is exposed.
    */
   @Throttle({ default: { limit: 15, ttl: 60000 } })
   @UseGuards(JwtAuthGuard)
@@ -81,7 +83,7 @@ export class HackatimeController {
     const userId = (req as any).user?.sub;
     if (!userId) throw new UnauthorizedException('No user identity');
 
-    const names = await this.hackatimeService.getProjectNames(userId);
-    return { projects: names };
+    const projects = await this.hackatimeService.getProjectsWithTime(userId);
+    return { projects };
   }
 }
