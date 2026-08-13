@@ -416,6 +416,11 @@
     <h1 id="guide-top">Shipping Guide</h1>
     <p class="intro">Hey all! As of 05/05/2026, more than half of projects on #beest are being sent back for changes needed. I wrote this guide to document requirements for each project type, so that rejections shouldn't come as a surprise!</p>
 
+    <div class="callout callout-warning">
+      <span class="callout-icon" aria-hidden="true">!</span>
+      <span>Record your work sessions with <a href="https://lapse.hackclub.com" target="_blank" rel="noopener">lapse.hackclub.com</a>. This is required alongside Hackatime for every submission, not just hardware and CAD builds, and reviewers use it to sanity-check claimed hours.</span>
+    </div>
+
     {#each guides as guide (guide.type)}
       <section id="guide-{guide.type}" class="guide">
         <h2 class="guide-title">
