@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { IsNull } from 'typeorm';
 import { fetchWithTimeout } from '../fetch.util';
+import { HACKATIME_EVENT_START } from './hackatime.constants';
 import { User } from '../entities/user.entity';
 import { Session } from '../entities/session.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -589,9 +590,76 @@ export class HackatimeService implements OnModuleInit {
   }
 
   /**
-   * Fetches all-time stats from Hackatime and returns total hours
-   * plus a per-project-name breakdown for the specified project names.
-   * Single API call — no duplication.
+   * Fetches the authenticated user's Hackatime projects with the seconds
+   * tracked since Beest started (`HACKATIME_EVENT_START`). Projects with no
+   * eligible time are excluded and the list is sorted by time (descending).
+   * Powers the project create/edit picker — the frontend formats the seconds
+   * with the same "1h 30m" helper it uses everywhere else.
+   */
+  async getProjectsWithTime(
+    userId: string,
+  ): Promise<{ name: string; totalSeconds: number }[]> {
+    const user = await this.userRepo.findOne({
+      where: { hcaSub: userId },
+      select: ['hackatimeToken'],
+    });
+
+    if (!user?.hackatimeToken) {
+      this.logger.warn(`No hackatime token found for user ${userId} (user found: ${!!user})`);
+      return [];
+    }
+
+    try {
+      // include_archived=true: Hackatime excludes archived projects by default,
+      // so a linked project the user later archives would silently vanish from
+      // the picker. We want the full list, with total_seconds scoped to the
+      // Beest start date so pre-event time doesn't count.
+      const params = new URLSearchParams({
+        include_archived: 'true',
+        start_date: HACKATIME_EVENT_START,
+      });
+      const res = await fetchWithTimeout(
+        `${this.baseUrl}/api/v1/authenticated/projects?${params.toString()}`,
+        {
+          headers: { Authorization: `Bearer ${user.hackatimeToken}` },
+        },
+      );
+
+      if (!res.ok) {
+        this.logger.warn(`Hackatime projects fetch failed (${res.status}) for user ${userId}`);
+        return [];
+      }
+
+      const data = await res.json();
+      const projects: { name: string; total_seconds: number }[] =
+        data?.projects ?? data?.data ?? [];
+
+      if (!Array.isArray(projects)) return [];
+
+      return projects
+        .map((p) => {
+          const name = typeof p === 'string' ? p : p?.name;
+          const secs = typeof p === 'string' ? 0 : Number(p?.total_seconds);
+          return {
+            name,
+            totalSeconds: Number.isFinite(secs) && secs > 0 ? Math.floor(secs) : 0,
+          };
+        })
+        .filter(
+          (p): p is { name: string; totalSeconds: number } =>
+            typeof p.name === 'string' && p.name.length > 0 && p.totalSeconds > 0,
+        )
+        .sort((a, b) => b.totalSeconds - a.totalSeconds);
+    } catch (err) {
+      this.logger.error(`Hackatime projects fetch error for ${userId}: ${err}`);
+      return [];
+    }
+  }
+
+  /**
+   * Fetches the user's Hackatime hours tracked since Beest started
+   * (`HACKATIME_EVENT_START`) plus a per-project-name breakdown for the
+   * specified project names. Single API call — no duplication.
    */
   async getHoursForProjects(
     userId: string,
@@ -611,12 +679,16 @@ export class HackatimeService implements OnModuleInit {
     }
 
     try {
-      // include_archived=true: total_seconds defaults to all-time (the upstream
-      // query uses default_stats_start: 0), but archived projects are filtered
-      // out unless we ask for them. A user who archived a linked project would
-      // otherwise see 0h here while Hackatime still shows the full total.
+      // include_archived=true: archived projects are filtered out by default and
+      // would silently vanish from the total, so keep them. start_date scopes
+      // total_seconds to the Beest start date so pre-event time never counts —
+      // matching the admin panel, picker, and HACKATIME_EVENT_START's contract.
+      const params = new URLSearchParams({
+        include_archived: 'true',
+        start_date: HACKATIME_EVENT_START,
+      });
       const res = await fetchWithTimeout(
-        `${this.baseUrl}/api/v1/authenticated/projects?include_archived=true`,
+        `${this.baseUrl}/api/v1/authenticated/projects?${params.toString()}`,
         {
           headers: { Authorization: `Bearer ${user.hackatimeToken}` },
         },

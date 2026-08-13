@@ -113,7 +113,7 @@
   let aiUseDescription = $state('');
   let projects = $state<any[]>([]);
   let catImages = $state<Record<string, string>>({});
-  let hackatimeProjects = $state<string[]>([]);
+  let hackatimeProjects = $state<{ name: string; totalSeconds: number }[]>([]);
   let hackatimeLoading = $state(false);
   let hackatimeOpen = $state(false);
   let submitting = $state(false);
@@ -484,6 +484,28 @@
   let keystrokes = $state(0);
   let canSubmit = $derived(projectName.trim() !== '' && projectDesc.trim() !== '' && projectType !== '' && !submitting);
   let hasScreenshots = $derived(screenshotPreviews[0] !== '' || screenshotPreviews[1] !== '');
+  // Dropdown rows: fetched projects (already sorted by time, zero-time ones
+  // excluded server-side) plus any already-linked names that no longer match —
+  // so an edit can still unlink a project that has since dropped to 0s.
+  let hackatimeOptions = $derived.by(() => {
+    const rows = hackatimeProjects.map((p) => ({ name: p.name, totalSeconds: p.totalSeconds }));
+    for (const name of hackatimeProject) {
+      if (!rows.some((r) => r.name === name)) {
+        rows.push({ name, totalSeconds: 0 });
+      }
+    }
+    return rows;
+  });
+  // Total eligible time across the currently selected projects, so the builder
+  // sees at a glance what they'd be submitting with.
+  let selectedHackatimeSeconds = $derived.by(() => {
+    let total = 0;
+    for (const name of hackatimeProject) {
+      const match = hackatimeProjects.find((p) => p.name === name);
+      total += match?.totalSeconds ?? 0;
+    }
+    return total;
+  });
   let canSubmitForReview = $derived(
     projectName.trim() !== '' &&
     projectDesc.trim() !== '' &&
@@ -1977,20 +1999,23 @@
                   <div class="hackatime-dropdown">
                     {#if hackatimeLoading}
                       <span class="hackatime-empty">Loading...</span>
-                    {:else if hackatimeProjects.length === 0}
+                    {:else if hackatimeOptions.length === 0}
                       <span class="hackatime-empty">No projects found, redo tutorial?</span>
                     {:else}
-                      {#each hackatimeProjects as proj}
+                      {#each hackatimeOptions as proj}
                         <label class="hackatime-option">
-                          <input type="checkbox" checked={hackatimeProject.includes(proj)} onchange={(e) => {
+                          <input type="checkbox" checked={hackatimeProject.includes(proj.name)} onchange={(e) => {
                             const target = e.target as HTMLInputElement;
                             if (target.checked) {
-                              hackatimeProject = [...hackatimeProject, proj];
+                              hackatimeProject = [...hackatimeProject, proj.name];
                             } else {
-                              hackatimeProject = hackatimeProject.filter((p) => p !== proj);
+                              hackatimeProject = hackatimeProject.filter((p) => p !== proj.name);
                             }
                           }} />
-                          <span>{proj}</span>
+                          <span class="hackatime-option-name">{proj.name}</span>
+                          {#if proj.totalSeconds > 0}
+                            <span class="hackatime-option-hours">{fmtTrackedShort(proj.totalSeconds)}</span>
+                          {/if}
                         </label>
                       {/each}
                     {/if}
@@ -2005,6 +2030,9 @@
                 </button>
               </form>
             </div>
+            {#if selectedHackatimeSeconds > 0}
+              <span class="hackatime-total">{fmtTrackedShort(selectedHackatimeSeconds)} selected</span>
+            {/if}
           </div>
         </div>
 
@@ -5206,6 +5234,27 @@
     font-size: 13px;
     color: #222;
     padding: 5px 8px;
+  }
+
+  .hackatime-option-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hackatime-option-hours {
+    font-size: 12px;
+    color: #888;
+    white-space: nowrap;
+  }
+
+  .hackatime-total {
+    display: block;
+    margin-top: 4px;
+    font-family: "Courier New", monospace;
+    font-size: 11px;
+    color: #7f796d;
   }
 
   .hackatime-option:hover {
