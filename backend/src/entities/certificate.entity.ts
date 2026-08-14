@@ -24,18 +24,18 @@ export class Certificate {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @Column({ name: 'order_id' })
-  orderId: string;
+  @Column({ name: 'order_id', nullable: true })
+  orderId: string | null;
 
-  @ManyToOne(() => Order, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Order, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'order_id' })
-  order: Order;
+  order: Order | null;
 
   // Recipient name for the certificate
   @Column({ name: 'recipient_name', length: 500 })
   recipientName: string;
 
-  // Approved hours completed (fetched from user's projects)
+  // Approved hours completed (fetched from user's projects or aggregated grant pipes)
   @Column({ name: 'approved_hours', type: 'integer' })
   approvedHours: number;
 
@@ -50,6 +50,15 @@ export class Certificate {
   // Full certificate text
   @Column({ name: 'certificate_text', type: 'text' })
   certificateText: string;
+
+  // Dollar grant value ($5 * pipe no.) if this is a grant certificate
+  @Column({ name: 'grant_value', type: 'integer', nullable: true })
+  grantValue: number | null;
+
+  // Indicates whether this is a grant certificate (aggregated per grant item)
+  @Column({ name: 'is_grant', type: 'boolean', default: false })
+  isGrant: boolean;
+
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

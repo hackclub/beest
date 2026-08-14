@@ -30,36 +30,22 @@ export class CertificateService {
   ) {}
 
   /**
-   * Generate a certificate for a non-granted fulfilled order.
-   * Called when an order is marked as fulfilled.
-   *
-   * Only creates certificates for orders without hcbCardGrantId or siloGrantId.
+   * Generate or update a certificate for an order.
+   * - For regular shop items: generates 1 certificate per order.
+   * - For grant items: aggregates all fulfilled grant orders of the same item name
+   *   for the user. Only generates/updates a certificate if total aggregated pipes > 10.
+   *   The grant value is calculated as $5 * total pipe number.
    */
   async generateCertificateForOrder(
     orderId: string,
   ): Promise<Certificate | null> {
-    const existingCertificate = await this.certificateRepo.findOne({
-      where: { orderId },
-    });
-    if (existingCertificate) {
-      return existingCertificate;
-    }
-
     const order = await this.orderRepo.findOne({
       where: { id: orderId },
-      relations: ['user'],
+      relations: ['user', 'shopItem'],
     });
 
     if (!order) {
       throw new NotFoundException('Order not found');
-    }
-
-    // Only generate certificates for non-granted items
-    if (order.hcbCardGrantId || order.siloGrantId) {
-      this.logger.debug(
-        `Skipping certificate generation for granted order ${orderId}`,
-      );
-      return null;
     }
 
     const user =
@@ -68,27 +54,144 @@ export class CertificateService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    // The certificate represents the item price in Pipes, captured at purchase time.
-    const approvedHours = order.pipesSpent;
 
-    // Generate unique certificate number
-    const certificateNumber = await this.generateCertificateNumber();
-
-    // Format the certificate text
     const recipientName = user.nickname || user.name || 'Recipient';
+
+    // Determine if this order is for a grant item
+    const isGrantOrder = !!(
+      order.shopItem?.isGrant ||
+      order.hcbCardGrantId ||
+      order.siloGrantId ||
+      order.itemName.toLowerCase().includes('grant')
+    );
+
+    if (isGrantOrder) {
+      // Find all fulfilled grant orders for this user of the SAME grant item name
+      const userOrders = await this.orderRepo.find({
+        where: { userId: order.userId, status: 'fulfilled' },
+        relations: ['shopItem'],
+      });
+
+      const matchingGrantOrders = userOrders.filter((o) => {
+        const oIsGrant = !!(
+          o.shopItem?.isGrant ||
+          o.hcbCardGrantId ||
+          o.siloGrantId ||
+          o.itemName.toLowerCase().includes('grant')
+        );
+        return (
+          oIsGrant &&
+          o.itemName.trim().toLowerCase() === order.itemName.trim().toLowerCase()
+        );
+      });
+
+      // Sum the total pipes spent for this grant item category
+      const totalPipes = matchingGrantOrders.reduce(
+        (sum, o) => sum + o.pipesSpent,
+        0,
+      );
+
+      // Require > 10 pipes to issue a grant certificate
+      if (totalPipes <= 10) {
+        this.logger.debug(
+          `Skipping certificate generation for grant "${order.itemName}": total pipes (${totalPipes}) is not > 10`,
+        );
+        return null;
+      }
+
+      // Grant value is $5 per pipe (5 * pipe no.)
+      const grantValue = totalPipes * 5;
+
+      // Check if a grant certificate already exists for this user + grant item
+      let existingCert = await this.certificateRepo.findOne({
+        where: {
+          userId: order.userId,
+          awardItem: order.itemName,
+          isGrant: true,
+        },
+      });
+
+      if (existingCert) {
+        // Update existing certificate to cumulative total
+        existingCert.approvedHours = totalPipes;
+        existingCert.grantValue = grantValue;
+        existingCert.orderId = order.id;
+        existingCert.certificateText = this.formatCertificateText(
+          recipientName,
+          totalPipes,
+          order.itemName,
+          true,
+          grantValue,
+        );
+
+        const updated = await this.certificateRepo.save(existingCert);
+
+        await this.auditLogService.log(
+          order.userId,
+          'certificate_updated',
+          `Grant certificate updated for ${order.itemName}: ${totalPipes} Pipes ($${grantValue})`,
+        );
+
+        return updated;
+      }
+
+      // Create new aggregated grant certificate
+      const certificateNumber = await this.generateCertificateNumber();
+      const certificateText = this.formatCertificateText(
+        recipientName,
+        totalPipes,
+        order.itemName,
+        true,
+        grantValue,
+      );
+
+      const certificate = this.certificateRepo.create({
+        userId: order.userId,
+        orderId: order.id,
+        recipientName,
+        approvedHours: totalPipes,
+        awardItem: order.itemName,
+        grantValue,
+        isGrant: true,
+        certificateNumber,
+        certificateText,
+      });
+
+      const saved = await this.certificateRepo.save(certificate);
+
+      await this.auditLogService.log(
+        order.userId,
+        'certificate_generated',
+        `Grant certificate generated for ${order.itemName}: ${totalPipes} Pipes ($${grantValue})`,
+      );
+
+      return saved;
+    }
+
+    // --- Non-grant order certificate logic ---
+    const existingCertificate = await this.certificateRepo.findOne({
+      where: { orderId },
+    });
+    if (existingCertificate) {
+      return existingCertificate;
+    }
+
+    const approvedHours = order.pipesSpent;
+    const certificateNumber = await this.generateCertificateNumber();
     const certificateText = this.formatCertificateText(
       recipientName,
       approvedHours,
       order.itemName,
+      false,
     );
 
-    // Create and save the certificate
     const certificate = this.certificateRepo.create({
       userId: order.userId,
       orderId: order.id,
       recipientName,
       approvedHours,
       awardItem: order.itemName,
+      isGrant: false,
       certificateNumber,
       certificateText,
     });
@@ -118,24 +221,12 @@ export class CertificateService {
       return;
     }
 
-    const existingCertificates = await this.certificateRepo.find({
-      where: { userId },
-      select: ['orderId'],
-    });
-    const existingOrderIds = new Set(
-      existingCertificates.map((c) => c.orderId),
-    );
-
     for (const order of fulfilledOrders) {
-      if (existingOrderIds.has(order.id)) {
-        continue;
-      }
-
       try {
         await this.generateCertificateForOrder(order.id);
       } catch (error) {
         this.logger.error(
-          `Failed to backfill certificate for order ${order.id}:`,
+          `Failed to sync certificate for order ${order.id}:`,
           error,
         );
       }
@@ -158,8 +249,13 @@ export class CertificateService {
     recipientName: string,
     approvedHours: number,
     awardItem: string,
+    isGrant: boolean = false,
+    grantValue?: number | null,
   ): string {
-    return `This certificate recognizes ${recipientName}'s fulfilled Beest by Hack Club shop order. ${recipientName} is hereby awarded ${awardItem}, purchased for ${approvedHours} Pipes.`;
+    const displayAward = isGrant
+      ? `${awardItem} ($${grantValue ?? approvedHours * 5} USD Grant)`
+      : awardItem;
+    return `This certificate recognizes ${recipientName}'s fulfilled Beest by Hack Club shop order. ${recipientName} is hereby awarded ${displayAward}, purchased for ${approvedHours} Pipes.`;
   }
 
   /**
@@ -491,6 +587,9 @@ export class CertificateService {
     const award = this.escapeHtml(certificate.awardItem);
     const number = this.escapeHtml(certificate.certificateNumber);
     const pipes = certificate.approvedHours;
+    const isGrant = certificate.isGrant;
+    const grantVal = certificate.grantValue ?? (isGrant ? pipes * 5 : null);
+    const displayAward = grantVal !== null ? `${award} ($${grantVal} USD Grant)` : award;
 
     // Keep issued certificates visually identical to the approved example.
     const templatePath = [
@@ -500,19 +599,23 @@ export class CertificateService {
     ].find(existsSync);
 
     if (templatePath) {
-      return readFileSync(templatePath, 'utf8')
+      let html = readFileSync(templatePath, 'utf8')
         .replaceAll('{{NAME}}', name)
-        .replaceAll('{{AWARD}}', award)
+        .replaceAll('{{AWARD}}', displayAward)
         .replaceAll('{{HOURS}}', `${pipes} Pipes`)
         .replaceAll('{{CERTNO}}', number)
         .replaceAll('Ketan Gupta', name)
         .replaceAll('48 approved hours', `${pipes} approved hours`)
         .replaceAll('150 Pipes', `${pipes} Pipes`)
-        .replaceAll('Arduino Starter Kit', award)
-        .replaceAll('Bambu Lab A1 Mini 3D Printer', award)
+        .replaceAll('Arduino Starter Kit', displayAward)
+        .replaceAll('Bambu Lab A1 Mini 3D Printer', displayAward)
         .replaceAll('BEEST-YSWS-2024-001', number)
         .replaceAll('CERT-2026-DEMO001', number);
+
+      return html;
     }
+
+    const bodyCopyText = `This certificate recognizes <strong>${name}</strong>'s fulfilled Beest by Hack Club shop order. <strong>${name}</strong> is hereby awarded <strong>${displayAward}</strong>, purchased for <strong>${pipes} Pipes</strong>.`;
 
     return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="color-scheme" content="light only"><title>Beest Certificate — ${name}</title>
@@ -525,7 +628,7 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;pad
 .main{position:relative;z-index:1;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;text-align:center;padding:78px 40px 72px}.eyebrow{color:rgba(17,17,20,.56);letter-spacing:.32em;font-size:11px;text-transform:uppercase}.title{margin-top:6px;font-family:'Stone Breaker',Impact,'Arial Narrow',Arial,sans-serif;font-size:clamp(54px,7.2vw,80px);line-height:.92;color:var(--ink);text-transform:uppercase}.recipient{margin-top:10px;font-family:'Brush Script MT',cursive;font-size:clamp(50px,7.4vw,82px);color:var(--red)}.body-copy{max-width:760px;margin-top:12px;font-size:clamp(15px,1.65vw,19px);color:rgba(17,17,20,.9);font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}
 .footer-signatures{display:flex;justify-content:center;gap:82px;margin-top:24px}.signature-line{width:150px;height:34px;margin:0 auto 4px;border-bottom:1px solid rgba(239,51,64,.55)}.certificate-no{position:absolute;left:28px;bottom:72px;padding:8px 10px;border-radius:14px;border:1px dashed rgba(239,51,64,.45);background:rgba(255,255,255,.86)}
 @media print{body{padding:0;background:#fff}.certificate{width:100vw;max-width:none;border-radius:0;box-shadow:none}}
-</style></head><body><div class="certificate"><div class="brand"><img class="flag" src="https://camo.githubusercontent.com/952e19cabf08f8b6b181def3e9c7476d3b50ee6668f0af1e93931d8f4082ce0f/68747470733a2f2f6173736574732e6861636b636f6d2f666c61672d7374616e64616c6f6e652e737667" alt="Hack Club flag"><span class="beest">beest</span></div><div class="main"><div class="eyebrow">Hack Club Recognition</div><div class="title">Certificate</div><div class="intro">This certificate is proudly presented to</div><div class="recipient">${name}</div><div class="body-copy">This certificate recognizes <strong>${name}</strong>'s fulfilled Beest by Hack Club shop order. <strong>${name}</strong> is hereby awarded <strong>${award}</strong>, purchased for <strong>${pipes} Pipes</strong>.</div><div class="footer-signatures"><div class="signature"><div class="signature-line"></div><div class="signature-name">Euan Ripper</div><div class="signature-role"><strong>Euan Ripper</strong><br>Organizer<br>YSWS</div></div><div class="signature"><div class="signature-line"></div><div class="signature-name">Zach Latta</div><div class="signature-role"><strong>Zach Latta</strong><br>CEO<br>Hack Club</div></div></div></div><div class="certificate-no"><div class="label">Certificate No.</div><div class="number">${number}</div></div></div></body></html>`;
+</style></head><body><div class="certificate"><div class="brand"><img class="flag" src="https://camo.githubusercontent.com/952e19cabf08f8b6b181def3e9c7476d3b50ee6668f0af1e93931d8f4082ce0f/68747470733a2f2f6173736574732e6861636b636f6d2f666c61672d7374616e64616c6f6e652e737667" alt="Hack Club flag"><span class="beest">beest</span></div><div class="main"><div class="eyebrow">Hack Club Recognition</div><div class="title">Certificate</div><div class="intro">This certificate is proudly presented to</div><div class="recipient">${name}</div><div class="body-copy">${bodyCopyText}</div><div class="footer-signatures"><div class="signature"><div class="signature-line"></div><div class="signature-name">Euan Ripper</div><div class="signature-role"><strong>Euan Ripper</strong><br>Organizer<br>YSWS</div></div><div class="signature"><div class="signature-line"></div><div class="signature-name">Zach Latta</div><div class="signature-role"><strong>Zach Latta</strong><br>CEO<br>Hack Club</div></div></div></div><div class="certificate-no"><div class="label">Certificate No.</div><div class="number">${number}</div></div></div></body></html>`;
   }
 
   private escapeHtml(value: string): string {

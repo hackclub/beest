@@ -76,6 +76,9 @@
             <p class="recipient">Awarded to <strong>{cert.recipientName}</strong></p>
             <dl>
               <div><dt>Item price</dt><dd>{cert.approvedHours} Pipes</dd></div>
+              {#if cert.isGrant || cert.grantValue}
+                <div><dt>Grant value</dt><dd>${cert.grantValue ?? cert.approvedHours * 5} USD</dd></div>
+              {/if}
               <div><dt>Certificate no.</dt><dd class="number">{cert.certificateNumber}</dd></div>
             </dl>
           </div>
