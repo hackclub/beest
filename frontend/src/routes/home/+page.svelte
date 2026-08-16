@@ -2345,7 +2345,7 @@
         <div class="projects-box" class:has-projects={projects.length > 0} style:--cols={projectCols}>
           {#if projects.length === 0}
             <p class="empty-text">No projects yet. Start building to earn hours!</p>
-            <button class="action-btn" onclick={openCreateProject}>Create a Project</button>
+            <button class="action-btn">Project Creation Disabled!</button>
           {:else}
             {#each projects as project}
               {@const isMobile = project.projectType === 'android' || project.projectType === 'ios'}
