@@ -22,7 +22,7 @@
 	// The schedule is a venue timetable, so unlike the rest of the site it pins
 	// event-local time (Europe/Amsterdam) instead of the viewer's timezone.
 	const TZ = 'Europe/Amsterdam';
-	const DAY_KEYS = ['2026-08-29', '2026-08-30', '2026-08-31'];
+	const DAY_KEYS = ['2026-08-19', '2026-08-20', '2026-08-21'];
 	const PX_PER_MIN = 1.1;
 	const GUTTER = 56; // px reserved for the hour labels
 
@@ -274,7 +274,7 @@
 
 <svelte:head>
 	<title>Schedule — Beest</title>
-	<meta name="description" content="The Beest event schedule, August 29–31." />
+	<meta name="description" content="The Beest event schedule, August 19–21." />
 </svelte:head>
 
 <div class="schedule-page">

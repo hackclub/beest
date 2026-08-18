@@ -46,10 +46,10 @@ export class EventScheduleService {
   private cache: { events: ScheduleEvent[]; timestamp: number } | null = null;
   private static readonly CACHE_TTL_MS = 5 * 60_000;
 
-  // The event weekend (Aug 29–31, Europe/Amsterdam) padded a day on each
+  // The event days (Aug 19–21, Europe/Amsterdam) padded a day on each
   // side so timezone offsets and overnight events never clip at the edges.
-  private static readonly TIME_MIN = '2026-08-28T00:00:00Z';
-  private static readonly TIME_MAX = '2026-09-01T23:59:59Z';
+  private static readonly TIME_MIN = '2026-08-18T00:00:00Z';
+  private static readonly TIME_MAX = '2026-08-22T23:59:59Z';
 
   constructor(private configService: ConfigService) {
     this.calendarId = this.configService.get('GOOGLE_CALENDAR_ID');
