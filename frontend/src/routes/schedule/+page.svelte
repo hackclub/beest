@@ -25,6 +25,15 @@
 	const DAY_KEYS = ['2026-08-19', '2026-08-20', '2026-08-21'];
 	const PX_PER_MIN = 1.1;
 	const GUTTER = 56; // px reserved for the hour labels
+	// Shortest visual height of a block, in minutes. Blocks are drawn at least
+	// this tall so their text stays readable, which means a 15-minute event
+	// occupies more vertical space than its time span — all overlap math below
+	// uses this visual end, not the real one, so no block ever covers another.
+	const MIN_BLOCK_MIN = 24;
+
+	function visualEnd(t: { startMin: number; endMin: number }): number {
+		return Math.max(t.endMin, t.startMin + MIN_BLOCK_MIN);
+	}
 
 	const partsFmt = new Intl.DateTimeFormat('en-CA', {
 		timeZone: TZ,
@@ -132,9 +141,9 @@
 				let col = colEnds.findIndex((end) => end <= it.startMin);
 				if (col === -1) {
 					col = colEnds.length;
-					colEnds.push(it.endMin);
+					colEnds.push(visualEnd(it));
 				} else {
-					colEnds[col] = it.endMin;
+					colEnds[col] = visualEnd(it);
 				}
 				return { ...it, col };
 			});
@@ -145,7 +154,7 @@
 		for (const it of sorted) {
 			if (cluster.length > 0 && it.startMin >= clusterEnd) flush();
 			cluster.push(it);
-			clusterEnd = cluster.length === 1 ? it.endMin : Math.max(clusterEnd, it.endMin);
+			clusterEnd = cluster.length === 1 ? visualEnd(it) : Math.max(clusterEnd, visualEnd(it));
 		}
 		flush();
 		return result;
@@ -164,7 +173,7 @@
 			.filter((t) => t.endMin > startHour * 60)
 			.map((t) => ({ ...t, startMin: Math.max(t.startMin, startHour * 60) }));
 		const earlyTails = timed.filter((t) => t.endMin <= startHour * 60);
-		const endHour = Math.min(24, Math.ceil(Math.max(...gridItems.map((t) => t.endMin)) / 60));
+		const endHour = Math.min(24, Math.ceil(Math.max(...gridItems.map((t) => visualEnd(t))) / 60));
 		return {
 			startHour,
 			endHour,
@@ -354,9 +363,10 @@
 							class="event-block"
 							class:current={isCurrent(item.event)}
 							class:expanded={expandedId === item.event.id}
+							class:compact={item.endMin - item.startMin < 40}
 							style="
 							top:{(item.startMin - dayView.startHour * 60) * PX_PER_MIN}px;
-							height:{Math.max((item.endMin - item.startMin) * PX_PER_MIN, 26)}px;
+							height:{(visualEnd(item) - item.startMin) * PX_PER_MIN}px;
 							left:calc({GUTTER}px + (100% - {GUTTER + 4}px) * {item.col / item.cols});
 							width:calc((100% - {GUTTER + 4}px) * {1 / item.cols} - 4px);
 						"
@@ -587,7 +597,7 @@
 		border: 2px solid #c48382;
 		border-radius: 8px;
 		padding: 0.9rem 1rem;
-		margin-bottom: 1rem;
+		margin-bottom: 2rem;
 		cursor: pointer;
 		box-shadow:
 			0 4px 8px rgba(0, 0, 0, 0.3),
@@ -712,6 +722,25 @@
 
 	.event-block.expanded {
 		border-color: #cbc1ae;
+	}
+
+	/* Short events render as a single line: title and time side by side. */
+	.event-block.compact {
+		flex-direction: row;
+		align-items: baseline;
+		gap: 0.5rem;
+		padding-top: 0.2rem;
+		padding-bottom: 0.2rem;
+	}
+
+	.event-block.compact .event-title {
+		white-space: nowrap;
+		flex-shrink: 1;
+		min-width: 0;
+	}
+
+	.event-block.compact .event-meta {
+		flex-shrink: 0;
 	}
 
 	.event-block.current {
