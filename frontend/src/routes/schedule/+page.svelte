@@ -22,6 +22,11 @@
 	// The schedule is a venue timetable, so unlike the rest of the site it pins
 	// event-local time (Europe/Amsterdam) instead of the viewer's timezone.
 	const TZ = 'Europe/Amsterdam';
+	const CALENDAR_ID =
+		'c_22774339b057d676b5fc0f1842ea01774a2042df3ae4382470173d6a75c9b37e@group.calendar.google.com';
+	// One-click subscribe: Google Calendar via cid, everything else via webcal.
+	const GCAL_SUBSCRIBE_URL = `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(CALENDAR_ID)}`;
+	const ICAL_SUBSCRIBE_URL = `webcal://calendar.google.com/calendar/ical/${encodeURIComponent(CALENDAR_ID)}/public/basic.ics`;
 	const DAY_KEYS = ['2026-08-19', '2026-08-20', '2026-08-21'];
 	const PX_PER_MIN = 1.1;
 	const GUTTER = 56; // px reserved for the hour labels
@@ -408,6 +413,29 @@
 					<p>Nothing on the timetable for this day yet. Check back soon!</p>
 				</div>
 			{/if}
+
+			<div class="cal-actions">
+				<a class="cal-btn" href={GCAL_SUBSCRIBE_URL} target="_blank" rel="noopener noreferrer">
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M8 2v4" />
+						<path d="M16 2v4" />
+						<path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8" />
+						<path d="M3 10h18" />
+						<path d="M16 19h6" />
+						<path d="M19 16v6" />
+					</svg>
+					Add to your calendar
+				</a>
+				<a class="cal-alt" href={ICAL_SUBSCRIBE_URL}>Apple or Outlook? Subscribe via iCal</a>
+			</div>
 		</div>
 	</main>
 
@@ -906,6 +934,59 @@
 		white-space: pre-line;
 		max-height: 30vh;
 		overflow-y: auto;
+	}
+
+	/* ── Add-to-calendar ───────────────────────────────────────── */
+
+	.cal-actions {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.6rem;
+		margin-top: 2rem;
+	}
+
+	.cal-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.55rem;
+		font-family: 'Sunny Mood', 'Courier New', monospace;
+		font-size: 1.15rem;
+		color: #2e2a26;
+		background: #cbc1ae;
+		border: 2px solid #2e2a26;
+		border-radius: 8px;
+		padding: 0.65rem 1.4rem;
+		text-decoration: none;
+		box-shadow:
+			0 4px 8px rgba(0, 0, 0, 0.3),
+			0 8px 20px rgba(0, 0, 0, 0.25);
+		transition: background 0.2s;
+	}
+
+	.cal-btn:hover {
+		background: #ddd7cf;
+	}
+
+	.cal-btn:focus-visible {
+		outline: 2px solid #cbc1ae;
+		outline-offset: 2px;
+	}
+
+	.cal-btn svg {
+		width: 20px;
+		height: 20px;
+	}
+
+	.cal-alt {
+		font-family: 'Courier New', monospace;
+		font-size: 0.8rem;
+		color: #cbc1ae;
+		opacity: 0.85;
+	}
+
+	.cal-alt:hover {
+		opacity: 1;
 	}
 
 	/* ── Back link ─────────────────────────────────────────────── */
