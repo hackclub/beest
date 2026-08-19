@@ -137,6 +137,19 @@
 	 * — full width, drawn slightly later than its true position. Only events
 	 * that genuinely overlap in time get split into side-by-side columns.
 	 */
+	/**
+	 * Pins parallel-track events to a consistent side of the timeline, so
+	 * "Group A" is always the left column and "Group B" the right, regardless
+	 * of which event happens to sort first. Best-effort: if the preferred
+	 * column is occupied, the event falls back to the first free one.
+	 */
+	function preferredCol(title: string): number | null {
+		const t = title.toLowerCase();
+		if (t.includes('group a')) return 0;
+		if (t.includes('group b')) return 1;
+		return null;
+	}
+
 	function layoutDay(items: TimedItem[]): PositionedItem[] {
 		const sorted = [...items].sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
 
@@ -159,18 +172,26 @@
 
 		const flush = () => {
 			if (cluster.length === 0) return;
+			// May be sparse while preferred columns are honored; unused columns
+			// are compacted away below.
 			const colEnds: number[] = [];
+			const free = (col: number, it: (typeof cluster)[number]) =>
+				colEnds[col] === undefined || colEnds[col] <= it.visStart;
 			const assigned = cluster.map((it) => {
-				let col = colEnds.findIndex((end) => end <= it.visStart);
-				if (col === -1) {
-					col = colEnds.length;
-					colEnds.push(it.visEnd);
+				const pref = preferredCol(it.event.title);
+				let col: number;
+				if (pref !== null && free(pref, it)) {
+					col = pref;
 				} else {
-					colEnds[col] = it.visEnd;
+					col = 0;
+					while (!free(col, it)) col++;
 				}
+				colEnds[col] = it.visEnd;
 				return { ...it, col };
 			});
-			for (const a of assigned) result.push({ ...a, cols: colEnds.length });
+			const used = [...new Set(assigned.map((a) => a.col))].sort((x, y) => x - y);
+			const remap = new Map(used.map((c, i) => [c, i]));
+			for (const a of assigned) result.push({ ...a, col: remap.get(a.col)!, cols: used.length });
 			cluster = [];
 		};
 
