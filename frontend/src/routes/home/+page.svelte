@@ -70,6 +70,8 @@
   let customCursorEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('customCursor') !== 'off' : true);
   const EVENT_START = new Date('2026-08-19T00:00:00+02:00').getTime();
   let eventCountdown = $state({ days: 0, hours: 0, minutes: 0, seconds: 0, live: false });
+  let projectCreationDisabled = $state(true);
+  let projectCreationReason = $state('Project creation is currently disabled');
   let creatingProject = $state(false);
   let editingProject = $state<any>(null);
   type ProjectReview = {
@@ -679,8 +681,12 @@
   }
 
   function openCreateProject() {
-    resetForm();
-    creatingProject = true;
+   if (projectCreationDisabled) {
+    formError = projectCreationReason; // Show error message
+    return;
+   }
+   resetForm();
+   creatingProject = true;
   }
 
   function openEditProject(project: any) {
@@ -2345,7 +2351,7 @@
         <div class="projects-box" class:has-projects={projects.length > 0} style:--cols={projectCols}>
           {#if projects.length === 0}
             <p class="empty-text">No projects yet. Start building to earn hours!</p>
-            <button class="action-btn" onclick={openCreateProject}>Create a Project</button>
+            <button class="action-btn" onclick={openCreateProject} disabled={projectCreationDisabled} title={projectCreationReason}>Create a Project</button>
           {:else}
             {#each projects as project}
               {@const isMobile = project.projectType === 'android' || project.projectType === 'ios'}
