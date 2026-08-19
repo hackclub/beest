@@ -30,15 +30,9 @@
 	const DAY_KEYS = ['2026-08-19', '2026-08-20', '2026-08-21'];
 	const PX_PER_MIN = 1.1;
 	const GUTTER = 56; // px reserved for the hour labels
-	// Shortest visual height of a block, in minutes. Blocks are drawn at least
-	// this tall so their text stays readable, which means a 15-minute event
-	// occupies more vertical space than its time span — all overlap math below
-	// uses this visual end, not the real one, so no block ever covers another.
+	// Shortest visual height of a block, in minutes, so its text stays
+	// readable. How the extra space is reconciled is decided in layoutDay.
 	const MIN_BLOCK_MIN = 24;
-
-	function visualEnd(t: { startMin: number; endMin: number }): number {
-		return Math.max(t.endMin, t.startMin + MIN_BLOCK_MIN);
-	}
 
 	const partsFmt = new Intl.DateTimeFormat('en-CA', {
 		timeZone: TZ,
@@ -110,6 +104,10 @@
 		fromPrevDay: boolean;
 	}
 	interface PositionedItem extends TimedItem {
+		/** Where the block is drawn; nudged slightly below startMin/endMin when
+		 * a preceding short block's minimum height would otherwise cover it. */
+		visStart: number;
+		visEnd: number;
 		col: number;
 		cols: number;
 	}
@@ -132,23 +130,43 @@
 		return items;
 	}
 
-	/** Assigns overlapping events to side-by-side columns (per overlap cluster). */
+	/**
+	 * Lays out a day's blocks. A short event's minimum block height can spill
+	 * past its real end time; when that spill is the only overlap (the events
+	 * are sequential in time), the next block is nudged down to start below it
+	 * — full width, drawn slightly later than its true position. Only events
+	 * that genuinely overlap in time get split into side-by-side columns.
+	 */
 	function layoutDay(items: TimedItem[]): PositionedItem[] {
 		const sorted = [...items].sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
+
+		// Push-down pass: resolve visual-only overlaps by shifting drawn starts.
+		let maxRealEnd = -1;
+		let maxVisEnd = -1;
+		const adjusted = sorted.map((it) => {
+			const visStart =
+				it.startMin >= maxRealEnd && it.startMin < maxVisEnd ? maxVisEnd : it.startMin;
+			const visEnd = Math.max(it.endMin, visStart + MIN_BLOCK_MIN);
+			maxRealEnd = Math.max(maxRealEnd, it.endMin);
+			maxVisEnd = Math.max(maxVisEnd, visEnd);
+			return { ...it, visStart, visEnd };
+		});
+
+		// Column pass: whatever still overlaps is truly concurrent.
 		const result: PositionedItem[] = [];
-		let cluster: TimedItem[] = [];
+		let cluster: typeof adjusted = [];
 		let clusterEnd = -1;
 
 		const flush = () => {
 			if (cluster.length === 0) return;
 			const colEnds: number[] = [];
 			const assigned = cluster.map((it) => {
-				let col = colEnds.findIndex((end) => end <= it.startMin);
+				let col = colEnds.findIndex((end) => end <= it.visStart);
 				if (col === -1) {
 					col = colEnds.length;
-					colEnds.push(visualEnd(it));
+					colEnds.push(it.visEnd);
 				} else {
-					colEnds[col] = visualEnd(it);
+					colEnds[col] = it.visEnd;
 				}
 				return { ...it, col };
 			});
@@ -156,10 +174,10 @@
 			cluster = [];
 		};
 
-		for (const it of sorted) {
-			if (cluster.length > 0 && it.startMin >= clusterEnd) flush();
+		for (const it of adjusted) {
+			if (cluster.length > 0 && it.visStart >= clusterEnd) flush();
 			cluster.push(it);
-			clusterEnd = cluster.length === 1 ? visualEnd(it) : Math.max(clusterEnd, visualEnd(it));
+			clusterEnd = cluster.length === 1 ? it.visEnd : Math.max(clusterEnd, it.visEnd);
 		}
 		flush();
 		return result;
@@ -178,11 +196,12 @@
 			.filter((t) => t.endMin > startHour * 60)
 			.map((t) => ({ ...t, startMin: Math.max(t.startMin, startHour * 60) }));
 		const earlyTails = timed.filter((t) => t.endMin <= startHour * 60);
-		const endHour = Math.min(24, Math.ceil(Math.max(...gridItems.map((t) => visualEnd(t))) / 60));
+		const positioned = layoutDay(gridItems);
+		const endHour = Math.min(24, Math.ceil(Math.max(...positioned.map((t) => t.visEnd)) / 60));
 		return {
 			startHour,
 			endHour,
-			positioned: layoutDay(gridItems),
+			positioned,
 			earlyTails,
 			height: (endHour - startHour) * 60 * PX_PER_MIN
 		};
@@ -370,8 +389,8 @@
 							class:expanded={expandedId === item.event.id}
 							class:compact={item.endMin - item.startMin < 40}
 							style="
-							top:{(item.startMin - dayView.startHour * 60) * PX_PER_MIN}px;
-							height:{(visualEnd(item) - item.startMin) * PX_PER_MIN}px;
+							top:{(item.visStart - dayView.startHour * 60) * PX_PER_MIN}px;
+							height:{(item.visEnd - item.visStart) * PX_PER_MIN}px;
 							left:calc({GUTTER}px + (100% - {GUTTER + 4}px) * {item.col / item.cols});
 							width:calc((100% - {GUTTER + 4}px) * {1 / item.cols} - 4px);
 						"
