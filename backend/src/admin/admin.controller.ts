@@ -615,6 +615,50 @@ export class AdminController {
     return this.adminService.backfillGoldenForCoolBuilders(adminId);
   }
 
+  // ── Fraud review ──
+  // A fraud-clearance pass over every shipped project, independent of the
+  // functional review pipeline. A Fraud Reviewer either marks a project "not
+  // fraud" (records a clearance, no status change) or bans the maker. Reuses the
+  // audit iframe-context + `projects/:id/hackatime` routes for the heartbeat
+  // graph and file breakdown. Open to Super Admin and Fraud Reviewer.
+
+  @UseGuards(FraudReviewerGuard)
+  @Get('fraud/queue')
+  fraudQueue() {
+    return this.auditService.listFraudQueue();
+  }
+
+  @UseGuards(FraudReviewerGuard)
+  @Post('fraud/:id/clear')
+  async fraudClear(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { note?: string },
+    @Req() req: Request,
+  ) {
+    const reviewer = (req as any).user;
+    return this.auditService.clearFraud(
+      id,
+      { id: reviewer?.uid, name: reviewer?.nickname || reviewer?.name || null },
+      (body?.note ?? '').toString(),
+    );
+  }
+
+  @UseGuards(FraudReviewerGuard)
+  @Post('fraud/:id/ban')
+  async fraudBan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { note?: string },
+    @Req() req: Request,
+  ) {
+    const reviewer = (req as any).user;
+    const isSuperAdmin = reviewer?.perms === 'Super Admin';
+    return this.auditService.banFromFraud(
+      id,
+      { id: reviewer?.uid, isSuperAdmin },
+      (body?.note ?? '').toString(),
+    );
+  }
+
   @UseGuards(SuperAdminGuard)
   @Post('projects/:id/resync-airtable')
   async resyncAirtable(
