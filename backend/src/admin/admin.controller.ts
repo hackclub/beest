@@ -195,6 +195,23 @@ export class AdminController {
     return this.adminService.setIdentityOverride(id, body.override, reason, adminId);
   }
 
+  // Post-shutdown escape hatch: re-opens shipping/resubmitting for one builder
+  // for a fortnight. Super-Admin only — it exempts them from the program-wide
+  // freeze, so it sits at the same tier as granting pipes.
+  @UseGuards(SuperAdminGuard)
+  @Patch('users/:id/submission-extension')
+  async setSubmissionExtension(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { grant?: boolean },
+    @Req() req: Request,
+  ) {
+    if (typeof body.grant !== 'boolean') {
+      throw new BadRequestException('grant (boolean) is required');
+    }
+    const adminId = (req as any).user?.uid;
+    return this.adminService.setSubmissionExtension(id, body.grant, adminId);
+  }
+
   @UseGuards(SuperAdminGuard)
   @Post('users/:id/impersonate')
   async impersonateUser(

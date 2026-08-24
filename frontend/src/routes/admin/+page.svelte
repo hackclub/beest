@@ -29,6 +29,9 @@
 		identityOverrideReason: string | null;
 		updatedAt: string;
 		perms: string | null;
+		// Post-shutdown shipping reprieve; null when the user has never had one.
+		submissionExtensionUntil: string | null;
+		submissionExtensionActive: boolean;
 		pipes: number;
 		activeSessions: number;
 		projects: { id: string; name: string; status: string; projectType: string; createdAt: string }[];
@@ -1253,6 +1256,36 @@
 		}
 	}
 
+	/**
+	 * BEEST has ended, so shipping is frozen for everyone. This grants one builder
+	 * a 14-day reprieve (or revokes it early). It only reopens shipping and
+	 * resubmitting — creating brand-new projects stays closed for everyone.
+	 */
+	async function setSubmissionExtension(grant: boolean) {
+		if (!selectedUser) return;
+		const who = selectedUser.name ?? selectedUser.hcaSub;
+		const prompt = grant
+			? `Grant ${who} a 2-week submission extension?\n\nThey will be able to ship drafts and resubmit updates as normal for 14 days. Re-granting restarts the 14 days from now.`
+			: `Revoke ${who}'s submission extension now?`;
+		if (!confirm(prompt)) return;
+		actionLoading = 'submission-extension';
+		try {
+			const res = await fetch(`/api/admin/users/${selectedUser.id}/submission-extension`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ grant })
+			});
+			if (res.ok) {
+				await selectUser(selectedUser);
+			} else {
+				const err = await res.json().catch(() => ({}));
+				alert(`Submission extension failed: ${err.message ?? res.statusText}`);
+			}
+		} finally {
+			actionLoading = '';
+		}
+	}
+
 	async function updatePerms(perms: string) {
 		if (!selectedUser || !confirm(`Change this user's permissions to "${perms}"?`)) return;
 		actionLoading = 'perms';
@@ -2324,6 +2357,28 @@
 											</button>
 										{/if}
 									</div>
+
+									{#if isSuperAdmin}
+										<!-- Post-shutdown reprieve: lets this one builder keep shipping
+										     updates for a fortnight. Creating new projects stays closed. -->
+										<div class="extension-action">
+											{#if userDetail.submissionExtensionActive}
+												<p class="extension-status active">
+													Submission extension active until {userDetail.submissionExtensionUntil ? formatDate(userDetail.submissionExtensionUntil) : '—'}
+												</p>
+												<button class="btn btn-ban" onclick={() => setSubmissionExtension(false)} disabled={actionLoading !== ''}>
+													{actionLoading === 'submission-extension' ? 'Revoking...' : 'Revoke Submission Extension'}
+												</button>
+											{:else}
+												<p class="extension-status">
+													BEEST has ended — this user cannot ship or resubmit projects.
+												</p>
+												<button class="btn btn-promote" onclick={() => setSubmissionExtension(true)} disabled={actionLoading !== ''}>
+													{actionLoading === 'submission-extension' ? 'Granting...' : 'Grant 2-Week Submission Extension'}
+												</button>
+											{/if}
+										</div>
+									{/if}
 								</section>
 
 								{#if userDetail.projects?.length > 0}
@@ -4452,6 +4507,22 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
+	}
+
+	.extension-action {
+		margin-top: 0.75rem;
+		padding-top: 0.75rem;
+		border-top: 1px solid #333;
+	}
+
+	.extension-status {
+		margin: 0 0 0.5rem;
+		font-size: 0.8rem;
+		color: #999;
+	}
+
+	.extension-status.active {
+		color: #5a9e6f;
 	}
 
 	.btn {

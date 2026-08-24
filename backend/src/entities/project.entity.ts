@@ -102,6 +102,13 @@ export class Project {
   @Column({ type: 'boolean', name: 'is_update', default: false })
   isUpdate: boolean;
 
+  // When a reviewer last moved this project to 'changes_needed'. Now that the
+  // program has ended this is what starts the builder's 2-day window to fix and
+  // reship — see program-closure.util.ts. Null on projects that were never sent
+  // back.
+  @Column({ type: 'timestamptz', name: 'changes_requested_at', nullable: true })
+  changesRequestedAt: Date | null;
+
   @Column({ type: 'varchar', name: 'other_hc_program', length: 255, nullable: true })
   otherHcProgram: string | null;
 

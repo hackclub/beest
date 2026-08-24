@@ -307,6 +307,7 @@
       <h1 class="hero-title"><img class="hero-logo" src="/images/beest-logo.webp" alt="Beest" fetchpriority="high" decoding="async" /></h1>
       <div class="hero-credit">from Euan Ripper, ascpixi, and guac md</div>
       <p class="hero-subtitle">{subtitle}</p>
+      <p class="hero-closed">PROGRAM CLOSED</p>
     </div>
     <div class="hero-signup" aria-label="Sign Up">
       <p class="signup-note">&#10003; Signing up puts you on our email list, you can remove yourself <a href="https://email-tools.hackclub.com/" target="_blank" rel="noreferrer">here</a>.</p>
@@ -1013,6 +1014,18 @@
     letter-spacing: 0.03em;
     line-height: 1.4;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.4);
+  }
+
+  /* BEEST has ended — its own row under the subtitle, sharing that indent. */
+  .hero-closed {
+    margin: 10px 0 0 var(--logo-indent);
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: clamp(34px, 5.5vw, 88px);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    color: #c48382;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   }
 
   @keyframes blink {

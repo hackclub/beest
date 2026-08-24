@@ -951,6 +951,7 @@ export class AuditService {
     }
 
     project.status = 'changes_needed';
+    project.changesRequestedAt = new Date();
     project.overrideHours = 0;
     project.internalHours = 0;
     project.isGolden = false;

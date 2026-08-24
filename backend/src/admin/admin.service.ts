@@ -36,6 +36,11 @@ import {
 import { ShopService } from '../shop/shop.service';
 import { getFileHoursForProject } from '../hackatime/hackatime-file-breakdown';
 import { SettingsService } from '../settings/settings.service';
+import {
+  SUBMISSION_EXTENSION_DAYS,
+  SUBMISSION_EXTENSION_MS,
+  hasActiveSubmissionExtension,
+} from '../program-closure.util';
 
 const VALID_PERMS = [
   'User',
@@ -239,6 +244,10 @@ export class AdminService implements OnApplicationBootstrap {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       pipes: user.pipes ?? 0,
+      submissionExtensionUntil: user.submissionExtensionUntil ?? null,
+      submissionExtensionActive: hasActiveSubmissionExtension(
+        user.submissionExtensionUntil,
+      ),
       perms,
       projects,
       orders,
@@ -966,6 +975,41 @@ export class AdminService implements OnApplicationBootstrap {
     return `${this.joeWebBase()}/billy?${params.toString()}`;
   }
 
+  /**
+   * Grant or revoke this user's reprieve from the post-program shipping freeze.
+   * Granting sets a fresh SUBMISSION_EXTENSION_DAYS window from now (a re-grant
+   * restarts the clock rather than stacking); revoking clears it immediately.
+   *
+   * The extension only reopens shipping and resubmitting. Creating brand-new
+   * projects stays closed for everyone — see program-closure.util.ts.
+   */
+  async setSubmissionExtension(
+    userId: string,
+    grant: boolean,
+    adminId?: string,
+  ): Promise<{ submissionExtensionUntil: Date | null; submissionExtensionActive: boolean }> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const until = grant ? new Date(Date.now() + SUBMISSION_EXTENSION_MS) : null;
+    user.submissionExtensionUntil = until;
+    await this.userRepo.save(user);
+
+    const identifier = user.name || user.slackId || user.hcaSub;
+    const label = grant
+      ? `Granted ${identifier} a ${SUBMISSION_EXTENSION_DAYS}-day submission extension (until ${until!.toISOString()})`
+      : `Revoked ${identifier}'s submission extension`;
+    await this.auditLogService.log(userId, 'admin_submission_extension', label);
+    if (adminId) {
+      await this.auditLogService.log(adminId, 'admin_submission_extension', label);
+    }
+
+    return {
+      submissionExtensionUntil: until,
+      submissionExtensionActive: hasActiveSubmissionExtension(until),
+    };
+  }
+
   // ── Projects ──
 
   async listAllProjects(isSuperAdmin: boolean) {
@@ -1136,6 +1180,13 @@ export class AdminService implements OnApplicationBootstrap {
     // verdict is not authoritative and must not unlock the golden perks
     // (black market access, ★ badge) yet. Revocation of a finalised approval
     // clears it below, alongside the pipes clawback.
+
+    // Post-shutdown, sending a project back starts the builder's 2-day window to
+    // fix it and reship (program-closure.util.ts). Restamped on every rejection
+    // so a re-review grants a fresh window rather than reusing a stale one.
+    if (status === 'changes_needed') {
+      project.changesRequestedAt = new Date();
+    }
     if (status === 'approved') {
       if (overrideHours !== null && overrideHours !== undefined) {
         const delta = Math.round(overrideHours * 10) / 10;

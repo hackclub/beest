@@ -16,6 +16,16 @@ import { shipSubmittedDm } from '../slack/slack-notify.templates';
 import { SettingsService } from '../settings/settings.service';
 import { CreateProjectDto } from './create-project.dto';
 import { UpdateProjectDto } from './update-project.dto';
+import {
+  CHANGES_NEEDED_GRACE_MS,
+  CHANGES_WINDOW_EXPIRED_MESSAGE,
+  PROGRAM_CLOSED,
+  PROGRAM_CLOSED_CREATE_MESSAGE,
+  PROGRAM_CLOSED_SHIP_MESSAGE,
+  changesNeededDeadline,
+  hasActiveSubmissionExtension,
+  isWithinChangesWindow,
+} from '../program-closure.util';
 
 const CDN_UPLOAD_URL = 'https://cdn.hackclub.com/api/v4/upload';
 
@@ -71,6 +81,12 @@ export class ProjectsService {
     hcaSub: string,
     impersonatorName?: string,
   ) {
+    // BEEST has ended — the create path is closed outright, with no per-user
+    // exception (an admin shipping extension covers shipping, not creation).
+    if (PROGRAM_CLOSED) {
+      throw new ForbiddenException(PROGRAM_CLOSED_CREATE_MESSAGE);
+    }
+
     // --- required fields ---
     const name = this.requireString(dto.name, 'name', 50);
     const description = this.requireString(dto.description, 'description', 300);
@@ -235,6 +251,7 @@ export class ProjectsService {
         'aiUse',
         'overrideHours',
         'pipesGranted',
+        'changesRequestedAt',
         'createdAt',
         'updatedAt',
       ],
@@ -260,7 +277,13 @@ export class ProjectsService {
         );
       }
     }
-    return projects;
+    // `changesDeadline` is the moment this project's post-review resubmission
+    // window shuts (null when no window applies). Computed here so the frontend
+    // never has to re-derive the grace period.
+    return projects.map((p) => ({
+      ...p,
+      changesDeadline: changesNeededDeadline(p),
+    }));
   }
 
   /**
@@ -526,6 +549,9 @@ export class ProjectsService {
         if (project.status !== 'unshipped' && project.status !== 'changes_needed') {
           throw new BadRequestException('Invalid status transition');
         }
+        // Program has ended: shipping is closed unless the project is inside its
+        // post-review grace window or the user holds an admin extension.
+        await this.requireSubmissionAllowed(userId, project);
         if (
           project.status === 'changes_needed' &&
           (await this.settingsService.isResubmissionPaused())
@@ -712,6 +738,8 @@ export class ProjectsService {
       throw new BadRequestException('Only approved projects can be resubmitted');
     }
 
+    // Program has ended: updates to an approved project need an admin extension.
+    await this.requireSubmissionAllowed(userId, project);
     await this.requireShipEligibility(userId);
 
     // Validate inputs
@@ -939,6 +967,68 @@ export class ProjectsService {
    * a birthdate on file by construction, and missing addresses get caught at
    * fulfillment. The frontend still surfaces the soft prompt for both.
    */
+  /* ------------------------------------------------------------------ */
+  /*  Post-program submission gate                                       */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Gate for every path that puts a project into the review queue, now that
+   * BEEST has ended. Order matters: an admin extension wins outright, otherwise
+   * a project a reviewer sent back is judged against its 2-day window, and
+   * everything else is simply closed.
+   *
+   * `project.status` must still be the PRE-transition status when this is
+   * called — the window only applies to a project sitting in 'changes_needed'.
+   *
+   * Hard rejects never reach here: ProjectsService.update rejects the status
+   * transition out of 'rejected' before the gate runs, and resubmit() requires
+   * 'approved'.
+   */
+  private async requireSubmissionAllowed(
+    userId: string,
+    project: Project,
+  ): Promise<void> {
+    if (!PROGRAM_CLOSED) return;
+
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['submissionExtensionUntil'],
+    });
+    if (hasActiveSubmissionExtension(user?.submissionExtensionUntil)) return;
+
+    if (project.status === 'changes_needed') {
+      if (isWithinChangesWindow(project)) return;
+      throw new ForbiddenException(CHANGES_WINDOW_EXPIRED_MESSAGE);
+    }
+
+    throw new ForbiddenException(PROGRAM_CLOSED_SHIP_MESSAGE);
+  }
+
+  /**
+   * What this user is still allowed to do post-shutdown. Drives the frontend's
+   * closure modal and the disabled ship/resubmit buttons — the gates above stay
+   * authoritative, this just lets the UI explain itself before a failed request.
+   */
+  async getSubmissionWindow(userId: string) {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['submissionExtensionUntil'],
+    });
+    const extended = hasActiveSubmissionExtension(user?.submissionExtensionUntil);
+
+    return {
+      programClosed: PROGRAM_CLOSED,
+      // No exception exists for creation — not even an extension reopens it.
+      canCreateProjects: !PROGRAM_CLOSED,
+      // True when this user ships under the normal, pre-shutdown rules.
+      canShipFreely: !PROGRAM_CLOSED || extended,
+      extensionUntil: extended ? user!.submissionExtensionUntil : null,
+      changesGraceMs: CHANGES_NEEDED_GRACE_MS,
+      createMessage: PROGRAM_CLOSED_CREATE_MESSAGE,
+      shipMessage: PROGRAM_CLOSED_SHIP_MESSAGE,
+    };
+  }
+
   private async requireShipEligibility(userId: string): Promise<void> {
     const user = await this.userRepo.findOne({
       where: { id: userId },

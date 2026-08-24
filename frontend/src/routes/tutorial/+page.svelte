@@ -26,8 +26,23 @@
   let projectCreated = $state(data.onboarding.project);
   const canCreateProject = $derived(projectName.trim() && projectDesc.trim() && projectType);
 
+  // BEEST has ended — the onboarding create step is closed alongside the one on
+  // /home. Defaults to closed so a failed lookup never offers a form that the
+  // backend will reject anyway.
+  let programClosed = $state(true);
+
+  async function fetchSubmissionWindow() {
+    try {
+      const res = await fetch('/api/projects/submission-window');
+      if (res.ok) {
+        const win = await res.json();
+        programClosed = !win.canCreateProjects;
+      }
+    } catch { /* stay closed */ }
+  }
+
   async function createProject() {
-    if (!canCreateProject || projectSubmitting) return;
+    if (!canCreateProject || projectSubmitting || programClosed) return;
     projectSubmitting = true;
     projectError = '';
     try {
@@ -239,6 +254,7 @@
   let totalLength = $state(0);
 
   onMount(() => {
+    fetchSubmissionWindow();
     window.addEventListener('wheel', blockScroll, { passive: false });
     window.addEventListener('touchmove', blockScroll, { passive: false });
     window.addEventListener('keydown', blockKeys);
@@ -376,7 +392,13 @@
   <div class="section-content" style="top: {innerHeight * 2}px;">
     <h2 class="section-title">Create a Project</h2>
     <p class="section-paragraph">Tell us your idea! It doesn't have to be related to the beest, make an automation you've always wanted or a game for you and your friends. Make anything! (Just not AI slop or college projects, we only want to reward creativity and real learning.)</p>
-    {#if projectCreated && !showProjectForm}
+    {#if programClosed && !projectCreated}
+      <div class="closed-panel">
+        <p class="closed-panel-title">Program Closed</p>
+        <p class="section-paragraph">BEEST has ended, so new projects can no longer be created. You can still log in, look around, and spend any Pipes you earned in the shop.</p>
+      </div>
+      <button class="action-btn complete-btn" onclick={() => goToSection(0)}>Move on</button>
+    {:else if projectCreated && !showProjectForm}
       <button class="action-btn complete-btn" onclick={() => goToSection(0)}>Project created! Move on?</button>
     {:else if showProjectForm}
       <div class="project-form">
@@ -761,6 +783,32 @@
 
 
   /* ── Create Project Form ── */
+  /* Stand-in for the create form now that BEEST has ended. */
+  .closed-panel {
+    width: 100%;
+    max-width: 400px;
+    border: 3px solid #222;
+    border-radius: 0.6rem;
+    padding: 1.5rem;
+    background: white;
+    color: #222;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .closed-panel-title {
+    margin: 0 0 0.5rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .closed-panel .section-paragraph {
+    margin: 0;
+    color: #222;
+  }
+
   .project-form {
     width: 100%;
     max-width: 400px;
