@@ -841,6 +841,7 @@
        everything aligns to the letters, not the gear */
     --logo-w: clamp(280px, 30vw, 480px);
     --logo-indent: calc(var(--logo-w) * 0.17);
+    --closed-size: clamp(22px, 2.4vw, 34px);
     position: absolute;
     /* hangs below the hero so the whole block sits on the brown ground */
     inset: auto clamp(48px, 7vw, 160px) -120px;
@@ -864,6 +865,13 @@
     align-items: flex-start;
     gap: 10px;
     min-width: 0;
+    /* PROGRAM CLOSED adds a row here. The overlay is bottom-anchored, so
+       without this the column grows upward and shoves the logo and tagline off
+       the brown ground onto the sea. At line-height 1 the row is exactly its
+       font-size, so hanging the column that much lower (plus the gap) keeps
+       every row above it exactly where it was designed to sit. Negative margin
+       rather than a bigger overlay offset, so the sign-up box stays put. */
+    margin-bottom: calc(-1 * (var(--closed-size) + 10px));
   }
 
   /* bare sign-up: email + button docked to the right of the wordmark */
@@ -1015,16 +1023,17 @@
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.4);
   }
 
-  /* BEEST has ended — its own row under the subtitle, sharing that indent. */
+  /* BEEST has ended — its own row under the tagline, sharing that indent.
+     Reads as a stamp over the tagline, not a second headline. */
   .hero-closed {
-    margin: 10px 0 0 var(--logo-indent);
+    margin: 0 0 0 var(--logo-indent);
     font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: clamp(34px, 5.5vw, 88px);
+    font-size: var(--closed-size);
     font-weight: 700;
     letter-spacing: 0.08em;
     line-height: 1;
     color: #c48382;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.4);
   }
 
   @keyframes blink {
@@ -2403,6 +2412,10 @@
       align-items: stretch;
       padding: 18px 24px 48px;
       gap: 20px;
+    }
+
+    .hero-copy {
+      margin-bottom: 0;
     }
 
     .hero-signup {
