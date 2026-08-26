@@ -13,6 +13,7 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/package*.json ./
+COPY --from=build /app/example-certificate.html ./example-certificate.html
 RUN npm ci --omit=dev
 EXPOSE 3001
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \

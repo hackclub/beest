@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import * as puppeteer from 'puppeteer';
 import { randomUUID } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
@@ -112,17 +112,32 @@ export class CertificateService {
       });
 
       if (existingCert) {
-        // Update existing certificate to cumulative total
-        existingCert.approvedHours = totalPipes;
-        existingCert.grantValue = grantValue;
-        existingCert.orderId = order.id;
-        existingCert.certificateText = this.formatCertificateText(
+        const certificateText = this.formatCertificateText(
           recipientName,
           totalPipes,
           order.itemName,
           true,
           grantValue,
         );
+
+        // Sync runs when the certificates page is opened. Avoid a database write
+        // and audit entry when the aggregate has not changed.
+        const changed =
+          existingCert.recipientName !== recipientName ||
+          existingCert.approvedHours !== totalPipes ||
+          existingCert.grantValue !== grantValue ||
+          existingCert.certificateText !== certificateText;
+
+        if (!changed) {
+          return existingCert;
+        }
+
+        // Keep the original order as the certificate's source order. Replacing it
+        // with whichever grant order happens to sync last would make every sync a write.
+        existingCert.recipientName = recipientName;
+        existingCert.approvedHours = totalPipes;
+        existingCert.grantValue = grantValue;
+        existingCert.certificateText = certificateText;
 
         const updated = await this.certificateRepo.save(existingCert);
 
@@ -157,7 +172,30 @@ export class CertificateService {
         certificateText,
       });
 
-      const saved = await this.certificateRepo.save(certificate);
+      let saved: Certificate;
+      try {
+        saved = await this.certificateRepo.save(certificate);
+      } catch (error) {
+        // The partial unique index protects this path when two fulfilments are
+        // processed concurrently. Return the winner rather than issuing a second
+        // certificate or turning a harmless sync race into an error.
+        if (
+          error instanceof QueryFailedError &&
+          (error as QueryFailedError & { code?: string }).code === '23505'
+        ) {
+          const concurrentCertificate = await this.certificateRepo.findOne({
+            where: {
+              userId: order.userId,
+              awardItem: order.itemName,
+              isGrant: true,
+            },
+          });
+          if (concurrentCertificate) {
+            return concurrentCertificate;
+          }
+        }
+        throw error;
+      }
 
       await this.auditLogService.log(
         order.userId,
@@ -580,7 +618,7 @@ export class CertificateService {
 
   /**
    * The issued certificate template. This intentionally matches
-   * frontend/static/example-certificate.html, which is the approved design.
+   * backend/example-certificate.html, which is packaged with the backend image.
    */
   generateCertificateHtml(certificate: Certificate): string {
     const name = this.escapeHtml(certificate.recipientName);
@@ -591,26 +629,15 @@ export class CertificateService {
     const grantVal = certificate.grantValue ?? (isGrant ? pipes * 5 : null);
     const displayAward = grantVal !== null ? `${award} ($${grantVal} USD Grant)` : award;
 
-    // Keep issued certificates visually identical to the approved example.
-    const templatePath = [
-      resolve(process.cwd(), 'example-certificate.html'),
-      resolve(process.cwd(), '..', 'example-certificate.html'),
-      resolve(__dirname, '..', '..', '..', 'example-certificate.html'),
-    ].find(existsSync);
+    // The template is packaged with the backend image (see backend/Dockerfile).
+    const templatePath = resolve(process.cwd(), 'example-certificate.html');
 
-    if (templatePath) {
+    if (existsSync(templatePath)) {
       let html = readFileSync(templatePath, 'utf8')
         .replaceAll('{{NAME}}', name)
         .replaceAll('{{AWARD}}', displayAward)
         .replaceAll('{{HOURS}}', `${pipes} Pipes`)
-        .replaceAll('{{CERTNO}}', number)
-        .replaceAll('Ketan Gupta', name)
-        .replaceAll('48 approved hours', `${pipes} approved hours`)
-        .replaceAll('150 Pipes', `${pipes} Pipes`)
-        .replaceAll('Arduino Starter Kit', displayAward)
-        .replaceAll('Bambu Lab A1 Mini 3D Printer', displayAward)
-        .replaceAll('BEEST-YSWS-2024-001', number)
-        .replaceAll('CERT-2026-DEMO001', number);
+        .replaceAll('{{CERTNO}}', number);
 
       return html;
     }

@@ -204,5 +204,64 @@ describe('CertificateService', () => {
         expect.stringContaining('32 Pipes ($160)'),
       );
     });
+
+    it('does not rewrite or audit an unchanged grant certificate during sync', async () => {
+      const order: Partial<Order> = {
+        id: 'order-grant-25',
+        userId: 'user-uuid-1',
+        itemName: 'Hardware Grant',
+        pipesSpent: 25,
+        status: 'fulfilled',
+        shopItem: { isGrant: true } as any,
+        user: mockUser as any,
+      };
+      const certificateText =
+        "This certificate recognizes Ketan's fulfilled Beest by Hack Club shop order. Ketan is hereby awarded Hardware Grant ($125 USD Grant), purchased for 25 Pipes.";
+      const existingCert: Partial<Certificate> = {
+        id: 'existing-cert-1',
+        userId: 'user-uuid-1',
+        orderId: 'order-grant-25',
+        recipientName: 'Ketan',
+        approvedHours: 25,
+        grantValue: 125,
+        awardItem: 'Hardware Grant',
+        isGrant: true,
+        certificateNumber: 'CERT-2026-TEST001',
+        certificateText,
+      };
+
+      orderRepo.findOne.mockResolvedValue(order);
+      orderRepo.find.mockResolvedValue([order]);
+      certificateRepo.findOne.mockResolvedValue(existingCert);
+
+      const cert = await service.generateCertificateForOrder('order-grant-25');
+
+      expect(cert).toBe(existingCert);
+      expect(certificateRepo.save).not.toHaveBeenCalled();
+      expect(auditLogService.log).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('generateCertificateHtml', () => {
+    it('fills named placeholders from the packaged template', () => {
+      const html = service.generateCertificateHtml({
+        id: 'cert-uuid-1',
+        recipientName: 'Ada Lovelace',
+        approvedHours: 42,
+        awardItem: 'Soldering Kit',
+        certificateNumber: 'CERT-2026-ABC123',
+        isGrant: false,
+        grantValue: null,
+      } as Certificate);
+
+      expect(html).toContain('Ada Lovelace');
+      expect(html).toContain('Soldering Kit');
+      expect(html).toContain('42 Pipes');
+      expect(html).toContain('CERT-2026-ABC123');
+      expect(html).not.toContain('{{NAME}}');
+      expect(html).not.toContain('{{AWARD}}');
+      expect(html).not.toContain('{{HOURS}}');
+      expect(html).not.toContain('{{CERTNO}}');
+    });
   });
 });
