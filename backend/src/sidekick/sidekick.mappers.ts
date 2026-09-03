@@ -150,6 +150,8 @@ export function toSidekickProject(
     demoUrl: project.demoUrl ?? undefined,
     screenshotUrl: project.screenshot1Url ?? undefined,
     authorId: actorIdFor(project.user),
+    // User.name is the HCA full name captured at sign-in (not the nickname).
+    authorHcaName: project.user?.name?.trim() || undefined,
     hackatimeId: project.user?.hackatimeUserId ?? undefined,
     hackatimeProjectKeys: project.hackatimeProjectName ?? [],
     hackatimeStartDate: HACKATIME_EVENT_START,
