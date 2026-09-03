@@ -21,6 +21,9 @@ export interface SidekickProject {
   codeUrl: string;
   screenshotUrl?: string;
   authorId: string; // Slack ID ("U...") or HCA ID ("ident!...")
+  // The author's full name as recorded by Hack Club Auth. Beest stores it at
+  // sign-in (User.name); Sidekick shows it on the author card.
+  authorHcaName?: string;
   hackatimeId?: string;
   hackatimeProjectKeys: string[];
   // ISO date (YYYY-MM-DD). Sidekick only counts Hackatime activity on or after

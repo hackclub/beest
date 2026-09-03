@@ -169,6 +169,16 @@ describe('toSidekickProject', () => {
     expect(ships[1].approveFields?.map((f) => f.name)).not.toContain('internal_hours');
   });
 
+  it('sends the HCA full name as authorHcaName, omitting it when unknown', () => {
+    expect(toSidekickProject(project(), []).authorHcaName).toBe('Alice Smith');
+    expect(
+      toSidekickProject(project({ user: user({ name: '  ' }) }), []).authorHcaName,
+    ).toBeUndefined();
+    expect(
+      toSidekickProject(project({ user: user({ name: undefined }) }), []).authorHcaName,
+    ).toBeUndefined();
+  });
+
   it('omits tags for a non-golden project by a non-golden author', () => {
     expect(toSidekickProject(project({ isGolden: false }), [], false).tags).toBeUndefined();
   });
