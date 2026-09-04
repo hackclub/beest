@@ -31,9 +31,10 @@ export class CertificateService {
 
   /**
    * Generate or update a certificate for an order.
-   * - For regular shop items: generates 1 certificate per order.
+   * - For regular shop items: generates 1 certificate per fulfilled order when
+   *   that order cost more than 30 Pipes.
    * - For grant items: aggregates all fulfilled grant orders of the same item name
-   *   for the user. Only generates/updates a certificate if total aggregated pipes > 10.
+   *   for the user. Only generates/updates a certificate if total aggregated pipes > 30.
    *   The grant value is calculated as $5 * total pipe number.
    */
   async generateCertificateForOrder(
@@ -91,10 +92,10 @@ export class CertificateService {
         0,
       );
 
-      // Require > 10 pipes to issue a grant certificate
-      if (totalPipes <= 10) {
+      // Certificates are awarded only after more than 30 Pipes have been spent.
+      if (totalPipes <= 30) {
         this.logger.debug(
-          `Skipping certificate generation for grant "${order.itemName}": total pipes (${totalPipes}) is not > 10`,
+          `Skipping certificate generation for grant "${order.itemName}": total pipes (${totalPipes}) is not > 30`,
         );
         return null;
       }
@@ -207,6 +208,13 @@ export class CertificateService {
     }
 
     // --- Non-grant order certificate logic ---
+    if (order.pipesSpent <= 30) {
+      this.logger.debug(
+        `Skipping certificate generation for order ${order.id}: ${order.pipesSpent} Pipes is not > 30`,
+      );
+      return null;
+    }
+
     const existingCertificate = await this.certificateRepo.findOne({
       where: { orderId },
     });
@@ -633,11 +641,32 @@ export class CertificateService {
     const templatePath = resolve(process.cwd(), 'example-certificate.html');
 
     if (existsSync(templatePath)) {
+      const backgroundPath = resolve(
+        process.cwd(),
+        'certificate-background-v2.png',
+      );
+      const stoneBreakerPath = resolve(process.cwd(), 'stone-breaker.woff2');
+      const recognitionLogosPath = resolve(
+        process.cwd(),
+        'certificate-recognition-logos.png',
+      );
+      const background = existsSync(backgroundPath)
+        ? `data:image/png;base64,${readFileSync(backgroundPath).toString('base64')}`
+        : '';
+      const stoneBreakerFont = existsSync(stoneBreakerPath)
+        ? `data:font/woff2;base64,${readFileSync(stoneBreakerPath).toString('base64')}`
+        : '';
+      const recognitionLogos = existsSync(recognitionLogosPath)
+        ? `data:image/png;base64,${readFileSync(recognitionLogosPath).toString('base64')}`
+        : '';
       let html = readFileSync(templatePath, 'utf8')
         .replaceAll('{{NAME}}', name)
         .replaceAll('{{AWARD}}', displayAward)
-        .replaceAll('{{HOURS}}', `${pipes} Pipes`)
-        .replaceAll('{{CERTNO}}', number);
+        .replaceAll('{{HOURS}}', `${pipes}hrs`)
+        .replaceAll('{{CERTNO}}', number)
+        .replaceAll('{{BACKGROUND}}', background)
+        .replaceAll('{{STONE_BREAKER_FONT}}', stoneBreakerFont)
+        .replaceAll('{{RECOGNITION_LOGOS}}', recognitionLogos);
 
       return html;
     }

@@ -78,12 +78,12 @@ describe('CertificateService', () => {
   });
 
   describe('generateCertificateForOrder', () => {
-    it('should generate a certificate for a non-grant shop order', async () => {
+    it('should generate a certificate for a non-grant shop order over 30 Pipes', async () => {
       const order: Partial<Order> = {
         id: 'order-1',
         userId: 'user-uuid-1',
         itemName: 'Arduino Starter Kit',
-        pipesSpent: 15,
+        pipesSpent: 31,
         status: 'fulfilled',
         shopItem: { isGrant: false } as any,
         user: mockUser as any,
@@ -96,7 +96,7 @@ describe('CertificateService', () => {
 
       expect(cert).toBeDefined();
       expect(cert?.recipientName).toBe('Ketan');
-      expect(cert?.approvedHours).toBe(15);
+      expect(cert?.approvedHours).toBe(31);
       expect(cert?.awardItem).toBe('Arduino Starter Kit');
       expect(cert?.isGrant).toBe(false);
       expect(auditLogService.log).toHaveBeenCalledWith(
@@ -106,7 +106,24 @@ describe('CertificateService', () => {
       );
     });
 
-    it('should skip certificate generation for grant order if cumulative pipes <= 10', async () => {
+    it('should not generate a certificate for a non-grant shop order costing 30 Pipes or less', async () => {
+      const order: Partial<Order> = {
+        id: 'order-30',
+        userId: 'user-uuid-1',
+        itemName: 'Small Hardware Kit',
+        pipesSpent: 30,
+        status: 'fulfilled',
+        shopItem: { isGrant: false } as any,
+        user: mockUser as any,
+      };
+
+      orderRepo.findOne.mockResolvedValue(order);
+
+      await expect(service.generateCertificateForOrder('order-30')).resolves.toBeNull();
+      expect(certificateRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('should skip certificate generation for grant order if cumulative pipes is 30 or less', async () => {
       const order: Partial<Order> = {
         id: 'order-grant-1',
         userId: 'user-uuid-1',
@@ -126,29 +143,29 @@ describe('CertificateService', () => {
       expect(certificateRepo.save).not.toHaveBeenCalled();
     });
 
-    it('should generate a grant certificate when cumulative grant pipes > 10', async () => {
+    it('should generate a grant certificate when cumulative grant pipes > 30', async () => {
       const order: Partial<Order> = {
-        id: 'order-grant-25',
+        id: 'order-grant-31',
         userId: 'user-uuid-1',
         itemName: 'Hardware Grant',
-        pipesSpent: 25,
+        pipesSpent: 31,
         status: 'fulfilled',
         shopItem: { isGrant: true } as any,
         user: mockUser as any,
       };
 
       orderRepo.findOne.mockResolvedValue(order);
-      orderRepo.find.mockResolvedValue([order]); // 25 pipes > 10
+      orderRepo.find.mockResolvedValue([order]);
       certificateRepo.findOne.mockResolvedValue(null);
 
-      const cert = await service.generateCertificateForOrder('order-grant-25');
+      const cert = await service.generateCertificateForOrder('order-grant-31');
 
       expect(cert).toBeDefined();
-      expect(cert?.approvedHours).toBe(25);
-      expect(cert?.grantValue).toBe(125); // 5 * 25
+      expect(cert?.approvedHours).toBe(31);
+      expect(cert?.grantValue).toBe(155); // 5 * 31
       expect(cert?.isGrant).toBe(true);
       expect(cert?.awardItem).toBe('Hardware Grant');
-      expect(cert?.certificateText).toContain('$125 USD');
+      expect(cert?.certificateText).toContain('$155 USD');
     });
 
     it('should aggregate pipes across multiple purchases of the same grant and update certificate (e.g., 25 pipes + 7 pipes = 32 pipes)', async () => {
@@ -207,23 +224,23 @@ describe('CertificateService', () => {
 
     it('does not rewrite or audit an unchanged grant certificate during sync', async () => {
       const order: Partial<Order> = {
-        id: 'order-grant-25',
+        id: 'order-grant-31',
         userId: 'user-uuid-1',
         itemName: 'Hardware Grant',
-        pipesSpent: 25,
+        pipesSpent: 31,
         status: 'fulfilled',
         shopItem: { isGrant: true } as any,
         user: mockUser as any,
       };
       const certificateText =
-        "This certificate recognizes Ketan's fulfilled Beest by Hack Club shop order. Ketan is hereby awarded Hardware Grant ($125 USD Grant), purchased for 25 Pipes.";
+        "This certificate recognizes Ketan's fulfilled Beest by Hack Club shop order. Ketan is hereby awarded Hardware Grant ($155 USD Grant), purchased for 31 Pipes.";
       const existingCert: Partial<Certificate> = {
         id: 'existing-cert-1',
         userId: 'user-uuid-1',
-        orderId: 'order-grant-25',
+        orderId: 'order-grant-31',
         recipientName: 'Ketan',
-        approvedHours: 25,
-        grantValue: 125,
+        approvedHours: 31,
+        grantValue: 155,
         awardItem: 'Hardware Grant',
         isGrant: true,
         certificateNumber: 'CERT-2026-TEST001',
@@ -234,7 +251,7 @@ describe('CertificateService', () => {
       orderRepo.find.mockResolvedValue([order]);
       certificateRepo.findOne.mockResolvedValue(existingCert);
 
-      const cert = await service.generateCertificateForOrder('order-grant-25');
+      const cert = await service.generateCertificateForOrder('order-grant-31');
 
       expect(cert).toBe(existingCert);
       expect(certificateRepo.save).not.toHaveBeenCalled();
@@ -256,7 +273,7 @@ describe('CertificateService', () => {
 
       expect(html).toContain('Ada Lovelace');
       expect(html).toContain('Soldering Kit');
-      expect(html).toContain('42 Pipes');
+      expect(html).toContain('42hrs');
       expect(html).toContain('CERT-2026-ABC123');
       expect(html).not.toContain('{{NAME}}');
       expect(html).not.toContain('{{AWARD}}');
