@@ -49,6 +49,10 @@ export class CertificateService {
       throw new NotFoundException('Order not found');
     }
 
+    if (!order.certificateRequested || order.status !== 'fulfilled') {
+      return null;
+    }
+
     const user =
       order.user ||
       (await this.userRepo.findOne({ where: { id: order.userId } }));
@@ -259,7 +263,7 @@ export class CertificateService {
    */
   async syncCertificatesForUser(userId: string): Promise<void> {
     const fulfilledOrders = await this.orderRepo.find({
-      where: { userId, status: 'fulfilled' },
+      where: { userId, status: 'fulfilled', certificateRequested: true },
       select: ['id'],
     });
 

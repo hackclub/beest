@@ -59,7 +59,7 @@
   <header class="hero">
     <p class="eyebrow">Beest by Hack Club</p>
     <h1>My certificates</h1>
-    <p>Proof of the things you earned through Beest. Each certificate is issued when an eligible shop order is fulfilled.</p>
+    <p>Proof of the things you earned through Beest. Certificates are issued only after you request one for an eligible fulfilled shop order.</p>
   </header>
 
   <section class="certificate-grid" aria-label="Your certificates">
@@ -92,7 +92,7 @@
       <div class="empty-state">
         <div class="empty-mark" aria-hidden="true">✦</div>
         <h2>No certificates yet</h2>
-        <p>Certificates appear here after an eligible shop order is fulfilled.</p>
+        <p>Certificates appear here after you request one for an eligible fulfilled shop order.</p>
         <a class="button" href="/shop">Visit the shop</a>
       </div>
     {/if}

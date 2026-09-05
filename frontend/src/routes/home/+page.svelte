@@ -168,11 +168,14 @@
   let orderNote = $state('');
 
   // User's own orders (shown at the bottom of the shop)
-  type UserOrderType = { id: string; itemName: string; quantity: number; pipesSpent: number; status: string; createdAt: string };
+  type UserOrderType = { id: string; itemName: string; quantity: number; pipesSpent: number; status: string; certificateRequested: boolean | null; createdAt: string };
   let userOrders = $state<UserOrderType[]>([]);
   let userOrdersLoading = $state(false);
   let refundingOrderId = $state<string | null>(null);
   let refundError = $state('');
+  let certificatePromptOrder = $state<UserOrderType | null>(null);
+  let certificatePromptLoading = $state(false);
+  let certificatePromptError = $state('');
 
   // Fulfillment updates state
   type FulfillmentUpdateType = { id: string; orderId: string; itemName: string; message: string; isRead: boolean; createdAt: string };
@@ -1433,9 +1436,43 @@
     userOrdersLoading = true;
     try {
       const res = await fetch('/api/shop/orders');
-      if (res.ok) userOrders = await res.json();
+      if (res.ok) {
+        userOrders = await res.json();
+        certificatePromptOrder ??= userOrders.find(
+          (order) => order.status === 'fulfilled' && order.certificateRequested === null,
+        ) ?? null;
+      }
     } catch { /* silent */ }
     userOrdersLoading = false;
+  }
+
+  async function answerCertificatePrompt(requested: boolean) {
+    if (!certificatePromptOrder || certificatePromptLoading) return;
+    certificatePromptLoading = true;
+    certificatePromptError = '';
+    try {
+      const res = await fetch(`/api/shop/orders/${certificatePromptOrder.id}/certificate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requested }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        certificatePromptError = data.message || 'Could not save your choice. Please try again.';
+        return;
+      }
+      const answeredId = certificatePromptOrder.id;
+      userOrders = userOrders.map((order) =>
+        order.id === answeredId ? { ...order, certificateRequested: requested } : order,
+      );
+      certificatePromptOrder = userOrders.find(
+        (order) => order.status === 'fulfilled' && order.certificateRequested === null,
+      ) ?? null;
+    } catch {
+      certificatePromptError = 'Network error. Please try again.';
+    } finally {
+      certificatePromptLoading = false;
+    }
   }
 
   async function refundOrder(order: UserOrderType) {
@@ -1657,6 +1694,9 @@
     fetchExploreProjects();
     fetchPipes();
     fetchUnreadCount();
+    // Certificate choices are intentionally surfaced anywhere in the app, not
+    // only after the user happens to revisit the shop.
+    fetchUserOrders();
     loadSectionData(activeSection);
     // Returning from the Lookout recorder? Re-open the devlog draft we stashed.
     // Otherwise fall back to the locally autosaved draft (reload / window close).
@@ -2706,6 +2746,23 @@
           <button type="button" class="order-note-confirm" onclick={purchaseItem} disabled={purchaseLoading}>
             {purchaseLoading ? 'Ordering…' : 'Place order'}
           </button>
+        </div>
+      </div>
+    </div>
+    {/if}
+
+    {#if certificatePromptOrder}
+    <div use:portal class="certificate-prompt-overlay" role="presentation">
+      <div class="certificate-prompt" role="dialog" aria-modal="true" aria-labelledby="certificate-prompt-title" tabindex="-1">
+        <p class="certificate-prompt-kicker">Your order is fulfilled!</p>
+        <h2 id="certificate-prompt-title">Would you like a certificate?</h2>
+        <p>
+          Your <strong>{certificatePromptOrder.itemName}</strong> order is complete. We will only create a certificate if you choose yes.
+        </p>
+        {#if certificatePromptError}<p class="certificate-prompt-error">{certificatePromptError}</p>{/if}
+        <div class="certificate-prompt-actions">
+          <button type="button" class="certificate-prompt-no" onclick={() => answerCertificatePrompt(false)} disabled={certificatePromptLoading}>No thanks</button>
+          <button type="button" class="certificate-prompt-yes" onclick={() => answerCertificatePrompt(true)} disabled={certificatePromptLoading}>{certificatePromptLoading ? 'Saving…' : 'Yes, make my certificate'}</button>
         </div>
       </div>
     </div>
@@ -5886,6 +5943,34 @@
     opacity: 0.5;
     cursor: default;
   }
+
+  .certificate-prompt-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10020;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(24, 20, 16, 0.72);
+  }
+  .certificate-prompt {
+    width: min(640px, 100%);
+    padding: 42px;
+    text-align: center;
+    color: #332d27;
+    background: #f6ead6;
+    border: 4px solid #1a1a1a;
+    box-shadow: 10px 10px 0 #c48382;
+  }
+  .certificate-prompt-kicker { margin: 0 0 8px; font: 16px "Stone Breaker", "Courier New", monospace; color: #b03d4c; text-transform: uppercase; }
+  .certificate-prompt h2 { margin: 0; font-family: "Stone Breaker", "Courier New", monospace; font-size: clamp(28px, 5vw, 48px); line-height: 1.05; }
+  .certificate-prompt > p:not(.certificate-prompt-kicker):not(.certificate-prompt-error) { margin: 18px auto 0; max-width: 40ch; font: 17px/1.5 "Sunny Mood", "Courier New", monospace; }
+  .certificate-prompt-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+  .certificate-prompt-actions button { min-height: 48px; padding: 10px 18px; border: 2px solid #1a1a1a; font: 15px "Stone Breaker", "Courier New", monospace; text-transform: uppercase; cursor: pointer; }
+  .certificate-prompt-no { background: transparent; color: #4b4840; }
+  .certificate-prompt-yes { background: #ec3750; color: white; box-shadow: 3px 3px 0 #1a1a1a; }
+  .certificate-prompt-actions button:disabled { opacity: .55; cursor: default; }
+  .certificate-prompt-error { margin: 14px 0 0; color: #a3293a; font-family: "Sunny Mood", "Courier New", monospace; }
 
   .suggestions-close {
     position: absolute;

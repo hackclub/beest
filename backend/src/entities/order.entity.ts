@@ -45,6 +45,10 @@ export class Order {
   @Column({ name: 'fulfillment_notes', type: 'varchar', length: 500, nullable: true })
   fulfillmentNotes: string | null;
 
+  // Null means the fulfilled-order certificate prompt has not been answered.
+  @Column({ name: 'certificate_requested', type: 'boolean', nullable: true, default: null })
+  certificateRequested: boolean | null;
+
   // External reference set by fulfillers (tracking ID, HCB grant URL, …).
   @Column({ type: 'varchar', length: 500, nullable: true })
   reference: string | null;
