@@ -102,6 +102,13 @@ export class Project {
   @Column({ type: 'boolean', name: 'is_update', default: false })
   isUpdate: boolean;
 
+  // When a reviewer last moved this project to 'changes_needed'. Now that the
+  // program has ended this is what starts the builder's 2-day window to fix and
+  // reship — see program-closure.util.ts. Null on projects that were never sent
+  // back.
+  @Column({ type: 'timestamptz', name: 'changes_requested_at', nullable: true })
+  changesRequestedAt: Date | null;
+
   @Column({ type: 'varchar', name: 'other_hc_program', length: 255, nullable: true })
   otherHcProgram: string | null;
 
@@ -115,6 +122,23 @@ export class Project {
   // priority in the review queue and access to black-market shop items.
   @Column({ type: 'boolean', name: 'is_golden', default: false })
   isGolden: boolean;
+  // Fraud-review axis, independent of `status` / functional approval. Set by a
+  // Fraud Reviewer marking the project "not fraud" (cleared). Once cleared the
+  // project leaves the fraud queue; the metadata is kept for the audit trail.
+  @Column({ type: 'boolean', name: 'fraud_cleared', default: false })
+  fraudCleared: boolean;
+
+  @Column({ type: 'uuid', name: 'fraud_cleared_by_id', nullable: true })
+  fraudClearedById: string | null;
+
+  @Column({ type: 'varchar', name: 'fraud_cleared_by_name', length: 255, nullable: true })
+  fraudClearedByName: string | null;
+
+  @Column({ type: 'timestamptz', name: 'fraud_cleared_at', nullable: true })
+  fraudClearedAt: Date | null;
+
+  @Column({ type: 'text', name: 'fraud_clearance_note', nullable: true })
+  fraudClearanceNote: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

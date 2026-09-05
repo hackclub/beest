@@ -85,6 +85,7 @@ describe('CertificateService', () => {
         itemName: 'Arduino Starter Kit',
         pipesSpent: 31,
         status: 'fulfilled',
+        certificateRequested: true,
         shopItem: { isGrant: false } as any,
         user: mockUser as any,
       };
@@ -113,6 +114,7 @@ describe('CertificateService', () => {
         itemName: 'Small Hardware Kit',
         pipesSpent: 30,
         status: 'fulfilled',
+        certificateRequested: true,
         shopItem: { isGrant: false } as any,
         user: mockUser as any,
       };
@@ -130,6 +132,7 @@ describe('CertificateService', () => {
         itemName: 'Hardware Grant',
         pipesSpent: 7,
         status: 'fulfilled',
+        certificateRequested: true,
         shopItem: { isGrant: true } as any,
         user: mockUser as any,
       };
@@ -150,6 +153,7 @@ describe('CertificateService', () => {
         itemName: 'Hardware Grant',
         pipesSpent: 31,
         status: 'fulfilled',
+        certificateRequested: true,
         shopItem: { isGrant: true } as any,
         user: mockUser as any,
       };
@@ -175,6 +179,7 @@ describe('CertificateService', () => {
         itemName: 'Hardware Grant',
         pipesSpent: 25,
         status: 'fulfilled',
+        certificateRequested: true,
         shopItem: { isGrant: true } as any,
         user: mockUser as any,
       };
@@ -185,6 +190,7 @@ describe('CertificateService', () => {
         itemName: 'Hardware Grant',
         pipesSpent: 7,
         status: 'fulfilled',
+        certificateRequested: true,
         shopItem: { isGrant: true } as any,
         user: mockUser as any,
       };
@@ -229,6 +235,7 @@ describe('CertificateService', () => {
         itemName: 'Hardware Grant',
         pipesSpent: 31,
         status: 'fulfilled',
+        certificateRequested: true,
         shopItem: { isGrant: true } as any,
         user: mockUser as any,
       };

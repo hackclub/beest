@@ -70,8 +70,33 @@
   let activeSection = $state(sectionFromPath(page.url.pathname));
   let tileLoaded = $state(false);
   let customCursorEnabled = $state(typeof localStorage !== 'undefined' ? localStorage.getItem('customCursor') !== 'off' : true);
-  const EVENT_START = new Date('2026-08-19T00:00:00+02:00').getTime();
-  let eventCountdown = $state({ days: 0, hours: 0, minutes: 0, seconds: 0, live: false });
+  // ── Program closure ───────────────────────────────────────────────────────
+  // BEEST has ended. Creating projects is off for everyone; shipping is off too
+  // unless the project is inside its 2-day post-review window or an admin gave
+  // this user a submission extension. The backend gate is authoritative — this
+  // state only decides what the UI offers and how it explains itself.
+  type SubmissionWindow = {
+    programClosed: boolean;
+    canCreateProjects: boolean;
+    canShipFreely: boolean;
+    extensionUntil: string | null;
+    createMessage: string;
+    shipMessage: string;
+  };
+  // Defaults are the closed state, so a failed fetch never flashes open controls.
+  let submissionWindow = $state<SubmissionWindow>({
+    programClosed: true,
+    canCreateProjects: false,
+    canShipFreely: false,
+    extensionUntil: null,
+    createMessage: 'BEEST has ended — new projects can no longer be created.',
+    shipMessage: 'BEEST has ended — projects can no longer be shipped for review.'
+  });
+  let programClosedModal = $state(false);
+  // Ticks every 30s so grace-window countdowns and the expiry cutoff re-render
+  // without a reload.
+  let nowTs = $state(Date.now());
+
   let creatingProject = $state(false);
   let editingProject = $state<any>(null);
   type ProjectReview = {
@@ -115,7 +140,7 @@
   let aiUseDescription = $state('');
   let projects = $state<any[]>([]);
   let catImages = $state<Record<string, string>>({});
-  let hackatimeProjects = $state<string[]>([]);
+  let hackatimeProjects = $state<{ name: string; totalSeconds: number }[]>([]);
   let hackatimeLoading = $state(false);
   let hackatimeOpen = $state(false);
   let submitting = $state(false);
@@ -489,6 +514,28 @@
   let keystrokes = $state(0);
   let canSubmit = $derived(projectName.trim() !== '' && projectDesc.trim() !== '' && projectType !== '' && !submitting);
   let hasScreenshots = $derived(screenshotPreviews[0] !== '' || screenshotPreviews[1] !== '');
+  // Dropdown rows: fetched projects (already sorted by time, zero-time ones
+  // excluded server-side) plus any already-linked names that no longer match —
+  // so an edit can still unlink a project that has since dropped to 0s.
+  let hackatimeOptions = $derived.by(() => {
+    const rows = hackatimeProjects.map((p) => ({ name: p.name, totalSeconds: p.totalSeconds }));
+    for (const name of hackatimeProject) {
+      if (!rows.some((r) => r.name === name)) {
+        rows.push({ name, totalSeconds: 0 });
+      }
+    }
+    return rows;
+  });
+  // Total eligible time across the currently selected projects, so the builder
+  // sees at a glance what they'd be submitting with.
+  let selectedHackatimeSeconds = $derived.by(() => {
+    let total = 0;
+    for (const name of hackatimeProject) {
+      const match = hackatimeProjects.find((p) => p.name === name);
+      total += match?.totalSeconds ?? 0;
+    }
+    return total;
+  });
   let canSubmitForReview = $derived(
     projectName.trim() !== '' &&
     projectDesc.trim() !== '' &&
@@ -597,6 +644,10 @@
 
   async function resubmitProject() {
     if (!editingProject || !resubmitChangeDesc.trim() || !resubmitMinHours || resubmitLoading) return;
+    if (!canShipProject(editingProject)) {
+      formError = submissionWindow.shipMessage;
+      return;
+    }
     resubmitLoading = true;
     formError = '';
 
@@ -661,7 +712,46 @@
     }, 200);
   }
 
+  async function fetchSubmissionWindow() {
+    try {
+      const res = await fetch('/api/projects/submission-window');
+      if (res.ok) submissionWindow = await res.json();
+    } catch { /* keep the closed-by-default fallback */ }
+  }
+
+  /**
+   * Mirrors the backend gate (backend/src/program-closure.util.ts). An admin
+   * extension wins outright; otherwise only a project a reviewer sent back may
+   * still ship, and only until its deadline.
+   */
+  function canShipProject(project: any): boolean {
+    if (!submissionWindow.programClosed) return true;
+    if (submissionWindow.canShipFreely) return true;
+    if (project?.status !== 'changes_needed') return false;
+    if (!project?.changesDeadline) return false;
+    return new Date(project.changesDeadline).getTime() > nowTs;
+  }
+
+  /** Coarse "1d 4h" / "3h 12m" / "45m" countdown to a deadline. */
+  function formatRemaining(deadline: string | null | undefined): string {
+    if (!deadline) return '';
+    const ms = new Date(deadline).getTime() - nowTs;
+    if (ms <= 0) return 'expired';
+    const totalMinutes = Math.floor(ms / 60000);
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    const minutes = totalMinutes % 60;
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  }
+
   function openCreateProject() {
+    // Program's over — explain rather than opening a form that can't submit.
+    if (!submissionWindow.canCreateProjects) {
+      programClosedModal = true;
+      return;
+    }
     resetForm();
     creatingProject = true;
   }
@@ -1046,6 +1136,12 @@
 
   async function submitForReview() {
     if (!editingProject || !canSubmitForReview) return;
+    if (!canShipProject(editingProject)) {
+      formError = editingProject.status === 'changes_needed'
+        ? 'The 2-day window to make the requested changes and resubmit has closed.'
+        : submissionWindow.shipMessage;
+      return;
+    }
     formError = '';
     submitting = true;
 
@@ -1359,23 +1455,6 @@
     activeSection = id;
     loadSectionData(id);
     pushState(sectionRoutes[id] ?? '/projects', {});
-  }
-
-  function updateEventCountdown() {
-    const remaining = EVENT_START - Date.now();
-    if (remaining <= 0) {
-      eventCountdown = { days: 0, hours: 0, minutes: 0, seconds: 0, live: true };
-      return;
-    }
-
-    const totalSeconds = Math.floor(remaining / 1000);
-    eventCountdown = {
-      days: Math.floor(totalSeconds / 86400),
-      hours: Math.floor((totalSeconds % 86400) / 3600),
-      minutes: Math.floor((totalSeconds % 3600) / 60),
-      seconds: totalSeconds % 60,
-      live: false,
-    };
   }
 
   async function fetchPipes() {
@@ -1697,12 +1776,14 @@
     // Certificate choices are intentionally surfaced anywhere in the app, not
     // only after the user happens to revisit the shop.
     fetchUserOrders();
+    fetchSubmissionWindow();
     loadSectionData(activeSection);
     // Returning from the Lookout recorder? Re-open the devlog draft we stashed.
     // Otherwise fall back to the locally autosaved draft (reload / window close).
     if (!restoreDevlogDraft()) restoreDevlogAutosave();
-    updateEventCountdown();
-    const countdownTimer = window.setInterval(updateEventCountdown, 1000);
+    // Keeps the changes-needed countdown honest, and flips ship controls off the
+    // moment a window lapses while the page is open.
+    const clockTimer = window.setInterval(() => { nowTs = Date.now(); }, 30_000);
 
     const handlePopstate = () => {
       const section = sectionFromPath(window.location.pathname);
@@ -1712,7 +1793,7 @@
     };
     window.addEventListener('popstate', handlePopstate);
     return () => {
-      window.clearInterval(countdownTimer);
+      window.clearInterval(clockTimer);
       window.removeEventListener('popstate', handlePopstate);
     };
   });
@@ -1824,7 +1905,24 @@
 
         <div class="resubmit-section">
           <h2 class="section-title">Resubmit for Review</h2>
-          <p class="section-subtitle">Ship an update to this approved project to earn more Pipes.</p>
+          {#if !canShipProject(editingProject)}
+            <!-- Program's over: approved projects only reopen for a user an
+                 admin has granted a submission extension. -->
+            <div class="closure-notice">
+              <p class="closure-notice-text">
+                BEEST has ended — updates to approved projects can no longer be shipped. Your approved hours and Pipes are unaffected, and the shop is still open.
+              </p>
+            </div>
+          {:else}
+            <p class="section-subtitle">Ship an update to this approved project to earn more Pipes.</p>
+            {#if submissionWindow.programClosed && submissionWindow.extensionUntil}
+              <div class="closure-notice closure-notice-open">
+                <p class="closure-notice-text">
+                  BEEST has ended, but your submission extension runs until
+                  <strong>{formatLocal(submissionWindow.extensionUntil, { year: 'numeric', month: 'short', day: 'numeric' })}</strong>.
+                </p>
+              </div>
+            {/if}
 
           <div class="resubmit-form">
             <label class="resubmit-label" for="resubmit-desc">Describe changes made since last approval <span class="required">*</span></label>
@@ -1871,6 +1969,7 @@
               {resubmitLoading ? 'Resubmitting...' : 'Resubmit'}
             </button>
           </div>
+          {/if}
         </div>
       </div>
     </section>
@@ -2026,20 +2125,23 @@
                   <div class="hackatime-dropdown">
                     {#if hackatimeLoading}
                       <span class="hackatime-empty">Loading...</span>
-                    {:else if hackatimeProjects.length === 0}
+                    {:else if hackatimeOptions.length === 0}
                       <span class="hackatime-empty">No projects found, redo tutorial?</span>
                     {:else}
-                      {#each hackatimeProjects as proj}
+                      {#each hackatimeOptions as proj}
                         <label class="hackatime-option">
-                          <input type="checkbox" checked={hackatimeProject.includes(proj)} onchange={(e) => {
+                          <input type="checkbox" checked={hackatimeProject.includes(proj.name)} onchange={(e) => {
                             const target = e.target as HTMLInputElement;
                             if (target.checked) {
-                              hackatimeProject = [...hackatimeProject, proj];
+                              hackatimeProject = [...hackatimeProject, proj.name];
                             } else {
-                              hackatimeProject = hackatimeProject.filter((p) => p !== proj);
+                              hackatimeProject = hackatimeProject.filter((p) => p !== proj.name);
                             }
                           }} />
-                          <span>{proj}</span>
+                          <span class="hackatime-option-name">{proj.name}</span>
+                          {#if proj.totalSeconds > 0}
+                            <span class="hackatime-option-hours">{fmtTrackedShort(proj.totalSeconds)}</span>
+                          {/if}
                         </label>
                       {/each}
                     {/if}
@@ -2054,6 +2156,9 @@
                 </button>
               </form>
             </div>
+            {#if selectedHackatimeSeconds > 0}
+              <span class="hackatime-total">{fmtTrackedShort(selectedHackatimeSeconds)} selected</span>
+            {/if}
           </div>
         </div>
 
@@ -2099,6 +2204,35 @@
             <p class="in-review-text">This project is currently in review. You'll be notified once the review is complete.</p>
           </div>
         {/if}
+        <!-- Post-shutdown state for this project: a live deadline while the
+             2-day changes window runs, otherwise a plain "we're closed". -->
+        {#if editingProject && submissionWindow.programClosed && editingProject.status !== 'unreviewed'}
+          {#if submissionWindow.canShipFreely}
+            <div class="closure-notice closure-notice-open">
+              <p class="closure-notice-text">
+                BEEST has ended, but you have an extension — you can keep shipping updates as normal until
+                <strong>{formatLocal(submissionWindow.extensionUntil ?? '', { year: 'numeric', month: 'short', day: 'numeric' })}</strong>.
+              </p>
+            </div>
+          {:else if editingProject.status === 'changes_needed' && canShipProject(editingProject)}
+            <div class="closure-notice closure-notice-grace">
+              <p class="closure-notice-text">
+                BEEST has ended. Because a reviewer asked for changes, you have
+                <strong>{formatRemaining(editingProject.changesDeadline)}</strong> left to make them and resubmit. After that this project can no longer be shipped.
+              </p>
+            </div>
+          {:else}
+            <div class="closure-notice">
+              <p class="closure-notice-text">
+                {#if editingProject.status === 'changes_needed'}
+                  BEEST has ended and the 2-day window to make the requested changes has closed. This project can no longer be resubmitted.
+                {:else}
+                  BEEST has ended — projects can no longer be shipped for review. You can still edit this project, and your Pipes are still spendable in the shop.
+                {/if}
+              </p>
+            </div>
+          {/if}
+        {/if}
         <div class="form-actions">
           {#if editingProject && editingProject.status !== 'approved'}
             <button class="form-btn-delete" onclick={() => deleteProject(editingProject.id)}>Delete</button>
@@ -2107,16 +2241,23 @@
             {#if submitting}{editingProject ? 'Saving...' : 'Creating...'}{:else}{editingProject ? 'Save Changes' : 'Create Project'}{/if}
           </button>
           {#if editingProject && editingProject.status !== 'unreviewed'}
+              {@const shippable = canShipProject(editingProject)}
               <div class="submit-review-wrap">
                 <button
                   class="form-btn-review"
-                  class:ready={canSubmitForReview}
-                  disabled={!canSubmitForReview}
+                  class:ready={canSubmitForReview && shippable}
+                  disabled={!canSubmitForReview || !shippable}
                   onclick={submitForReview}
                 >
                   Submit
                 </button>
-                {#if !canSubmitForReview}
+                {#if !shippable}
+                  <span class="review-tooltip">
+                    {editingProject.status === 'changes_needed'
+                      ? 'The 2-day window to resubmit has closed'
+                      : 'BEEST has ended — projects can no longer be shipped'}
+                  </span>
+                {:else if !canSubmitForReview}
                   <span class="review-tooltip">Fill out all sections before submitting</span>
                 {/if}
               </div>
@@ -2318,19 +2459,6 @@
           <div>
             <h2 class="section-title">My Projects</h2>
             <p class="section-subtitle">Track your progress and hours.</p>
-          </div>
-          <div class="event-countdown" aria-label="Countdown to Beest">
-            <p class="event-countdown-kicker"><span class="event-countdown-logo">BEESTing</span> starts on</p>
-            {#if eventCountdown.live}
-              <p class="event-countdown-live">Live</p>
-            {:else}
-              <div class="event-countdown-grid">
-                <div class="event-countdown-unit"><strong>{eventCountdown.days}</strong><span>days</span></div>
-                <div class="event-countdown-unit"><strong>{eventCountdown.hours}</strong><span>hours</span></div>
-                <div class="event-countdown-unit"><strong>{eventCountdown.minutes}</strong><span>minutes</span></div>
-                <div class="event-countdown-unit"><strong>{eventCountdown.seconds}</strong><span>seconds</span></div>
-              </div>
-            {/if}
           </div>
           <div class="progress-key">
             <span class="key-item"><span class="key-swatch approved"></span>Approved</span>
@@ -2836,6 +2964,38 @@
       </div>
     </div>
     {/if}
+    {/if}
+
+    <!-- Program-over notice, raised when someone tries to start a new project. -->
+    {#if programClosedModal}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      use:portal
+      class="closed-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="BEEST has ended"
+      tabindex="-1"
+      onclick={() => programClosedModal = false}
+      onkeydown={(e) => { if (e.key === 'Escape') programClosedModal = false; }}
+    >
+      <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+      <div class="closed-modal" onclick={(e) => e.stopPropagation()}>
+        <button class="closed-modal-close" type="button" onclick={() => programClosedModal = false} aria-label="Close">&times;</button>
+        <p class="closed-modal-kicker">BEEST has ended</p>
+        <h2 class="closed-modal-title">Program Closed</h2>
+        <p class="closed-modal-text">
+          Thank you to everyone who built something. New projects can no longer be created, and projects can no longer be shipped for review.
+        </p>
+        <p class="closed-modal-text">
+          Your account stays open: you can still log in, browse what everyone built, and <strong>spend your Pipes in the shop</strong>.
+        </p>
+        <div class="closed-modal-actions">
+          <button class="action-btn" type="button" onclick={() => { programClosedModal = false; navigate('shop'); }}>Go to the shop</button>
+          <button class="action-btn closed-modal-dismiss" type="button" onclick={() => programClosedModal = false}>Close</button>
+        </div>
+      </div>
+    </div>
     {/if}
 
     <!-- One-time "hackathon or shop?" prompt. No dismiss — stays until answered.
@@ -5274,6 +5434,27 @@
     padding: 5px 8px;
   }
 
+  .hackatime-option-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hackatime-option-hours {
+    font-size: 12px;
+    color: #888;
+    white-space: nowrap;
+  }
+
+  .hackatime-total {
+    display: block;
+    margin-top: 4px;
+    font-family: "Courier New", monospace;
+    font-size: 11px;
+    color: #7f796d;
+  }
+
   .hackatime-option:hover {
     background: #f0f0f0;
   }
@@ -6754,6 +6935,100 @@
     font-size: 0.85rem;
   }
 
+  /* ── program-closed notice ── */
+  .closed-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.78);
+    z-index: 1100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(6px);
+    animation: fadeIn 200ms ease;
+    padding: 1rem;
+  }
+  .closed-modal {
+    position: relative;
+    background: #4b4840;
+    color: #e8e0d4;
+    border: 1px solid #6c6659;
+    border-radius: 14px;
+    padding: 2.25rem 1.75rem 1.75rem;
+    width: 100%;
+    max-width: 470px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .closed-modal-close {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    background: none;
+    border: none;
+    color: #cbc1ae;
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .closed-modal-close:hover { color: #c48382; }
+  .closed-modal-kicker {
+    margin: 0 0 0.25rem;
+    font-family: "Sunny Mood", "Courier New", monospace;
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #cbc1ae;
+  }
+  .closed-modal-title {
+    margin: 0 0 1rem;
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: clamp(30px, 5vw, 44px);
+    line-height: 1;
+    color: #e6f4fe;
+  }
+  .closed-modal-text {
+    margin: 0 0 0.9rem;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    opacity: 0.85;
+  }
+  .closed-modal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 1.4rem;
+  }
+  .closed-modal-dismiss {
+    background: #52504a;
+  }
+
+  /* Inline post-shutdown banners inside the project form. */
+  .closure-notice {
+    margin: 16px 0 0;
+    padding: 12px 14px;
+    background: rgba(75, 72, 64, 0.72);
+    border: 1px solid #6c6659;
+    border-left: 4px solid #c48382;
+    border-radius: 8px;
+  }
+  .closure-notice-grace {
+    border-left-color: #cbc1ae;
+  }
+  .closure-notice-open {
+    border-left-color: #5a9e6f;
+  }
+  .closure-notice-text {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: #e8e0d4;
+  }
+  .closure-notice-text strong {
+    color: #e6f4fe;
+  }
+
   /* ── shop modal ── */
   .shop-modal-overlay {
     position: fixed;
@@ -7036,124 +7311,6 @@
   .section-projects {
     background: #635a4e;
     padding-top: 48px;
-  }
-
-  .event-countdown {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 12px;
-    flex: 1 1 420px;
-    max-width: 760px;
-    min-width: 0;
-    margin: 0;
-    padding: 10px 12px;
-    background: rgba(75, 72, 64, 0.58);
-    border: 2px solid rgba(230, 244, 254, 0.16);
-    box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.14);
-  }
-
-  .event-countdown-kicker {
-    margin: 0;
-    font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 22px;
-    color: #cbc1ae;
-    white-space: nowrap;
-  }
-
-  .event-countdown-logo {
-    font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: 32px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    line-height: 1;
-    color: #e6f4fe;
-  }
-
-  .event-countdown-title {
-    margin: 0;
-    font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: clamp(30px, 3.6vw, 50px);
-    line-height: 0.95;
-    color: #e6f4fe;
-    letter-spacing: 0;
-  }
-
-  .event-countdown-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(48px, 1fr));
-    gap: 6px;
-    min-width: min(100%, 250px);
-  }
-
-  .event-countdown-unit {
-    display: grid;
-    place-items: center;
-    min-height: 54px;
-    padding: 6px;
-    background: #586063;
-    border: 1px solid rgba(230, 244, 254, 0.22);
-    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.16);
-  }
-
-  .event-countdown-unit strong {
-    font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: clamp(20px, 2vw, 30px);
-    line-height: 1;
-    color: #93b4cd;
-  }
-
-  .event-countdown-unit span {
-    font-family: "Sunny Mood", "Courier New", monospace;
-    font-size: 11px;
-    color: #e6f4fe;
-    white-space: nowrap;
-  }
-
-  .event-countdown-live {
-    margin: 0;
-    font-family: "Stone Breaker", "Courier New", monospace;
-    font-size: clamp(24px, 3vw, 38px);
-    color: #93b4cd;
-  }
-
-  @media (max-width: 760px) {
-    .event-countdown {
-      align-items: center;
-      flex: 0 0 auto;
-      flex-direction: row;
-      flex-wrap: wrap;
-      gap: 8px 10px;
-      width: 100%;
-      max-width: none;
-      min-width: 0;
-      padding: 10px;
-    }
-
-    .event-countdown-kicker {
-      flex: 1 1 100%;
-      white-space: normal;
-    }
-
-    .event-countdown-logo {
-      font-size: 28px;
-    }
-
-    .event-countdown-grid {
-      flex: 1 1 100%;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      min-width: 0;
-    }
-
-    .event-countdown-unit {
-      min-height: 48px;
-      padding: 5px;
-    }
-
-    .event-countdown-unit strong {
-      font-size: 22px;
-    }
   }
 
   .progress-bar-wrap {

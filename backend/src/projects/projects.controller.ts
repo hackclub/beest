@@ -102,6 +102,20 @@ export class ProjectsController {
     return { hours: Math.round(displayHours * 10) / 10, byStatus };
   }
 
+  /**
+   * What the caller may still do now that BEEST has ended — drives the closure
+   * modal and the disabled ship/resubmit controls. Declared above the ':id'
+   * routes so the literal path wins.
+   */
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @Get('submission-window')
+  async submissionWindow(@Req() req: Request) {
+    const userId = (req as any).user?.uid;
+    if (!userId) throw new UnauthorizedException('No user identity');
+    return this.projectsService.getSubmissionWindow(userId);
+  }
+
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @UseGuards(JwtAuthGuard)
   @Get('explore')

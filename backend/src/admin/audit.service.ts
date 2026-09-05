@@ -11,6 +11,7 @@ import { In, Not, Repository } from 'typeorm';
 import { Project } from '../entities/project.entity';
 import { Submission } from '../entities/submission.entity';
 import { ProjectReview } from '../entities/project-review.entity';
+import { FraudReview } from '../entities/fraud-review.entity';
 import { Comment } from '../entities/comment.entity';
 import { User } from '../entities/user.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -82,6 +83,8 @@ export class AuditService {
     private readonly submissionRepo: Repository<Submission>,
     @InjectRepository(ProjectReview)
     private readonly reviewRepo: Repository<ProjectReview>,
+    @InjectRepository(FraudReview)
+    private readonly fraudReviewRepo: Repository<FraudReview>,
     @InjectRepository(Comment) private readonly commentRepo: Repository<Comment>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     private readonly auditLogService: AuditLogService,
@@ -124,6 +127,180 @@ export class AuditService {
         : {}),
     });
     return { ctx };
+  }
+
+  // ── Fraud review ─────────────────────────────────────────────────────────────
+
+  /**
+   * The fraud-review queue: every *shipped* project that hasn't yet had a fraud
+   * verdict. This is orthogonal to the functional review pipeline — a project
+   * can be unreviewed, second-pass pending, or already approved and still be
+   * awaiting a fraud reviewer. Ordered oldest-submission-first (same wait-time
+   * ordering as the audit queue). Banned/rejected makers drop out naturally
+   * because their projects move to 'changes_needed'.
+   */
+  async listFraudQueue(): Promise<unknown[]> {
+    const rows = await this.projectRepo.query(
+      `
+        SELECT p.id
+        FROM projects p
+        LEFT JOIN (
+          SELECT s.project_id, MAX(s.created_at) AS max_created_at
+          FROM submissions s
+          GROUP BY s.project_id
+        ) sub ON sub.project_id = p.id
+        WHERE p.status IN ('unreviewed', 'fraud_pending', 'approved')
+          AND p.fraud_cleared = false
+        ORDER BY sub.max_created_at ASC NULLS LAST, p.created_at ASC
+      `,
+    );
+    const ids: string[] = rows.map((r: any) => r.id);
+    if (ids.length === 0) return [];
+
+    // Bulk-load everything the list needs — the fraud queue can be the entire
+    // shipped population, so avoid the per-project fan-out serializeQueueItem
+    // does (it issues several queries per project for the full review history).
+    const projects = await this.projectRepo.find({
+      where: { id: In(ids) },
+      relations: ['user'],
+    });
+    const projectById = new Map(projects.map((p) => [p.id, p]));
+
+    const submissions = await this.submissionRepo.find({
+      where: { projectId: In(ids) },
+      order: { createdAt: 'DESC' },
+    });
+    const latestSubByProject = new Map<string, Submission>();
+    for (const s of submissions) {
+      if (!latestSubByProject.has(s.projectId)) {
+        latestSubByProject.set(s.projectId, s);
+      }
+    }
+
+    const fraudReviews = await this.fraudReviewRepo.find({
+      where: { projectId: In(ids) },
+    });
+    const fraudByProject = new Map(fraudReviews.map((f) => [f.projectId, f]));
+
+    return ids
+      .map((id) => projectById.get(id))
+      .filter((p): p is Project => !!p)
+      .map((project: Project) => {
+        const user = project.user;
+        const sub = latestSubByProject.get(project.id) ?? null;
+        const fraud = fraudByProject.get(project.id) ?? null;
+        return {
+          id: project.id,
+          name: project.name,
+          description: project.description,
+          projectType: project.projectType,
+          status: project.status,
+          codeUrl: project.codeUrl,
+          readmeUrl: project.readmeUrl,
+          demoUrl: project.demoUrl,
+          screenshot1Url: project.screenshot1Url,
+          screenshot2Url: project.screenshot2Url,
+          hackatimeProjectNames: parseHackatimeNames(
+            project.hackatimeProjectName,
+          ),
+          aiUse: project.aiUse,
+          isUpdate: project.isUpdate,
+          otherHcProgram: project.otherHcProgram,
+          overrideHours: project.overrideHours ?? 0,
+          createdAt: project.createdAt,
+          submittedAt: sub?.createdAt ?? null,
+          owner: user
+            ? {
+                id: user.id,
+                name: user.name,
+                nickname: user.nickname,
+                slackId: user.slackId,
+                email: user.email,
+                hackatimeConnected: !!user.hackatimeToken,
+                watchlisted: !!user.watchlisted,
+                coolBuilder: !!user.coolBuilder,
+              }
+            : null,
+          // joe.fraud's automated verdict, if the project has been through it.
+          autoFraud: fraud
+            ? {
+                status: fraud.status,
+                trustScore: fraud.trustScore,
+                justification: fraud.justification,
+              }
+            : null,
+        };
+      });
+  }
+
+  /**
+   * Mark a project "not fraud". Records the clearance + reviewer + note and
+   * drops it from the fraud queue. Does NOT change `status` — functional review
+   * is a separate axis. Re-clearing overwrites the metadata.
+   */
+  async clearFraud(
+    projectId: string,
+    reviewer: { id: string; name?: string | null },
+    note: string,
+  ): Promise<{ success: true }> {
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId },
+      relations: ['user'],
+    });
+    if (!project) throw new NotFoundException('Project not found');
+    if (project.userId === reviewer.id) {
+      throw new ForbiddenException('You cannot fraud-review your own project.');
+    }
+    const trimmed = (note ?? '').trim();
+    if (trimmed.length < 10) {
+      throw new BadRequestException(
+        'A fraud-clearance note of at least 10 characters is required.',
+      );
+    }
+
+    project.fraudCleared = true;
+    project.fraudClearedById = reviewer.id;
+    project.fraudClearedByName = reviewer.name ?? null;
+    project.fraudClearedAt = new Date();
+    project.fraudClearanceNote = trimmed;
+    await this.projectRepo.save(project);
+
+    await this.auditLogService.log(
+      reviewer.id,
+      'project_reviewed',
+      `Cleared fraud on "${project.name}" (${project.id}): ${trimmed}`,
+    );
+    return { success: true };
+  }
+
+  /**
+   * Ban the maker and reject the project from the fraud panel. Fraud Reviewers
+   * (not just Super Admins) may do this — the reviewer's note is the ban
+   * justification. Non-super-admins are still blocked from banning staff
+   * accounts by AdminService.banUser.
+   */
+  async banFromFraud(
+    projectId: string,
+    reviewer: { id: string; isSuperAdmin: boolean },
+    note: string,
+  ): Promise<{ success: true }> {
+    const trimmed = (note ?? '').trim();
+    if (trimmed.length < 10) {
+      throw new BadRequestException(
+        'A fraud-ban note of at least 10 characters is required.',
+      );
+    }
+    await this.adminService.banAndRejectProject(
+      projectId,
+      reviewer.id,
+      trimmed, // user-facing feedback / ban reason
+      `Fraud ban: ${trimmed}`, // internal note
+      null,
+      false,
+      trimmed, // override justification for the review row
+      reviewer.isSuperAdmin,
+    );
+    return { success: true };
   }
 
   // ── Queue ──────────────────────────────────────────────────────────────────
@@ -774,6 +951,7 @@ export class AuditService {
     }
 
     project.status = 'changes_needed';
+    project.changesRequestedAt = new Date();
     project.overrideHours = 0;
     project.internalHours = 0;
     project.isGolden = false;

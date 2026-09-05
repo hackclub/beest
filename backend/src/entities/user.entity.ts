@@ -106,6 +106,12 @@ export class User {
   @Column({ type: 'integer', default: 0 })
   pipes: number;
 
+  // Admin-granted reprieve from the post-program shipping freeze: while this is
+  // in the future the user may ship and resubmit as if BEEST were still running.
+  // Creating new projects stays closed regardless. Null = no extension.
+  @Column({ type: 'timestamptz', name: 'submission_extension_until', nullable: true })
+  submissionExtensionUntil: Date | null;
+
   @Column({ nullable: true, name: 'utm_source' })
   utmSource: string;
 

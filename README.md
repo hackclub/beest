@@ -117,7 +117,7 @@ All endpoints live under the backend at `/api`. Auth-protected routes require a 
 | `/api/rsvp` | POST | — | Submit an RSVP |
 | `/api/hackatime/start` | POST | JWT | Begin Hackatime OAuth |
 | `/api/hackatime/callback` | POST | JWT | Complete Hackatime OAuth |
-| `/api/hackatime/projects` | GET | JWT | User's Hackatime project names |
+| `/api/hackatime/projects` | GET | JWT | User's Hackatime projects with eligible time |
 | `/api/projects` | GET | JWT | List user's projects |
 | `/api/projects` | POST | JWT | Create a project |
 | `/api/projects/:id` | PATCH | JWT | Update a project |

@@ -75,7 +75,6 @@
     }, 1000);
 
     return () => {
-      observer.disconnect();
       window.removeEventListener('resize', updateTop);
       clearTimeout(hintTimer);
       clearTimeout(animDelay);
@@ -309,6 +308,7 @@
       <h1 class="hero-title"><img class="hero-logo" src="/images/beest-logo.webp" alt="Beest" fetchpriority="high" decoding="async" /></h1>
       <div class="hero-credit">from Euan Ripper, ascpixi, and guac md</div>
       <p class="hero-subtitle">{subtitle}</p>
+      <p class="hero-closed">PROGRAM CLOSED</p>
     </div>
     <div class="hero-signup" aria-label="Sign Up">
       <p class="signup-note">&#10003; Signing up puts you on our email list, you can remove yourself <a href="https://email-tools.hackclub.com/" target="_blank" rel="noreferrer">here</a>.</p>
@@ -843,6 +843,7 @@
        everything aligns to the letters, not the gear */
     --logo-w: clamp(280px, 30vw, 480px);
     --logo-indent: calc(var(--logo-w) * 0.17);
+    --closed-size: clamp(22px, 2.4vw, 34px);
     position: absolute;
     /* hangs below the hero so the whole block sits on the brown ground */
     inset: auto clamp(48px, 7vw, 160px) -120px;
@@ -866,6 +867,13 @@
     align-items: flex-start;
     gap: 10px;
     min-width: 0;
+    /* PROGRAM CLOSED adds a row here. The overlay is bottom-anchored, so
+       without this the column grows upward and shoves the logo and tagline off
+       the brown ground onto the sea. At line-height 1 the row is exactly its
+       font-size, so hanging the column that much lower (plus the gap) keeps
+       every row above it exactly where it was designed to sit. Negative margin
+       rather than a bigger overlay offset, so the sign-up box stays put. */
+    margin-bottom: calc(-1 * (var(--closed-size) + 10px));
   }
 
   /* bare sign-up: email + button docked to the right of the wordmark */
@@ -1014,6 +1022,19 @@
     color: #ffffff;
     letter-spacing: 0.03em;
     line-height: 1.4;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.4);
+  }
+
+  /* BEEST has ended — its own row under the tagline, sharing that indent.
+     Reads as a stamp over the tagline, not a second headline. */
+  .hero-closed {
+    margin: 0 0 0 var(--logo-indent);
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: var(--closed-size);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    color: #c48382;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.4);
   }
 
@@ -2393,6 +2414,10 @@
       align-items: stretch;
       padding: 18px 24px 48px;
       gap: 20px;
+    }
+
+    .hero-copy {
+      margin-bottom: 0;
     }
 
     .hero-signup {

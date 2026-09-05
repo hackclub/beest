@@ -195,6 +195,23 @@ export class AdminController {
     return this.adminService.setIdentityOverride(id, body.override, reason, adminId);
   }
 
+  // Post-shutdown escape hatch: re-opens shipping/resubmitting for one builder
+  // for a fortnight. Super-Admin only — it exempts them from the program-wide
+  // freeze, so it sits at the same tier as granting pipes.
+  @UseGuards(SuperAdminGuard)
+  @Patch('users/:id/submission-extension')
+  async setSubmissionExtension(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { grant?: boolean },
+    @Req() req: Request,
+  ) {
+    if (typeof body.grant !== 'boolean') {
+      throw new BadRequestException('grant (boolean) is required');
+    }
+    const adminId = (req as any).user?.uid;
+    return this.adminService.setSubmissionExtension(id, body.grant, adminId);
+  }
+
   @UseGuards(SuperAdminGuard)
   @Post('users/:id/impersonate')
   async impersonateUser(
@@ -613,6 +630,50 @@ export class AdminController {
   async backfillGoldenForCoolBuilders(@Req() req: Request) {
     const adminId = (req as any).user?.uid;
     return this.adminService.backfillGoldenForCoolBuilders(adminId);
+  }
+
+  // ── Fraud review ──
+  // A fraud-clearance pass over every shipped project, independent of the
+  // functional review pipeline. A Fraud Reviewer either marks a project "not
+  // fraud" (records a clearance, no status change) or bans the maker. Reuses the
+  // audit iframe-context + `projects/:id/hackatime` routes for the heartbeat
+  // graph and file breakdown. Open to Super Admin and Fraud Reviewer.
+
+  @UseGuards(FraudReviewerGuard)
+  @Get('fraud/queue')
+  fraudQueue() {
+    return this.auditService.listFraudQueue();
+  }
+
+  @UseGuards(FraudReviewerGuard)
+  @Post('fraud/:id/clear')
+  async fraudClear(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { note?: string },
+    @Req() req: Request,
+  ) {
+    const reviewer = (req as any).user;
+    return this.auditService.clearFraud(
+      id,
+      { id: reviewer?.uid, name: reviewer?.nickname || reviewer?.name || null },
+      (body?.note ?? '').toString(),
+    );
+  }
+
+  @UseGuards(FraudReviewerGuard)
+  @Post('fraud/:id/ban')
+  async fraudBan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { note?: string },
+    @Req() req: Request,
+  ) {
+    const reviewer = (req as any).user;
+    const isSuperAdmin = reviewer?.perms === 'Super Admin';
+    return this.auditService.banFromFraud(
+      id,
+      { id: reviewer?.uid, isSuperAdmin },
+      (body?.note ?? '').toString(),
+    );
   }
 
   @UseGuards(SuperAdminGuard)

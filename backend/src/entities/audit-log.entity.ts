@@ -46,6 +46,7 @@ export const AUDIT_ACTIONS = [
   'attend_invite_manual',
   'admin_settings_change',
   'admin_identity_override',
+  'admin_submission_extension',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

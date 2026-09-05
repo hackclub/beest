@@ -396,6 +396,7 @@ export class FraudReviewService implements OnApplicationBootstrap, OnApplication
     if (!project) return;
 
     project.status = 'changes_needed';
+    project.changesRequestedAt = new Date();
     // Beest review previously bumped overrideHours; clear since the project is
     // now rejected. (No pipes were granted yet — that only happens after fraud
     // passes — so there's nothing to claw back.)
