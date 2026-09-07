@@ -12,6 +12,7 @@ jest.mock('puppeteer', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { FindOperator } from 'typeorm';
 import { CertificateService } from './certificate.service';
 import { Certificate } from '../entities/certificate.entity';
 import { Order } from '../entities/order.entity';
@@ -263,6 +264,32 @@ describe('CertificateService', () => {
       expect(cert).toBe(existingCert);
       expect(certificateRepo.save).not.toHaveBeenCalled();
       expect(auditLogService.log).not.toHaveBeenCalled();
+    });
+
+    it('uses the database-normalized award name when looking up grant certificates', async () => {
+      const order: Partial<Order> = {
+        id: 'order-grant-normalized',
+        userId: 'user-uuid-1',
+        itemName: '  Hardware Grant  ',
+        pipesSpent: 31,
+        status: 'fulfilled',
+        certificateRequested: true,
+        shopItem: { isGrant: true } as any,
+        user: mockUser as any,
+      };
+
+      orderRepo.findOne.mockResolvedValue(order);
+      orderRepo.find.mockResolvedValue([order]);
+      certificateRepo.findOne.mockResolvedValue(null);
+
+      await service.generateCertificateForOrder(order.id!);
+
+      const lookup = certificateRepo.findOne.mock.calls[0][0].where;
+      expect(lookup.awardItem).toBeInstanceOf(FindOperator);
+      expect(lookup.awardItem._type).toBe('raw');
+      expect(lookup.awardItem.objectLiteralParameters).toEqual({
+        awardItem: order.itemName,
+      });
     });
   });
 

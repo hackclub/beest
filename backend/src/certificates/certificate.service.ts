@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { QueryFailedError, Raw, Repository } from 'typeorm';
 import * as puppeteer from 'puppeteer';
 import { randomUUID } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
@@ -108,13 +108,10 @@ export class CertificateService {
       const grantValue = totalPipes * 5;
 
       // Check if a grant certificate already exists for this user + grant item
-      let existingCert = await this.certificateRepo.findOne({
-        where: {
-          userId: order.userId,
-          awardItem: order.itemName,
-          isGrant: true,
-        },
-      });
+      let existingCert = await this.findGrantCertificate(
+        order.userId,
+        order.itemName,
+      );
 
       if (existingCert) {
         const certificateText = this.formatCertificateText(
@@ -188,13 +185,10 @@ export class CertificateService {
           error instanceof QueryFailedError &&
           (error as QueryFailedError & { code?: string }).code === '23505'
         ) {
-          const concurrentCertificate = await this.certificateRepo.findOne({
-            where: {
-              userId: order.userId,
-              awardItem: order.itemName,
-              isGrant: true,
-            },
-          });
+          const concurrentCertificate = await this.findGrantCertificate(
+            order.userId,
+            order.itemName,
+          );
           if (concurrentCertificate) {
             return concurrentCertificate;
           }
@@ -290,6 +284,28 @@ export class CertificateService {
   private async generateCertificateNumber(): Promise<string> {
     const year = new Date().getFullYear();
     return `CERT-${year}-${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`;
+  }
+
+  /**
+   * Grant certificates are unique per user and normalized award name in the
+   * database (see UQ_certificates_grant_user_award). Keep every lookup on the
+   * same normalization path so casing or surrounding whitespace cannot bypass
+   * the application-level idempotency check.
+   */
+  private findGrantCertificate(
+    userId: string,
+    awardItem: string,
+  ): Promise<Certificate | null> {
+    return this.certificateRepo.findOne({
+      where: {
+        userId,
+        awardItem: Raw(
+          (column) => `lower(btrim(${column})) = lower(btrim(:awardItem))`,
+          { awardItem },
+        ),
+        isGrant: true,
+      },
+    });
   }
 
   /**
