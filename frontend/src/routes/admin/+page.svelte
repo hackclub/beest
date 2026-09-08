@@ -986,6 +986,19 @@
 		}
 	}
 
+	let pipesStats = $state<{ unspentPipes: number; costToFulfill: number } | null>(null);
+	let pipesStatsLoading = $state(false);
+
+	async function loadPipesStats() {
+		pipesStatsLoading = true;
+		try {
+			const res = await fetch('/api/admin/stats/pipes');
+			if (res.ok) pipesStats = await res.json();
+		} finally {
+			pipesStatsLoading = false;
+		}
+	}
+
 	// One-shot golden backfill for cool builders (Super Admin only).
 	let goldenBackfillBusy = $state(false);
 	let goldenBackfillResult = $state<{ coolBuilders: number; processed: number; skipped: number; projectsMarked: number; dmsSent: number } | null>(null);
@@ -2164,7 +2177,7 @@
 		if (activeTab === 'users') { loadUsers(); }
 		// Fulfillers see the charts/funnel only — the user-count cards and unreviewed
 		// hours need Super-Admin-only endpoints (/users, /stats/unreviewed-hours).
-		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); loadResubmissionPaused(); }
+		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); loadPipesStats(); loadResubmissionPaused(); }
 		if (activeTab === 'news') loadNews();
 		if (activeTab === 'events') { loadEvents(); loadUsers(); }
 		if (activeTab === 'projects') { loadProjects(); loadProjectHours(); }
@@ -2597,6 +2610,30 @@
 								{/if}
 							</span>
 							<span class="stat-label">Predicted Approved</span>
+						</div>
+						<div class="stat-card" title="Total pipes currently sitting unspent in user wallets.">
+							<span class="stat-value">
+								{#if pipesStats}
+									{pipesStats.unspentPipes.toLocaleString()}
+								{:else if pipesStatsLoading}
+									…
+								{:else}
+									—
+								{/if}
+							</span>
+							<span class="stat-label">Unspent Pipes</span>
+						</div>
+						<div class="stat-card" title="Estimated pipes owed for all pending (unfulfilled) orders. Estimate — order prices can drift after purchase.">
+							<span class="stat-value">
+								{#if pipesStats}
+									{pipesStats.costToFulfill.toLocaleString()}
+								{:else if pipesStatsLoading}
+									…
+								{:else}
+									—
+								{/if}
+							</span>
+							<span class="stat-label">Cost to Fulfill (est.)</span>
 						</div>
 					{/if}
 				</div>

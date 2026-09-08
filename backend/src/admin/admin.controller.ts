@@ -343,6 +343,12 @@ export class AdminController {
     return this.adminService.getUnreviewedHours();
   }
 
+  @UseGuards(SuperAdminGuard)
+  @Get('stats/pipes')
+  getPipesStats() {
+    return this.adminService.getPipesEconomy();
+  }
+
   // ── Settings ──
   // Global operational toggles. Visible to any reviewer (so the review UI can
   // warn them), flippable only by a Super Admin.
