@@ -2576,32 +2576,6 @@ export class AdminService implements OnApplicationBootstrap {
     };
   }
 
-  // Unspent pipes sitting in user wallets, plus an estimate of what's owed
-  // for pending orders. "Cost to fulfill" is an estimate because pipesSpent
-  // on an order is a snapshot of the price at purchase time, not a live
-  // fulfillment cost.
-  async getPipesEconomy(): Promise<{
-    unspentPipes: number;
-    costToFulfill: number;
-  }> {
-    const [walletRaw, pendingRaw] = await Promise.all([
-      this.userRepo
-        .createQueryBuilder('u')
-        .select('COALESCE(SUM(u.pipes), 0)', 'sum')
-        .getRawOne<{ sum: string }>(),
-      this.orderRepo
-        .createQueryBuilder('o')
-        .select('COALESCE(SUM(o.pipes_spent), 0)', 'sum')
-        .where('o.status = :status', { status: 'pending' })
-        .getRawOne<{ sum: string }>(),
-    ]);
-
-    return {
-      unspentPipes: Number(walletRaw?.sum ?? 0),
-      costToFulfill: Number(pendingRaw?.sum ?? 0),
-    };
-  }
-
   // ── News CRUD ──
 
   async listNews(): Promise<NewsItem[]> {
