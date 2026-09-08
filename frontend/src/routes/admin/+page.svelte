@@ -2621,7 +2621,7 @@
 									—
 								{/if}
 							</span>
-							<span class="stat-label">Unspent Pipes Issued</span>
+							<span class="stat-label">Unspent Pipes</span>
 						</div>
 						<div class="stat-card" title="Estimated pipes owed for all pending (unfulfilled) orders. Estimate — order prices can drift after purchase.">
 							<span class="stat-value">
@@ -2633,7 +2633,7 @@
 									—
 								{/if}
 							</span>
-							<span class="stat-label">Cost to Fulfill (est., pipes)</span>
+							<span class="stat-label">Cost to Fulfill (est.)</span>
 						</div>
 					{/if}
 				</div>
