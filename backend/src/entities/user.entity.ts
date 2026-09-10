@@ -112,6 +112,16 @@ export class User {
   @Column({ type: 'timestamptz', name: 'submission_extension_until', nullable: true })
   submissionExtensionUntil: Date | null;
 
+  // Admin-granted, indefinite exemption from the post-program shutdown for one
+  // builder: unlike submissionExtensionUntil (14-day window, no new projects),
+  // this lets them create brand-new projects AND ship/resubmit with no expiry,
+  // and also skips the resubmit flow's minimum-new-hackatime-hours check (see
+  // ProjectsService.create / requireSubmissionAllowed / resubmit). Reserve for
+  // cases where hours tracking or timing is known-bad but the work itself
+  // should still go through normal review rather than a manual pipes grant.
+  @Column({ type: 'boolean', name: 'unrestricted_access', default: false })
+  unrestrictedAccess: boolean;
+
   @Column({ nullable: true, name: 'utm_source' })
   utmSource: string;
 

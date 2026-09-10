@@ -32,6 +32,9 @@
 		// Post-shutdown shipping reprieve; null when the user has never had one.
 		submissionExtensionUntil: string | null;
 		submissionExtensionActive: boolean;
+		// Indefinite full exemption from the post-program shutdown: create/ship/
+		// resubmit with no expiry, and skips the resubmit min-hours check too.
+		unrestrictedAccess: boolean;
 		pipes: number;
 		activeSessions: number;
 		projects: { id: string; name: string; status: string; projectType: string; createdAt: string }[];
@@ -1299,6 +1302,39 @@
 		}
 	}
 
+	/**
+	 * Full, indefinite escape hatch from the post-program shutdown for one
+	 * builder: unlike the 2-week submission extension, this also reopens
+	 * brand-new project creation and skips the resubmit flow's minimum
+	 * 3-new-hours check, with no expiry. Use when hours tracking or timing is
+	 * known-bad but the work should still go through normal review instead of
+	 * a manual pipes adjustment.
+	 */
+	async function setUnrestrictedAccess(grant: boolean) {
+		if (!selectedUser) return;
+		const who = selectedUser.name ?? selectedUser.hcaSub;
+		const prompt = grant
+			? `Grant ${who} unrestricted access?\n\nThey'll be able to create new projects and ship/resubmit indefinitely, and their next resubmit will skip the "3+ new hackatime hours" check entirely. No expiry — revoke manually when done.`
+			: `Revoke ${who}'s unrestricted access?`;
+		if (!confirm(prompt)) return;
+		actionLoading = 'unrestricted-access';
+		try {
+			const res = await fetch(`/api/admin/users/${selectedUser.id}/unrestricted-access`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ grant })
+			});
+			if (res.ok) {
+				await selectUser(selectedUser);
+			} else {
+				const err = await res.json().catch(() => ({}));
+				alert(`Unrestricted access change failed: ${err.message ?? res.statusText}`);
+			}
+		} finally {
+			actionLoading = '';
+		}
+	}
+
 	async function updatePerms(perms: string) {
 		if (!selectedUser || !confirm(`Change this user's permissions to "${perms}"?`)) return;
 		actionLoading = 'perms';
@@ -2388,6 +2424,27 @@
 												</p>
 												<button class="btn btn-promote" onclick={() => setSubmissionExtension(true)} disabled={actionLoading !== ''}>
 													{actionLoading === 'submission-extension' ? 'Granting...' : 'Grant 2-Week Submission Extension'}
+												</button>
+											{/if}
+										</div>
+
+										<!-- Full, indefinite bypass of the post-program shutdown: unlike the
+										     extension above, this also reopens new-project creation and
+										     skips the resubmit min-hours check, with no expiry. -->
+										<div class="extension-action">
+											{#if userDetail.unrestrictedAccess}
+												<p class="extension-status active">
+													Unrestricted access — create/ship/resubmit, no min-hours check, no expiry
+												</p>
+												<button class="btn btn-ban" onclick={() => setUnrestrictedAccess(false)} disabled={actionLoading !== ''}>
+													{actionLoading === 'unrestricted-access' ? 'Revoking...' : 'Revoke Unrestricted Access'}
+												</button>
+											{:else}
+												<p class="extension-status">
+													Cannot create new projects; resubmits still require 3+ new hackatime hours since last approval.
+												</p>
+												<button class="btn btn-promote" onclick={() => setUnrestrictedAccess(true)} disabled={actionLoading !== ''}>
+													{actionLoading === 'unrestricted-access' ? 'Granting...' : 'Grant Unrestricted Access'}
 												</button>
 											{/if}
 										</div>

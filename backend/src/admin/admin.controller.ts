@@ -212,6 +212,24 @@ export class AdminController {
     return this.adminService.setSubmissionExtension(id, body.grant, adminId);
   }
 
+  // Full, indefinite escape hatch from the post-program shutdown for one
+  // builder: reopens new-project creation and ship/resubmit with no expiry,
+  // and skips the resubmit flow's minimum-new-hours gate. Super-Admin only —
+  // stronger than the 14-day submission extension, so it sits a tier above it.
+  @UseGuards(SuperAdminGuard)
+  @Patch('users/:id/unrestricted-access')
+  async setUnrestrictedAccess(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { grant?: boolean },
+    @Req() req: Request,
+  ) {
+    if (typeof body.grant !== 'boolean') {
+      throw new BadRequestException('grant (boolean) is required');
+    }
+    const adminId = (req as any).user?.uid;
+    return this.adminService.setUnrestrictedAccess(id, body.grant, adminId);
+  }
+
   @UseGuards(SuperAdminGuard)
   @Post('users/:id/impersonate')
   async impersonateUser(
