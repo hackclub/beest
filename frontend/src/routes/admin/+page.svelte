@@ -32,6 +32,8 @@
 		// Post-shutdown shipping reprieve; null when the user has never had one.
 		submissionExtensionUntil: string | null;
 		submissionExtensionActive: boolean;
+		// Exempts this user from the resubmit flow's minimum-new-hours gate.
+		minHoursExempt: boolean;
 		pipes: number;
 		activeSessions: number;
 		projects: { id: string; name: string; status: string; projectType: string; createdAt: string }[];
@@ -1299,6 +1301,36 @@
 		}
 	}
 
+	/**
+	 * Escape hatch for the resubmit flow's minimum-3-new-hours gate. Use when
+	 * Hackatime tracking is known-bad for a builder's update but the work should
+	 * still go through normal review instead of a manual pipes adjustment.
+	 */
+	async function setMinHoursExempt(exempt: boolean) {
+		if (!selectedUser) return;
+		const who = selectedUser.name ?? selectedUser.hcaSub;
+		const prompt = exempt
+			? `Exempt ${who} from the resubmit minimum-hours gate?\n\nTheir next resubmit will skip the "3+ new hackatime hours" check entirely.`
+			: `Revoke ${who}'s minimum-hours exemption?`;
+		if (!confirm(prompt)) return;
+		actionLoading = 'min-hours-exempt';
+		try {
+			const res = await fetch(`/api/admin/users/${selectedUser.id}/min-hours-exempt`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ exempt })
+			});
+			if (res.ok) {
+				await selectUser(selectedUser);
+			} else {
+				const err = await res.json().catch(() => ({}));
+				alert(`Min-hours exemption failed: ${err.message ?? res.statusText}`);
+			}
+		} finally {
+			actionLoading = '';
+		}
+	}
+
 	async function updatePerms(perms: string) {
 		if (!selectedUser || !confirm(`Change this user's permissions to "${perms}"?`)) return;
 		actionLoading = 'perms';
@@ -2388,6 +2420,27 @@
 												</p>
 												<button class="btn btn-promote" onclick={() => setSubmissionExtension(true)} disabled={actionLoading !== ''}>
 													{actionLoading === 'submission-extension' ? 'Granting...' : 'Grant 2-Week Submission Extension'}
+												</button>
+											{/if}
+										</div>
+
+										<!-- Per-project resubmit gate override: skip the "3+ new hackatime
+										     hours" check on this builder's next resubmit. Use when hours
+										     tracking is known-bad but the work should still hit review. -->
+										<div class="extension-action">
+											{#if userDetail.minHoursExempt}
+												<p class="extension-status active">
+													Exempt from the resubmit minimum-hours gate
+												</p>
+												<button class="btn btn-ban" onclick={() => setMinHoursExempt(false)} disabled={actionLoading !== ''}>
+													{actionLoading === 'min-hours-exempt' ? 'Revoking...' : 'Revoke Min-Hours Exemption'}
+												</button>
+											{:else}
+												<p class="extension-status">
+													Resubmits still require 3+ new hackatime hours since last approval.
+												</p>
+												<button class="btn btn-promote" onclick={() => setMinHoursExempt(true)} disabled={actionLoading !== ''}>
+													{actionLoading === 'min-hours-exempt' ? 'Granting...' : 'Exempt from Min-Hours Gate'}
 												</button>
 											{/if}
 										</div>

@@ -112,6 +112,13 @@ export class User {
   @Column({ type: 'timestamptz', name: 'submission_extension_until', nullable: true })
   submissionExtensionUntil: Date | null;
 
+  // Admin-granted exemption from the resubmit flow's minimum-new-hackatime-hours
+  // gate (see ProjectsService.resubmit). For a one-off case where hours tracking
+  // didn't sync but the work is verified some other way (e.g. a manual pipes
+  // adjustment isn't appropriate because the project should go through review).
+  @Column({ type: 'boolean', name: 'min_hours_exempt', default: false })
+  minHoursExempt: boolean;
+
   @Column({ nullable: true, name: 'utm_source' })
   utmSource: string;
 

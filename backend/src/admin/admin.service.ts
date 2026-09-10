@@ -248,6 +248,7 @@ export class AdminService implements OnApplicationBootstrap {
       submissionExtensionActive: hasActiveSubmissionExtension(
         user.submissionExtensionUntil,
       ),
+      minHoursExempt: user.minHoursExempt ?? false,
       perms,
       projects,
       orders,
@@ -1008,6 +1009,36 @@ export class AdminService implements OnApplicationBootstrap {
       submissionExtensionUntil: until,
       submissionExtensionActive: hasActiveSubmissionExtension(until),
     };
+  }
+
+  /**
+   * Grant or revoke this user's exemption from the resubmit flow's minimum
+   * 3-new-hackatime-hours gate (ProjectsService.resubmit). Lets a super admin
+   * push a specific project through review when hours tracking is known-bad
+   * (e.g. an unsynced lapse) instead of hand-crediting pipes and skipping
+   * review entirely.
+   */
+  async setMinHoursExempt(
+    userId: string,
+    exempt: boolean,
+    adminId?: string,
+  ): Promise<{ minHoursExempt: boolean }> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    user.minHoursExempt = exempt;
+    await this.userRepo.save(user);
+
+    const identifier = user.name || user.slackId || user.hcaSub;
+    const label = exempt
+      ? `Exempted ${identifier} from the resubmit minimum-hours gate`
+      : `Revoked ${identifier}'s resubmit minimum-hours exemption`;
+    await this.auditLogService.log(userId, 'admin_min_hours_exempt', label);
+    if (adminId) {
+      await this.auditLogService.log(adminId, 'admin_min_hours_exempt', label);
+    }
+
+    return { minHoursExempt: exempt };
   }
 
   // ── Projects ──

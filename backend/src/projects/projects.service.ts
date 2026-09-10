@@ -742,9 +742,18 @@ export class ProjectsService {
     await this.requireSubmissionAllowed(userId, project);
     await this.requireShipEligibility(userId);
 
+    // Admin escape hatch: bypasses the minimum-new-hours confirmation and the
+    // server-side Hackatime delta check below, for cases where hours tracking
+    // is known-bad but the work itself should still go through normal review.
+    const submitter = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['minHoursExempt'],
+    });
+    const minHoursExempt = submitter?.minHoursExempt ?? false;
+
     // Validate inputs
     const cleanDesc = this.requireString(changeDescription, 'changeDescription', 500);
-    if (!minHoursConfirmed) {
+    if (!minHoursExempt && !minHoursConfirmed) {
       throw new BadRequestException('You must confirm at least 3 hours of work since the last ship');
     }
 
@@ -752,7 +761,7 @@ export class ProjectsService {
     const linkedNames = (project.hackatimeProjectName ?? []).filter((n) => !!n);
     const previousApprovedHours = project.overrideHours ?? 0;
     let hoursSnapshot: number | null = null;
-    if (linkedNames.length > 0) {
+    if (!minHoursExempt && linkedNames.length > 0) {
       await this.hackatimeService.verifyAccountOwnership(hcaSub);
       try {
         const { hours: currentHours } = await this.hackatimeService.getHoursForProjects(
