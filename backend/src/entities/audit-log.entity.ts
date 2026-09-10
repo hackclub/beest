@@ -45,7 +45,7 @@ export const AUDIT_ACTIONS = [
   'admin_settings_change',
   'admin_identity_override',
   'admin_submission_extension',
-  'admin_min_hours_exempt',
+  'admin_unrestricted_access',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

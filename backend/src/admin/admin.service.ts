@@ -248,7 +248,7 @@ export class AdminService implements OnApplicationBootstrap {
       submissionExtensionActive: hasActiveSubmissionExtension(
         user.submissionExtensionUntil,
       ),
-      minHoursExempt: user.minHoursExempt ?? false,
+      unrestrictedAccess: user.unrestrictedAccess ?? false,
       perms,
       projects,
       orders,
@@ -1012,33 +1012,35 @@ export class AdminService implements OnApplicationBootstrap {
   }
 
   /**
-   * Grant or revoke this user's exemption from the resubmit flow's minimum
-   * 3-new-hackatime-hours gate (ProjectsService.resubmit). Lets a super admin
-   * push a specific project through review when hours tracking is known-bad
-   * (e.g. an unsynced lapse) instead of hand-crediting pipes and skipping
-   * review entirely.
+   * Grant or revoke one builder's indefinite, full exemption from the
+   * post-program shutdown: unlike setSubmissionExtension (14-day window,
+   * shipping/resubmitting only), this also reopens brand-new project
+   * creation and skips the resubmit flow's minimum-new-hackatime-hours
+   * check, with no expiry. Reserve for cases where hours tracking or
+   * timing is known-bad but the work should still go through normal
+   * review rather than a manual pipes grant.
    */
-  async setMinHoursExempt(
+  async setUnrestrictedAccess(
     userId: string,
-    exempt: boolean,
+    grant: boolean,
     adminId?: string,
-  ): Promise<{ minHoursExempt: boolean }> {
+  ): Promise<{ unrestrictedAccess: boolean }> {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    user.minHoursExempt = exempt;
+    user.unrestrictedAccess = grant;
     await this.userRepo.save(user);
 
     const identifier = user.name || user.slackId || user.hcaSub;
-    const label = exempt
-      ? `Exempted ${identifier} from the resubmit minimum-hours gate`
-      : `Revoked ${identifier}'s resubmit minimum-hours exemption`;
-    await this.auditLogService.log(userId, 'admin_min_hours_exempt', label);
+    const label = grant
+      ? `Granted ${identifier} unrestricted access (create/ship/resubmit, no min-hours check, indefinite)`
+      : `Revoked ${identifier}'s unrestricted access`;
+    await this.auditLogService.log(userId, 'admin_unrestricted_access', label);
     if (adminId) {
-      await this.auditLogService.log(adminId, 'admin_min_hours_exempt', label);
+      await this.auditLogService.log(adminId, 'admin_unrestricted_access', label);
     }
 
-    return { minHoursExempt: exempt };
+    return { unrestrictedAccess: grant };
   }
 
   // ── Projects ──

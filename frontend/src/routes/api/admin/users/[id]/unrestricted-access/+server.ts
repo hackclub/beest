@@ -8,7 +8,7 @@ export const PATCH: RequestHandler = async ({ cookies, params, request }) => {
 	const body = await request.json();
 	return proxyWithRefresh(
 		cookies,
-		`${BACKEND_URL}/api/admin/users/${params.id}/min-hours-exempt`,
+		`${BACKEND_URL}/api/admin/users/${params.id}/unrestricted-access`,
 		{
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },

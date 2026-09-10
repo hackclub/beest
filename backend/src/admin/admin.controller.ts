@@ -212,21 +212,22 @@ export class AdminController {
     return this.adminService.setSubmissionExtension(id, body.grant, adminId);
   }
 
-  // Escape hatch for the resubmit flow's minimum-new-hours gate: lets one
-  // builder's resubmission through review when Hackatime tracking is known-bad
-  // for that stretch of work. Super-Admin only — same tier as pipes/extension.
+  // Full, indefinite escape hatch from the post-program shutdown for one
+  // builder: reopens new-project creation and ship/resubmit with no expiry,
+  // and skips the resubmit flow's minimum-new-hours gate. Super-Admin only —
+  // stronger than the 14-day submission extension, so it sits a tier above it.
   @UseGuards(SuperAdminGuard)
-  @Patch('users/:id/min-hours-exempt')
-  async setMinHoursExempt(
+  @Patch('users/:id/unrestricted-access')
+  async setUnrestrictedAccess(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { exempt?: boolean },
+    @Body() body: { grant?: boolean },
     @Req() req: Request,
   ) {
-    if (typeof body.exempt !== 'boolean') {
-      throw new BadRequestException('exempt (boolean) is required');
+    if (typeof body.grant !== 'boolean') {
+      throw new BadRequestException('grant (boolean) is required');
     }
     const adminId = (req as any).user?.uid;
-    return this.adminService.setMinHoursExempt(id, body.exempt, adminId);
+    return this.adminService.setUnrestrictedAccess(id, body.grant, adminId);
   }
 
   @UseGuards(SuperAdminGuard)

@@ -32,8 +32,9 @@
 		// Post-shutdown shipping reprieve; null when the user has never had one.
 		submissionExtensionUntil: string | null;
 		submissionExtensionActive: boolean;
-		// Exempts this user from the resubmit flow's minimum-new-hours gate.
-		minHoursExempt: boolean;
+		// Indefinite full exemption from the post-program shutdown: create/ship/
+		// resubmit with no expiry, and skips the resubmit min-hours check too.
+		unrestrictedAccess: boolean;
 		pipes: number;
 		activeSessions: number;
 		projects: { id: string; name: string; status: string; projectType: string; createdAt: string }[];
@@ -1302,29 +1303,32 @@
 	}
 
 	/**
-	 * Escape hatch for the resubmit flow's minimum-3-new-hours gate. Use when
-	 * Hackatime tracking is known-bad for a builder's update but the work should
-	 * still go through normal review instead of a manual pipes adjustment.
+	 * Full, indefinite escape hatch from the post-program shutdown for one
+	 * builder: unlike the 2-week submission extension, this also reopens
+	 * brand-new project creation and skips the resubmit flow's minimum
+	 * 3-new-hours check, with no expiry. Use when hours tracking or timing is
+	 * known-bad but the work should still go through normal review instead of
+	 * a manual pipes adjustment.
 	 */
-	async function setMinHoursExempt(exempt: boolean) {
+	async function setUnrestrictedAccess(grant: boolean) {
 		if (!selectedUser) return;
 		const who = selectedUser.name ?? selectedUser.hcaSub;
-		const prompt = exempt
-			? `Exempt ${who} from the resubmit minimum-hours gate?\n\nTheir next resubmit will skip the "3+ new hackatime hours" check entirely.`
-			: `Revoke ${who}'s minimum-hours exemption?`;
+		const prompt = grant
+			? `Grant ${who} unrestricted access?\n\nThey'll be able to create new projects and ship/resubmit indefinitely, and their next resubmit will skip the "3+ new hackatime hours" check entirely. No expiry — revoke manually when done.`
+			: `Revoke ${who}'s unrestricted access?`;
 		if (!confirm(prompt)) return;
-		actionLoading = 'min-hours-exempt';
+		actionLoading = 'unrestricted-access';
 		try {
-			const res = await fetch(`/api/admin/users/${selectedUser.id}/min-hours-exempt`, {
+			const res = await fetch(`/api/admin/users/${selectedUser.id}/unrestricted-access`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ exempt })
+				body: JSON.stringify({ grant })
 			});
 			if (res.ok) {
 				await selectUser(selectedUser);
 			} else {
 				const err = await res.json().catch(() => ({}));
-				alert(`Min-hours exemption failed: ${err.message ?? res.statusText}`);
+				alert(`Unrestricted access change failed: ${err.message ?? res.statusText}`);
 			}
 		} finally {
 			actionLoading = '';
@@ -2424,23 +2428,23 @@
 											{/if}
 										</div>
 
-										<!-- Per-project resubmit gate override: skip the "3+ new hackatime
-										     hours" check on this builder's next resubmit. Use when hours
-										     tracking is known-bad but the work should still hit review. -->
+										<!-- Full, indefinite bypass of the post-program shutdown: unlike the
+										     extension above, this also reopens new-project creation and
+										     skips the resubmit min-hours check, with no expiry. -->
 										<div class="extension-action">
-											{#if userDetail.minHoursExempt}
+											{#if userDetail.unrestrictedAccess}
 												<p class="extension-status active">
-													Exempt from the resubmit minimum-hours gate
+													Unrestricted access — create/ship/resubmit, no min-hours check, no expiry
 												</p>
-												<button class="btn btn-ban" onclick={() => setMinHoursExempt(false)} disabled={actionLoading !== ''}>
-													{actionLoading === 'min-hours-exempt' ? 'Revoking...' : 'Revoke Min-Hours Exemption'}
+												<button class="btn btn-ban" onclick={() => setUnrestrictedAccess(false)} disabled={actionLoading !== ''}>
+													{actionLoading === 'unrestricted-access' ? 'Revoking...' : 'Revoke Unrestricted Access'}
 												</button>
 											{:else}
 												<p class="extension-status">
-													Resubmits still require 3+ new hackatime hours since last approval.
+													Cannot create new projects; resubmits still require 3+ new hackatime hours since last approval.
 												</p>
-												<button class="btn btn-promote" onclick={() => setMinHoursExempt(true)} disabled={actionLoading !== ''}>
-													{actionLoading === 'min-hours-exempt' ? 'Granting...' : 'Exempt from Min-Hours Gate'}
+												<button class="btn btn-promote" onclick={() => setUnrestrictedAccess(true)} disabled={actionLoading !== ''}>
+													{actionLoading === 'unrestricted-access' ? 'Granting...' : 'Grant Unrestricted Access'}
 												</button>
 											{/if}
 										</div>
