@@ -11,12 +11,15 @@
     html, body { margin: 0; width: 100%; height: 100%; }
     body { display: grid; place-items: center; background: #ebe7df; color: #514b46; }
     .certificate { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: #f5f0e6 url('{{BACKGROUND}}') center / cover no-repeat; font-family: Georgia, 'Times New Roman', serif; }
-    .shade { position: absolute; inset: 0; background: rgba(248, 246, 239, .2); }
-    .content { position: relative; z-index: 1; min-height: 100%; padding: 7.2vh 8.5vw 4.5vh; text-align: center; display: flex; flex-direction: column; align-items: center; }
+    .shade { position: absolute; inset: 0; background: rgba(248, 246, 239, .34); z-index: 1; }
+    .gear { position: absolute; z-index: 1; width: min(21vw, 300px); opacity: .42; filter: drop-shadow(0 2px 3px rgba(81, 75, 70, .24)); }
+    .gear-top-left { top: -6.5vh; left: -4.8vw; transform: rotate(-24deg); }
+    .gear-bottom-right { right: -4.6vw; bottom: -6.2vh; transform: rotate(33deg); }
+    .content { position: relative; z-index: 2; min-height: 100%; padding: 7.2vh 8.5vw 4.5vh; text-align: center; display: flex; flex-direction: column; align-items: center; }
     .brands { display: flex; align-items: center; gap: 19px; color: #4c4641; font-family: 'Stone Breaker', Arial, sans-serif; font-weight: 900; }
     .hack { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 17px; background: linear-gradient(135deg, #ff7b38, #ec2760); color: #fff; font: 800 43px/1 Arial, sans-serif; }
     .times { color: #888077; font-size: 30px; }
-    .beest { font-family: 'Stone Breaker', Impact, 'Arial Narrow', sans-serif; font-size: 42px; letter-spacing: 1px; color: #504a45; text-shadow: 2px 2px 0 #fff; }
+    .beest-logo { display: block; width: 170px; height: auto; filter: drop-shadow(2px 2px 0 rgba(255, 255, 255, .8)); }
     .eyebrow { margin-top: 24px; font: 700 13px/1 Arial, sans-serif; letter-spacing: .28em; color: #78a8ca; }
     h1 { margin: 7px 0 0; font-family: 'Stone Breaker', Impact, 'Arial Narrow', sans-serif; font-size: clamp(37px, 4vw, 62px); letter-spacing: .04em; line-height: .92; color: #484641; text-transform: uppercase; }
     .intro { margin-top: 24px; font-size: 20px; font-style: italic; color: #817a70; }
@@ -24,25 +27,25 @@
     .rule { width: 56%; border-top: 2px solid rgba(191, 167, 125, .63); }
     .summary { max-width: 800px; margin: 22px 0 18px; font-size: clamp(15px, 1.55vw, 21px); line-height: 1.45; color: #6d675f; }
     .award { width: min(720px, 76vw); padding: 15px 20px; border: 2px solid #7fa6c4; border-radius: 13px; background: rgba(249, 247, 241, .62); font-size: clamp(15px, 1.4vw, 20px); line-height: 1.45; color: #69645d; }
-    .recognition { width: min(980px, 86vw); margin-top: auto; overflow: hidden; border: 1px solid rgba(127, 117, 106, .35); border-radius: 16px; background: rgba(255, 255, 255, .73); }
+    .recognition { width: min(900px, 82vw); margin-top: 24px; overflow: hidden; border: 1px solid rgba(127, 117, 106, .35); border-radius: 16px; background: rgba(255, 255, 255, .73); }
     .recognition img { display: block; width: 100%; height: auto; }
-    .signature { align-self: flex-start; width: 230px; margin: 17px 0 0 12%; text-align: center; color: #817a70; }
+    .signature { align-self: center; width: 230px; margin: 17px 0 10px; text-align: center; color: #817a70; }
     .signature .name { height: 32px; border-bottom: 1px solid #7b756d; font: 700 28px/1 'Comic Sans MS', 'Bradley Hand', cursive; color: #594c50; }.signature .label { margin-top: 7px; font: 700 10px/1 'Stone Breaker', Arial, sans-serif; letter-spacing: .18em; }
-    .certno { position: absolute; right: 7vw; bottom: 4vh; font: 700 10px/1.2 Arial, sans-serif; color: #716b63; letter-spacing: .08em; }
-    .verification-qr { position: absolute; right: 6.2vw; bottom: 11vh; z-index: 2; width: 106px; padding: 7px; border: 2px solid #ec2760; border-radius: 12px; background: rgba(249, 246, 238, .96); box-shadow: 3px 3px 0 rgba(120, 168, 202, .55); text-align: center; }
+    .certno { position: absolute; right: 6.2vw; bottom: 4.5vh; width: 120px; text-align: center; font: 700 10px/1.2 Arial, sans-serif; color: #716b63; letter-spacing: .08em; }
+    .verification-qr { position: absolute; right: 6.2vw; bottom: 9.8vh; z-index: 2; width: 106px; padding: 7px; border: 2px solid #ec2760; border-radius: 12px; background: rgba(249, 246, 238, .96); box-shadow: 3px 3px 0 rgba(120, 168, 202, .55); text-align: center; }
     .verification-qr img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
     .verification-qr span { display: block; margin-top: 4px; color: #594c50; font: 800 7px/1.1 Arial, sans-serif; letter-spacing: .11em; text-transform: uppercase; }
     @media print { .certificate { width: 100vw; height: 100vh; } }
   </style>
 </head>
 <body>
-  <main class="certificate"><div class="shade"></div><section class="content">
-    <div class="brands"><span class="hack">h</span><span class="times">×</span><span class="beest">BEEST</span></div>
+  <main class="certificate"><div class="shade"></div><img class="gear gear-top-left" src="{{GEAR_ICON}}" alt="" aria-hidden="true"><img class="gear gear-bottom-right" src="{{GEAR_ICON}}" alt="" aria-hidden="true"><section class="content">
+    <div class="brands"><span class="hack">h</span><span class="times">×</span><img class="beest-logo" src="{{BEEST_LOGO}}" alt="Beest"></div>
     <div class="eyebrow">CERTIFICATE OF</div><h1>COMPLETION</h1><div class="intro">this certifies that</div><div class="recipient">{{NAME}}</div><div class="rule"></div>
     <p class="summary">has successfully completed the Beest by Hack Club qualification, shipping real project.</p>
     <div class="award">This certificate recognizes that they received <strong>{{AWARD}}</strong>, earned through <strong>{{HOURS}}</strong> of fulfilled Beest shop purchases.</div>
-    <section class="recognition"><img src="{{RECOGNITION_LOGOS}}" alt="Recognized by MIT, GitHub, AMD, Girls Who Code, and the Congressional App Challenge"></section>
-    <section class="signature"><div class="name">Euan Ripper</div><div class="label">ORGANIZER SIGNATURE</div></section><div class="certno">CERTIFICATE NO. {{CERTNO}}</div><aside class="verification-qr"><img src="{{VERIFY_QR}}" alt="Scan to verify certificate {{CERTNO}}"><span>Scan to verify</span></aside>
+    <section class="signature"><div class="name">Euan Ripper</div><div class="label">ORGANIZER SIGNATURE</div></section>
+    <section class="recognition"><img src="{{RECOGNITION_LOGOS}}" alt="Recognized by MIT, GitHub, AMD, Girls Who Code, and the Congressional App Challenge"></section><div class="certno">CERTIFICATE NO. {{CERTNO}}</div><aside class="verification-qr"><img src="{{VERIFY_QR}}" alt="Scan to verify certificate {{CERTNO}}"><span>Scan to verify</span></aside>
   </section></main>
 </body>
 </html>

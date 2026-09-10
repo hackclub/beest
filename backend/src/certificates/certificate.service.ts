@@ -669,17 +669,38 @@ export class CertificateService {
     const templatePath = resolve(process.cwd(), 'example-certificate.html');
 
     if (existsSync(templatePath)) {
-      const backgroundPath = resolve(
+      const assetPackBackgroundPath = resolve(
+        process.cwd(),
+        '..',
+        'asset pack',
+        'hero-without-layer6.webp',
+      );
+      const fallbackBackgroundPath = resolve(
         process.cwd(),
         'certificate-background-v2.png',
       );
+      const backgroundPath = existsSync(assetPackBackgroundPath)
+        ? assetPackBackgroundPath
+        : fallbackBackgroundPath;
       const stoneBreakerPath = resolve(process.cwd(), 'stone-breaker.woff2');
       const recognitionLogosPath = resolve(
         process.cwd(),
         'certificate-recognition-logos.png',
       );
+      const gearIconPath = resolve(
+        process.cwd(),
+        '..',
+        'asset pack',
+        'gear-icon.svg',
+      );
+      const beestLogoPath = resolve(
+        process.cwd(),
+        '..',
+        'asset pack',
+        'beest-logo.webp',
+      );
       const background = existsSync(backgroundPath)
-        ? `data:image/png;base64,${readFileSync(backgroundPath).toString('base64')}`
+        ? `data:${backgroundPath.endsWith('.webp') ? 'image/webp' : 'image/png'};base64,${readFileSync(backgroundPath).toString('base64')}`
         : '';
       const stoneBreakerFont = existsSync(stoneBreakerPath)
         ? `data:font/woff2;base64,${readFileSync(stoneBreakerPath).toString('base64')}`
@@ -687,12 +708,20 @@ export class CertificateService {
       const recognitionLogos = existsSync(recognitionLogosPath)
         ? `data:image/png;base64,${readFileSync(recognitionLogosPath).toString('base64')}`
         : '';
+      const gearIcon = existsSync(gearIconPath)
+        ? `data:image/svg+xml;base64,${readFileSync(gearIconPath).toString('base64')}`
+        : '';
+      const beestLogo = existsSync(beestLogoPath)
+        ? `data:image/webp;base64,${readFileSync(beestLogoPath).toString('base64')}`
+        : '';
       let html = readFileSync(templatePath, 'utf8')
         .replaceAll('{{NAME}}', name)
         .replaceAll('{{AWARD}}', displayAward)
         .replaceAll('{{HOURS}}', `${pipes}hrs`)
         .replaceAll('{{CERTNO}}', number)
         .replaceAll('{{BACKGROUND}}', background)
+        .replaceAll('{{GEAR_ICON}}', gearIcon)
+        .replaceAll('{{BEEST_LOGO}}', beestLogo)
         .replaceAll('{{STONE_BREAKER_FONT}}', stoneBreakerFont)
         .replaceAll('{{RECOGNITION_LOGOS}}', recognitionLogos)
         .replaceAll('{{VERIFY_QR}}', verificationQr);
