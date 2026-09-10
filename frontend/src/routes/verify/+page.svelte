@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   type VerificationResult = {
     certificateNumber: string;
     recipientName: string;
@@ -12,6 +13,14 @@
   let loading = false;
   let result: VerificationResult = null;
   let error = '';
+
+  onMount(() => {
+    const number = new URLSearchParams(window.location.search).get('certificate')?.trim();
+    if (!number) return;
+
+    certificateNumber = number;
+    void verifyCertificate();
+  });
 
   async function verifyCertificate() {
     const key = certificateNumber.trim();

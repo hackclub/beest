@@ -28,7 +28,10 @@
     .recognition img { display: block; width: 100%; height: auto; }
     .signature { align-self: flex-start; width: 230px; margin: 17px 0 0 12%; text-align: center; color: #817a70; }
     .signature .name { height: 32px; border-bottom: 1px solid #7b756d; font: 700 28px/1 'Comic Sans MS', 'Bradley Hand', cursive; color: #594c50; }.signature .label { margin-top: 7px; font: 700 10px/1 'Stone Breaker', Arial, sans-serif; letter-spacing: .18em; }
-    .certno { position: absolute; right: 7vw; bottom: 4vh; font: 700 10px/1.2 Arial, sans-serif; color: #716b63; letter-spacing: .08em; }
+    .certno { position: absolute; left: 7vw; bottom: 4vh; font: 700 10px/1.2 Arial, sans-serif; color: #716b63; letter-spacing: .08em; }
+    .verification-qr { position: absolute; right: 6.2vw; bottom: 3.2vh; z-index: 2; width: 106px; padding: 7px; border: 2px solid #ec2760; border-radius: 12px; background: rgba(249, 246, 238, .96); box-shadow: 3px 3px 0 rgba(120, 168, 202, .55); text-align: center; }
+    .verification-qr img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+    .verification-qr span { display: block; margin-top: 4px; color: #594c50; font: 800 7px/1.1 Arial, sans-serif; letter-spacing: .11em; text-transform: uppercase; }
     @media print { .certificate { width: 100vw; height: 100vh; } }
   </style>
 </head>
@@ -39,7 +42,7 @@
     <p class="summary">has successfully completed the Beest by Hack Club qualification, shipping real project.</p>
     <div class="award">This certificate recognizes that they received <strong>{{AWARD}}</strong>, earned through <strong>{{HOURS}}</strong> of fulfilled Beest shop purchases.</div>
     <section class="recognition"><img src="{{RECOGNITION_LOGOS}}" alt="Recognized by MIT, GitHub, AMD, Girls Who Code, and the Congressional App Challenge"></section>
-    <section class="signature"><div class="name">Euan Ripper</div><div class="label">ORGANIZER SIGNATURE</div></section><div class="certno">CERTIFICATE NO. {{CERTNO}}</div>
+    <section class="signature"><div class="name">Euan Ripper</div><div class="label">ORGANIZER SIGNATURE</div></section><div class="certno">CERTIFICATE NO. {{CERTNO}}</div><aside class="verification-qr"><img src="{{VERIFY_QR}}" alt="Scan to verify certificate {{CERTNO}}"><span>Scan to verify</span></aside>
   </section></main>
 </body>
 </html>

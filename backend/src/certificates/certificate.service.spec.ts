@@ -294,8 +294,8 @@ describe('CertificateService', () => {
   });
 
   describe('generateCertificateHtml', () => {
-    it('fills named placeholders from the packaged template', () => {
-      const html = service.generateCertificateHtml({
+    it('fills named placeholders from the packaged template', async () => {
+      const html = await service.generateCertificateHtml({
         id: 'cert-uuid-1',
         recipientName: 'Ada Lovelace',
         approvedHours: 42,
@@ -309,10 +309,13 @@ describe('CertificateService', () => {
       expect(html).toContain('Soldering Kit');
       expect(html).toContain('42hrs');
       expect(html).toContain('CERT-2026-ABC123');
+      expect(html).toContain('class="verification-qr"');
+      expect(html).toContain('data:image/png;base64,');
       expect(html).not.toContain('{{NAME}}');
       expect(html).not.toContain('{{AWARD}}');
       expect(html).not.toContain('{{HOURS}}');
       expect(html).not.toContain('{{CERTNO}}');
+      expect(html).not.toContain('{{VERIFY_QR}}');
     });
   });
 });

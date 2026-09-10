@@ -70,6 +70,13 @@
             <span class="seal" aria-hidden="true">✦</span>
             <span class="issued">Issued {formatDate(cert.createdAt)}</span>
           </div>
+          <div class="certificate-preview">
+            <img
+              src={`/api/certificates/${cert.id}/thumbnail`}
+              alt={`Certificate for ${cert.recipientName}`}
+              loading="lazy"
+            />
+          </div>
           <div class="card-body">
             <p class="kicker">Certificate of achievement</p>
             <h2>{cert.awardItem}</h2>
@@ -121,6 +128,8 @@
   .card-top { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; border-bottom: 1px solid rgba(75,72,64,.22); }
   .seal { display: grid; place-items: center; width: 28px; height: 28px; background: #c48382; color: #fff6e6; border-radius: 50%; }
   .issued { color: #756e61; font-size: 11px; font-weight: 700; }
+  .certificate-preview { aspect-ratio: 1.414 / 1; overflow: hidden; background: #f5f0e6; border-bottom: 1px solid rgba(75,72,64,.22); }
+  .certificate-preview img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
   .card-body { padding: 25px 20px 18px; flex: 1; }
   .demo-badge { display:inline-block; margin:2px 0 0; padding:3px 7px; border-radius:999px; background:#c48382; color:#fff6e6; font-size:10px; font-weight:900; text-transform:uppercase; letter-spacing:.09em; }
   .card-body h2 { margin: 9px 0 18px; color: #38362f; font-size: 25px; line-height: 1.08; }

@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Raw, Repository } from 'typeorm';
 import * as puppeteer from 'puppeteer';
+import * as QRCode from 'qrcode';
 import { randomUUID } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
@@ -328,7 +329,7 @@ export class CertificateService {
    * Generate PDF for the certificate
    */
   async generateCertificatePdf(certificate: Certificate): Promise<Buffer> {
-    const html = this.generateCertificateHtml(certificate);
+    const html = await this.generateCertificateHtml(certificate);
 
     let browser: puppeteer.Browser | null = null;
     try {
@@ -361,7 +362,7 @@ export class CertificateService {
    * Generate a PNG screenshot for the certificate HTML.
    */
   async generateCertificatePng(certificate: Certificate): Promise<Buffer> {
-    const html = this.generateCertificateHtml(certificate);
+    const html = await this.generateCertificateHtml(certificate);
     let browser: puppeteer.Browser | null = null;
     try {
       browser = await puppeteer.launch({
@@ -648,7 +649,7 @@ export class CertificateService {
    * The issued certificate template. This intentionally matches
    * backend/example-certificate.html, which is packaged with the backend image.
    */
-  generateCertificateHtml(certificate: Certificate): string {
+  async generateCertificateHtml(certificate: Certificate): Promise<string> {
     const name = this.escapeHtml(certificate.recipientName);
     const award = this.escapeHtml(certificate.awardItem);
     const number = this.escapeHtml(certificate.certificateNumber);
@@ -656,6 +657,13 @@ export class CertificateService {
     const isGrant = certificate.isGrant;
     const grantVal = certificate.grantValue ?? (isGrant ? pipes * 5 : null);
     const displayAward = grantVal !== null ? `${award} ($${grantVal} USD Grant)` : award;
+    const verificationUrl = this.getVerificationUrl(certificate.certificateNumber);
+    const verificationQr = await QRCode.toDataURL(verificationUrl, {
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      width: 260,
+      color: { dark: '#514b46', light: '#F9F6EE' },
+    });
 
     // The template is packaged with the backend image (see backend/Dockerfile).
     const templatePath = resolve(process.cwd(), 'example-certificate.html');
@@ -686,7 +694,8 @@ export class CertificateService {
         .replaceAll('{{CERTNO}}', number)
         .replaceAll('{{BACKGROUND}}', background)
         .replaceAll('{{STONE_BREAKER_FONT}}', stoneBreakerFont)
-        .replaceAll('{{RECOGNITION_LOGOS}}', recognitionLogos);
+        .replaceAll('{{RECOGNITION_LOGOS}}', recognitionLogos)
+        .replaceAll('{{VERIFY_QR}}', verificationQr);
 
       return html;
     }
@@ -702,9 +711,23 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;pad
 .certificate{position:relative;width:min(1050px,100%);aspect-ratio:1.414/1;overflow:hidden;border-radius:18px;background:linear-gradient(180deg,#fff 0%,var(--paper) 100%);box-shadow:0 28px 60px rgba(0,0,0,.22);border:1px solid rgba(17,17,20,.08)}
 .brand{top:26px;left:30px;line-height:.95;z-index:1;position:absolute}.flag{width:124px;display:block}.beest{display:block;font-size:44px;font-weight:900;color:var(--ink);text-transform:lowercase}
 .main{position:relative;z-index:1;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;text-align:center;padding:78px 40px 72px}.eyebrow{color:rgba(17,17,20,.56);letter-spacing:.32em;font-size:11px;text-transform:uppercase}.title{margin-top:6px;font-family:'Stone Breaker',Impact,'Arial Narrow',Arial,sans-serif;font-size:clamp(54px,7.2vw,80px);line-height:.92;color:var(--ink);text-transform:uppercase}.recipient{margin-top:10px;font-family:'Brush Script MT',cursive;font-size:clamp(50px,7.4vw,82px);color:var(--red)}.body-copy{max-width:760px;margin-top:12px;font-size:clamp(15px,1.65vw,19px);color:rgba(17,17,20,.9);font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}
-.footer-signatures{display:flex;justify-content:center;gap:82px;margin-top:24px}.signature-line{width:150px;height:34px;margin:0 auto 4px;border-bottom:1px solid rgba(239,51,64,.55)}.certificate-no{position:absolute;left:28px;bottom:72px;padding:8px 10px;border-radius:14px;border:1px dashed rgba(239,51,64,.45);background:rgba(255,255,255,.86)}
+.footer-signatures{display:flex;justify-content:center;gap:82px;margin-top:24px}.signature-line{width:150px;height:34px;margin:0 auto 4px;border-bottom:1px solid rgba(239,51,64,.55)}.certificate-no{position:absolute;left:28px;bottom:72px;padding:8px 10px;border-radius:14px;border:1px dashed rgba(239,51,64,.45);background:rgba(255,255,255,.86)}.verification-qr{position:absolute;right:28px;bottom:24px;width:116px;padding:8px;border:2px solid var(--red);border-radius:12px;background:rgba(255,255,255,.94);box-shadow:4px 4px 0 rgba(120,168,202,.45);text-align:center}.verification-qr img{display:block;width:100%;height:auto;image-rendering:pixelated}.verification-qr span{display:block;margin-top:4px;color:rgba(17,17,20,.72);font-size:8px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
 @media print{body{padding:0;background:#fff}.certificate{width:100vw;max-width:none;border-radius:0;box-shadow:none}}
-</style></head><body><div class="certificate"><div class="brand"><img class="flag" src="https://camo.githubusercontent.com/952e19cabf08f8b6b181def3e9c7476d3b50ee6668f0af1e93931d8f4082ce0f/68747470733a2f2f6173736574732e6861636b636f6d2f666c61672d7374616e64616c6f6e652e737667" alt="Hack Club flag"><span class="beest">beest</span></div><div class="main"><div class="eyebrow">Hack Club Recognition</div><div class="title">Certificate</div><div class="intro">This certificate is proudly presented to</div><div class="recipient">${name}</div><div class="body-copy">${bodyCopyText}</div><div class="footer-signatures"><div class="signature"><div class="signature-line"></div><div class="signature-name">Euan Ripper</div><div class="signature-role"><strong>Euan Ripper</strong><br>Organizer<br>YSWS</div></div><div class="signature"><div class="signature-line"></div><div class="signature-name">Zach Latta</div><div class="signature-role"><strong>Zach Latta</strong><br>CEO<br>Hack Club</div></div></div></div><div class="certificate-no"><div class="label">Certificate No.</div><div class="number">${number}</div></div></div></body></html>`;
+</style></head><body><div class="certificate"><div class="brand"><img class="flag" src="https://camo.githubusercontent.com/952e19cabf08f8b6b181def3e9c7476d3b50ee6668f0af1e93931d8f4082ce0f/68747470733a2f2f6173736574732e6861636b636f6d2f666c61672d7374616e64616c6f6e652e737667" alt="Hack Club flag"><span class="beest">beest</span></div><div class="main"><div class="eyebrow">Hack Club Recognition</div><div class="title">Certificate</div><div class="intro">This certificate is proudly presented to</div><div class="recipient">${name}</div><div class="body-copy">${bodyCopyText}</div><div class="footer-signatures"><div class="signature"><div class="signature-line"></div><div class="signature-name">Euan Ripper</div><div class="signature-role"><strong>Euan Ripper</strong><br>Organizer<br>YSWS</div></div><div class="signature"><div class="signature-line"></div><div class="signature-name">Zach Latta</div><div class="signature-role"><strong>Zach Latta</strong><br>CEO<br>Hack Club</div></div></div></div><div class="certificate-no"><div class="label">Certificate No.</div><div class="number">${number}</div></div><aside class="verification-qr"><img src="${verificationQr}" alt="Scan to verify certificate ${number}"><span>Scan to verify</span></aside></div></body></html>`;
+  }
+
+  /** Create a stable public URL that opens the verifier for this certificate. */
+  private getVerificationUrl(certificateNumber: string): string {
+    try {
+      const url = new URL(
+        '/verify',
+        process.env.FRONTEND_URL ?? 'https://beest.hackclub.com',
+      );
+      url.searchParams.set('certificate', certificateNumber);
+      return url.toString();
+    } catch {
+      return `https://beest.hackclub.com/verify?certificate=${encodeURIComponent(certificateNumber)}`;
+    }
   }
 
   private escapeHtml(value: string): string {

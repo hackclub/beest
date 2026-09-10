@@ -130,7 +130,7 @@ export class CertificateController {
       throw new ForbiddenException('You do not own this certificate');
     }
 
-    const html = this.certificateService.generateCertificateHtml(certificate);
+    const html = await this.certificateService.generateCertificateHtml(certificate);
     res.type('text/html').send(html);
   }
 
