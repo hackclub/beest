@@ -19,3 +19,7 @@ The preview uses sample certificate data:
 - Award: Arduino Starter Kit
 - Cost: 150 Pipes
 - Certificate number: CERT-2026-DEMO001
+
+Normal-item certificates aggregate fulfilled non-grant shop orders for one user.
+They are issued after the combined total exceeds 30 Pipes and list each
+distinct purchased item name.

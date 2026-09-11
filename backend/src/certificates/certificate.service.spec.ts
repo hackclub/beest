@@ -42,7 +42,7 @@ describe('CertificateService', () => {
 
     orderRepo = {
       findOne: jest.fn(),
-      find: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
     };
 
     userRepo = {
@@ -92,6 +92,7 @@ describe('CertificateService', () => {
       };
 
       orderRepo.findOne.mockResolvedValue(order);
+      orderRepo.find.mockResolvedValue([order]);
       certificateRepo.findOne.mockResolvedValue(null);
 
       const cert = await service.generateCertificateForOrder('order-1');
@@ -108,7 +109,43 @@ describe('CertificateService', () => {
       );
     });
 
-    it('should not generate a certificate for a non-grant shop order costing 30 Pipes or less', async () => {
+    it('should aggregate fulfilled normal items and list each item name', async () => {
+      const firstOrder: Partial<Order> = {
+        id: 'order-15',
+        userId: 'user-uuid-1',
+        itemName: 'Keyboard',
+        pipesSpent: 15,
+        status: 'fulfilled',
+        certificateRequested: true,
+        shopItem: { isGrant: false } as any,
+        user: mockUser as any,
+      };
+      const secondOrder: Partial<Order> = {
+        id: 'order-16',
+        userId: 'user-uuid-1',
+        itemName: 'Mouse',
+        pipesSpent: 16,
+        status: 'fulfilled',
+        certificateRequested: true,
+        shopItem: { isGrant: false } as any,
+        user: mockUser as any,
+      };
+
+      orderRepo.findOne.mockResolvedValue(secondOrder);
+      orderRepo.find.mockResolvedValue([firstOrder, secondOrder]);
+      certificateRepo.findOne.mockResolvedValue(null);
+
+      const cert = await service.generateCertificateForOrder(secondOrder.id!);
+
+      expect(cert?.approvedHours).toBe(31);
+      expect(certificateRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ awardItem: 'Keyboard, Mouse' }),
+      );
+      expect(cert?.awardItem).toBe('Keyboard, Mouse');
+      expect(cert?.certificateText).toContain('Keyboard, Mouse');
+    });
+
+    it('should not generate a certificate for normal items totaling 30 Pipes or less', async () => {
       const order: Partial<Order> = {
         id: 'order-30',
         userId: 'user-uuid-1',
@@ -121,6 +158,7 @@ describe('CertificateService', () => {
       };
 
       orderRepo.findOne.mockResolvedValue(order);
+      orderRepo.find.mockResolvedValue([order]);
 
       await expect(service.generateCertificateForOrder('order-30')).resolves.toBeNull();
       expect(certificateRepo.save).not.toHaveBeenCalled();

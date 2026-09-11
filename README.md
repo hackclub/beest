@@ -138,8 +138,8 @@ All endpoints live under the backend at `/api`. Auth-protected routes require a 
 
 This repository includes a certificates feature used to generate, persist and verify participation/fulfilment certificates.
 
-- Generation: certificates are created server-side when an order is fulfilled (idempotent per order).
-- Storage: certificates are persisted in the database with a unique `certificate_number` (format `CERT-<YEAR>-<random-id>`), `recipient_name`, `approved_hours`, `award_item`, and `certificate_text`.
+- Generation: certificates are created server-side after a fulfilled order is requested. Fulfilled non-grant orders are aggregated per user once their combined value exceeds 30 Pipes; the certificate lists the purchased item names. Grant orders remain aggregated per user and grant item.
+- Storage: certificates are persisted in the database with a unique `certificate_number` (format `CERT-<YEAR>-<random-id>`), `recipient_name`, `approved_hours`, `award_item`, and `certificate_text`. The database allows one aggregate normal-item certificate per user and one grant certificate per user and grant item.
 - PDF: certificates are rendered server-side from HTML to PDF (Puppeteer) in landscape A4.
 
 Key files and routes:
@@ -150,7 +150,7 @@ Key files and routes:
 
 How to use locally:
 - Fulfil an order via the backend `ShopService` flow to trigger certificate generation. Generation is idempotent (re-running for the same order will not create duplicates).
-- To backfill certificates for an existing user, sign in on the frontend; the site layout calls `POST /api/certificates/sync` to create any missing certificates for fulfilled orders.
+- To backfill certificates for an existing user, sign in on the frontend; the site layout calls `POST /api/certificates/sync` to create or update aggregate certificates for fulfilled orders.
 - Public verification: open the frontend verify page and enter a certificate number, or call the backend `GET /api/certificates/verify/:certificateNumber` directly.
 
 Optional: signature images
