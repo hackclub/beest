@@ -9,6 +9,7 @@
 		id: string;
 		name: string;
 		playbackUrl: string;
+		pageUrl: string;
 		thumbnailUrl: string | null;
 		duration: number | null;
 		createdAt: number | null;
@@ -21,6 +22,19 @@
 	let timelapses = $state<Timelapse[]>([]);
 	let loaded = $state(false);
 	let lastProjectId = $state<string | null>(null);
+	let copiedId = $state<string | null>(null);
+
+	async function copyLink(t: Timelapse) {
+		try {
+			await navigator.clipboard.writeText(t.pageUrl);
+			copiedId = t.id;
+			setTimeout(() => {
+				if (copiedId === t.id) copiedId = null;
+			}, 1500);
+		} catch {
+			// clipboard denied — nothing to fall back to here
+		}
+	}
 
 	async function load(id: string) {
 		loaded = false;
@@ -81,6 +95,9 @@
 						{#if t.createdAt}
 							<span class="muted"> · {fmtDate(t.createdAt)}</span>
 						{/if}
+						<button class="tl-copy-btn" type="button" onclick={() => copyLink(t)}>
+							{copiedId === t.id ? 'Copied!' : 'Copy link'}
+						</button>
 					</div>
 					<video
 						controls
@@ -131,6 +148,20 @@
 	}
 	.muted {
 		opacity: 0.65;
+	}
+	.tl-copy-btn {
+		margin-left: 0.5rem;
+		padding: 0.05rem 0.5rem;
+		font-size: 0.75rem;
+		border: 1px solid currentColor;
+		border-radius: 3px;
+		background: transparent;
+		color: inherit;
+		cursor: pointer;
+		opacity: 0.75;
+	}
+	.tl-copy-btn:hover {
+		opacity: 1;
 	}
 	video {
 		width: 100%;
