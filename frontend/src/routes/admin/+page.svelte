@@ -3992,6 +3992,13 @@
 															{s.createdAt ? formatDate(s.createdAt) : 'recent'}
 															{#if s.status !== 'complete'} · {s.status}{/if}
 														</span>
+														{#if s.status === 'complete'}
+															<button type="button" class="copy-link-btn"
+																disabled={mirrorLoadingKey === `lookout-${s.id}`}
+																onclick={() => copyLookoutLink(`lookout-${s.id}`, s.id)}>
+																{copiedKey === `lookout-${s.id}` ? 'Copied!' : mirrorLoadingKey === `lookout-${s.id}` ? 'Copying...' : 'Copy link'}
+															</button>
+														{/if}
 													</div>
 												</div>
 											{/each}
@@ -4001,10 +4008,17 @@
 
 								{#if projectDevlogs.length > 0}
 									<hr class="proj-divider" />
-									<h4 class="reviews-heading">
-										Devlogs ({projectDevlogs.length})
-										{#if devlogApprovedHours > 0}<span class="devlog-approved-total"> · {Math.round(devlogApprovedHours * 10) / 10}h approved into project</span>{/if}
-									</h4>
+									<div class="devlogs-heading-row">
+										<h4 class="reviews-heading">
+											Devlogs ({projectDevlogs.length})
+											{#if devlogApprovedHours > 0}<span class="devlog-approved-total"> · {Math.round(devlogApprovedHours * 10) / 10}h approved into project</span>{/if}
+										</h4>
+										<button type="button" class="copy-link-btn"
+											disabled={copyAllDevlogsLoading}
+											onclick={() => selectedProject && copyAllDevlogs(selectedProject.id)}>
+											{copiedKey === 'devlogs-all' ? 'Copied!' : copyAllDevlogsLoading ? 'Copying...' : 'Copy all devlogs'}
+										</button>
+									</div>
 									<div class="devlogs-list">
 										{#each projectDevlogs as dl}
 											<div class="devlog-card">
@@ -4033,6 +4047,12 @@
 															<video controls preload="metadata" poster={dl.lookout.thumbnailUrl ?? undefined} src={dl.lookout.videoUrl}>
 																<track kind="captions" />
 															</video>
+															{@const lookoutId = dl.lookout.id}
+															<button type="button" class="copy-link-btn"
+																disabled={mirrorLoadingKey === `devlog-lookout-${lookoutId}`}
+																onclick={() => copyLookoutLink(`devlog-lookout-${lookoutId}`, lookoutId)}>
+																{copiedKey === `devlog-lookout-${lookoutId}` ? 'Copied!' : mirrorLoadingKey === `devlog-lookout-${lookoutId}` ? 'Copying...' : 'Copy link'}
+															</button>
 														{:else}
 															<span class="devlog-lookout-pending"> · timelapse not finished yet</span>
 														{/if}
