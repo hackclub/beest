@@ -541,6 +541,13 @@ export class AdminController {
     return this.devlogsService.findByProject(id, isSuperAdmin);
   }
 
+  /** Plain-text export of every devlog on a project for the "Copy all devlogs" button. */
+  @UseGuards(ReviewerGuard)
+  @Get('projects/:id/devlogs/export')
+  async exportProjectDevlogs(@Param('id', ParseUUIDPipe) id: string) {
+    return { text: await this.devlogsService.buildDevlogsExport(id) };
+  }
+
   @UseGuards(ReviewerGuard)
   @Patch('devlogs/:id/review')
   reviewDevlog(
@@ -563,6 +570,15 @@ export class AdminController {
   @Get('projects/:id/lookout')
   getProjectLookout(@Param('id', ParseUUIDPipe) id: string) {
     return this.lookoutService.listForProjectReview(id);
+  }
+
+  /** Mirrors a Lookout session's video to cdn.hackclub.com for the "copy link" button — signed Lookout URLs expire, the cdn one doesn't. */
+  @UseGuards(ReviewerGuard)
+  @Post('lookout-sessions/:id/mirror')
+  async mirrorLookoutSession(@Param('id', ParseUUIDPipe) id: string) {
+    const url = await this.lookoutService.mirrorSessionToCdn(id);
+    if (!url) throw new BadRequestException('Timelapse not ready to mirror yet');
+    return { url };
   }
 
   @UseGuards(ReviewerGuard)

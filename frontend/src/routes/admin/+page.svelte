@@ -395,6 +395,7 @@
 		text: string;
 		imageUrls: string[];
 		lookout: {
+			id: string;
 			status: string;
 			trackedSeconds: number | null;
 			videoUrl: string | null;
@@ -2031,6 +2032,46 @@
 			copiedKey = key;
 			setTimeout(() => { if (copiedKey === key) copiedKey = ''; }, 1200);
 		} catch { /* clipboard blocked */ }
+	}
+
+	let mirrorLoadingKey = $state('');
+
+	// Mirrors a Lookout session to a permanent cdn.hackclub.com URL (signed
+	// Lookout URLs expire) then copies that URL to the clipboard.
+	async function copyLookoutLink(key: string, sessionId: string) {
+		mirrorLoadingKey = key;
+		try {
+			const res = await fetch(`/api/admin/lookout-sessions/${sessionId}/mirror`, { method: 'POST' });
+			if (!res.ok) return;
+			const data = await res.json().catch(() => null);
+			if (typeof data?.url !== 'string') return;
+			await navigator.clipboard.writeText(data.url);
+			copiedKey = key;
+			setTimeout(() => { if (copiedKey === key) copiedKey = ''; }, 1200);
+		} catch {
+			// mirror or clipboard failed — nothing to fall back to
+		} finally {
+			mirrorLoadingKey = '';
+		}
+	}
+
+	let copyAllDevlogsLoading = $state(false);
+
+	async function copyAllDevlogs(projectId: string) {
+		copyAllDevlogsLoading = true;
+		try {
+			const res = await fetch(`/api/admin/projects/${projectId}/devlogs/export`);
+			if (!res.ok) return;
+			const data = await res.json().catch(() => null);
+			if (typeof data?.text !== 'string') return;
+			await navigator.clipboard.writeText(data.text);
+			copiedKey = 'devlogs-all';
+			setTimeout(() => { if (copiedKey === 'devlogs-all') copiedKey = ''; }, 1200);
+		} catch {
+			// export or clipboard failed — nothing to fall back to
+		} finally {
+			copyAllDevlogsLoading = false;
+		}
 	}
 
 	let fulfillmentItemOptions = $derived([...new Set(fulfillmentOrders.map(o => o.itemName))].sort());
@@ -3951,6 +3992,13 @@
 															{s.createdAt ? formatDate(s.createdAt) : 'recent'}
 															{#if s.status !== 'complete'} · {s.status}{/if}
 														</span>
+														{#if s.status === 'complete'}
+															<button type="button" class="copy-link-btn"
+																disabled={mirrorLoadingKey === `lookout-${s.id}`}
+																onclick={() => copyLookoutLink(`lookout-${s.id}`, s.id)}>
+																{copiedKey === `lookout-${s.id}` ? 'Copied!' : mirrorLoadingKey === `lookout-${s.id}` ? 'Copying...' : 'Copy link'}
+															</button>
+														{/if}
 													</div>
 												</div>
 											{/each}
@@ -3960,10 +4008,17 @@
 
 								{#if projectDevlogs.length > 0}
 									<hr class="proj-divider" />
-									<h4 class="reviews-heading">
-										Devlogs ({projectDevlogs.length})
-										{#if devlogApprovedHours > 0}<span class="devlog-approved-total"> · {Math.round(devlogApprovedHours * 10) / 10}h approved into project</span>{/if}
-									</h4>
+									<div class="devlogs-heading-row">
+										<h4 class="reviews-heading">
+											Devlogs ({projectDevlogs.length})
+											{#if devlogApprovedHours > 0}<span class="devlog-approved-total"> · {Math.round(devlogApprovedHours * 10) / 10}h approved into project</span>{/if}
+										</h4>
+										<button type="button" class="copy-link-btn"
+											disabled={copyAllDevlogsLoading}
+											onclick={() => selectedProject && copyAllDevlogs(selectedProject.id)}>
+											{copiedKey === 'devlogs-all' ? 'Copied!' : copyAllDevlogsLoading ? 'Copying...' : 'Copy all devlogs'}
+										</button>
+									</div>
 									<div class="devlogs-list">
 										{#each projectDevlogs as dl}
 											<div class="devlog-card">
@@ -3992,6 +4047,12 @@
 															<video controls preload="metadata" poster={dl.lookout.thumbnailUrl ?? undefined} src={dl.lookout.videoUrl}>
 																<track kind="captions" />
 															</video>
+															{@const lookoutId = dl.lookout.id}
+															<button type="button" class="copy-link-btn"
+																disabled={mirrorLoadingKey === `devlog-lookout-${lookoutId}`}
+																onclick={() => copyLookoutLink(`devlog-lookout-${lookoutId}`, lookoutId)}>
+																{copiedKey === `devlog-lookout-${lookoutId}` ? 'Copied!' : mirrorLoadingKey === `devlog-lookout-${lookoutId}` ? 'Copying...' : 'Copy link'}
+															</button>
 														{:else}
 															<span class="devlog-lookout-pending"> · timelapse not finished yet</span>
 														{/if}
@@ -6161,6 +6222,35 @@
 		margin-top: 0.35rem;
 		background: #000;
 		border-radius: 4px;
+	}
+
+	.copy-link-btn {
+		border: 1px solid rgba(147, 180, 205, 0.35);
+		background: rgba(147, 180, 205, 0.08);
+		color: #93b4cd;
+		padding: 0.28rem 0.65rem;
+		border-radius: 6px;
+		font: inherit;
+		font-size: 0.78rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		cursor: pointer;
+	}
+
+	.copy-link-btn:hover:not(:disabled) {
+		background: rgba(147, 180, 205, 0.16);
+	}
+
+	.copy-link-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.devlogs-heading-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
 	}
 
 	.devlog-card-image-btn {

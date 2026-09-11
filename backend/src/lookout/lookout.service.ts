@@ -217,6 +217,74 @@ export class LookoutService {
     }
 
     /**
+     * Downloads a completed session's video from Lookout and re-uploads it to
+     * cdn.hackclub.com, the same host devlog screenshots use, so the review
+     * text keeps working after Lookout prunes the session or rotates its
+     * signed media URLs. Idempotent — returns the existing cdn_url if already
+     * mirrored; returns null if the session isn't complete yet or the mirror
+     * fails (never throws, this is a best-effort export helper).
+     */
+    async mirrorSessionToCdn(sessionRowId: string): Promise<string | null> {
+        const row = await this.sessionRepo.findOne({ where: { id: sessionRowId } });
+        if (!row) return null;
+        if (row.cdnUrl) return row.cdnUrl;
+        if (!this.configured) return null;
+
+        const cdnApiKey = this.config.get<string>('CDN_API_KEY');
+        if (!cdnApiKey) {
+            this.logger.warn('CDN_API_KEY not set - cannot mirror Lookout video');
+            return null;
+        }
+
+        const info = await this.getSessionInfo(row);
+        if (!info || !info.videoUrl) return null;
+
+        let videoRes: Response;
+        try {
+            videoRes = await fetchWithTimeout(info.videoUrl, {
+                headers: { 'X-API-Key': this.apiKey! },
+                timeoutMs: 60_000,
+            });
+        } catch (err) {
+            this.logger.warn(`Lookout video download error: ${err}`);
+            return null;
+        }
+        if (!videoRes.ok) {
+            this.logger.warn(`Lookout video download failed: ${videoRes.status}`);
+            return null;
+        }
+        const buffer = Buffer.from(await videoRes.arrayBuffer());
+
+        const blob = new Blob([new Uint8Array(buffer)], { type: 'video/mp4' });
+        const formData = new FormData();
+        formData.append('file', blob, `lookout-${row.lookoutSessionId}.mp4`);
+
+        let uploadRes: Response;
+        try {
+            uploadRes = await fetchWithTimeout('https://cdn.hackclub.com/api/v4/upload', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${cdnApiKey}` },
+                body: formData,
+                timeoutMs: 60_000,
+            });
+        } catch (err) {
+            this.logger.warn(`CDN upload error for lookout session ${row.id}: ${err}`);
+            return null;
+        }
+        if (!uploadRes.ok) {
+            this.logger.warn(`CDN upload failed for lookout session ${row.id}: ${uploadRes.status}`);
+            return null;
+        }
+        const data = await uploadRes.json().catch(() => null);
+        const cdnUrl = typeof data?.url === 'string' ? data.url : null;
+        if (!cdnUrl) return null;
+
+        row.cdnUrl = cdnUrl;
+        await this.sessionRepo.save(row);
+        return cdnUrl;
+    }
+
+    /**
      * Resolve the attached session for each devlog id. Devlogs without a session
      * never hit the Lookout API. Keyed by `devlogId`.
      */

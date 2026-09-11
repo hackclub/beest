@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { LookoutModule } from '../lookout/lookout.module';
+import { LapseModule } from '../lapse/lapse.module';
 import { Devlog } from '../entities/devlog.entity';
 import { Project } from '../entities/project.entity';
 import { DevlogsController } from './devlogs.controller';
@@ -13,6 +14,7 @@ import { DevlogsService } from './devlogs.service';
     AuthModule,
     AuditLogModule,
     LookoutModule,
+    LapseModule,
     TypeOrmModule.forFeature([Devlog, Project]),
   ],
   controllers: [DevlogsController],
