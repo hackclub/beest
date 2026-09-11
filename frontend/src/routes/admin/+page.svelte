@@ -6224,6 +6224,35 @@
 		border-radius: 4px;
 	}
 
+	.copy-link-btn {
+		border: 1px solid rgba(147, 180, 205, 0.35);
+		background: rgba(147, 180, 205, 0.08);
+		color: #93b4cd;
+		padding: 0.28rem 0.65rem;
+		border-radius: 6px;
+		font: inherit;
+		font-size: 0.78rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		cursor: pointer;
+	}
+
+	.copy-link-btn:hover:not(:disabled) {
+		background: rgba(147, 180, 205, 0.16);
+	}
+
+	.copy-link-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.devlogs-heading-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
 	.devlog-card-image-btn {
 		padding: 0;
 		border: 0;
