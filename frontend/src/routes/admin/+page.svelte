@@ -395,6 +395,7 @@
 		text: string;
 		imageUrls: string[];
 		lookout: {
+			id: string;
 			status: string;
 			trackedSeconds: number | null;
 			videoUrl: string | null;
@@ -2031,6 +2032,46 @@
 			copiedKey = key;
 			setTimeout(() => { if (copiedKey === key) copiedKey = ''; }, 1200);
 		} catch { /* clipboard blocked */ }
+	}
+
+	let mirrorLoadingKey = $state('');
+
+	// Mirrors a Lookout session to a permanent cdn.hackclub.com URL (signed
+	// Lookout URLs expire) then copies that URL to the clipboard.
+	async function copyLookoutLink(key: string, sessionId: string) {
+		mirrorLoadingKey = key;
+		try {
+			const res = await fetch(`/api/admin/lookout-sessions/${sessionId}/mirror`, { method: 'POST' });
+			if (!res.ok) return;
+			const data = await res.json().catch(() => null);
+			if (typeof data?.url !== 'string') return;
+			await navigator.clipboard.writeText(data.url);
+			copiedKey = key;
+			setTimeout(() => { if (copiedKey === key) copiedKey = ''; }, 1200);
+		} catch {
+			// mirror or clipboard failed — nothing to fall back to
+		} finally {
+			mirrorLoadingKey = '';
+		}
+	}
+
+	let copyAllDevlogsLoading = $state(false);
+
+	async function copyAllDevlogs(projectId: string) {
+		copyAllDevlogsLoading = true;
+		try {
+			const res = await fetch(`/api/admin/projects/${projectId}/devlogs/export`);
+			if (!res.ok) return;
+			const data = await res.json().catch(() => null);
+			if (typeof data?.text !== 'string') return;
+			await navigator.clipboard.writeText(data.text);
+			copiedKey = 'devlogs-all';
+			setTimeout(() => { if (copiedKey === 'devlogs-all') copiedKey = ''; }, 1200);
+		} catch {
+			// export or clipboard failed — nothing to fall back to
+		} finally {
+			copyAllDevlogsLoading = false;
+		}
 	}
 
 	let fulfillmentItemOptions = $derived([...new Set(fulfillmentOrders.map(o => o.itemName))].sort());
