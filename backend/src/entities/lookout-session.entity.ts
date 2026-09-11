@@ -34,6 +34,14 @@ export class LookoutSession {
     @Column({ name: 'devlog_id', type: 'uuid', nullable: true })
     devlogId: string | null;
 
+    /**
+     * Permanent CDN mirror of the Lookout video, uploaded on first "copy
+     * devlog links" export so review text keeps working after Lookout's own
+     * media URLs expire or the session is pruned.
+     */
+    @Column({ name: 'cdn_url', type: 'text', nullable: true })
+    cdnUrl: string | null;
+
     @ManyToOne(() => Devlog, { onDelete: 'SET NULL', nullable: true })
     @JoinColumn({ name: 'devlog_id' })
     devlog: Devlog | null;
