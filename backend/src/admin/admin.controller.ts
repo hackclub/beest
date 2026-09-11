@@ -572,6 +572,15 @@ export class AdminController {
     return this.lookoutService.listForProjectReview(id);
   }
 
+  /** Mirrors a Lookout session's video to cdn.hackclub.com for the "copy link" button — signed Lookout URLs expire, the cdn one doesn't. */
+  @UseGuards(ReviewerGuard)
+  @Post('lookout-sessions/:id/mirror')
+  async mirrorLookoutSession(@Param('id', ParseUUIDPipe) id: string) {
+    const url = await this.lookoutService.mirrorSessionToCdn(id);
+    if (!url) throw new BadRequestException('Timelapse not ready to mirror yet');
+    return { url };
+  }
+
   @UseGuards(ReviewerGuard)
   @Get('review-leaderboard')
   getReviewLeaderboard(@Req() req: Request) {
