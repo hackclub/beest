@@ -541,6 +541,13 @@ export class AdminController {
     return this.devlogsService.findByProject(id, isSuperAdmin);
   }
 
+  /** Plain-text export of every devlog on a project for the "Copy all devlogs" button. */
+  @UseGuards(ReviewerGuard)
+  @Get('projects/:id/devlogs/export')
+  async exportProjectDevlogs(@Param('id', ParseUUIDPipe) id: string) {
+    return { text: await this.devlogsService.buildDevlogsExport(id) };
+  }
+
   @UseGuards(ReviewerGuard)
   @Patch('devlogs/:id/review')
   reviewDevlog(
