@@ -3,6 +3,15 @@
 
   let { data }: { data: PageData } = $props();
   let certificates = $derived(data.certificates);
+  let orders = $state(data.orders ?? []);
+  let claimingOrderId = $state<string | null>(null);
+  let claimError = $state('');
+  const eligibleOrders = $derived(
+    orders.filter(
+      (order: { status: string; certificateRequested: boolean | null }) =>
+        order.status === 'fulfilled' && order.certificateRequested !== true,
+    ),
+  );
 
   const navItems = [
     { label: 'Projects', href: '/projects', mobile: true, icon: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>' },
@@ -29,6 +38,29 @@
     return new Date(date).toLocaleDateString('en-US', {
       day: 'numeric', month: 'short', year: 'numeric'
     });
+  }
+
+  async function claimCertificate(orderId: string) {
+    if (claimingOrderId) return;
+    claimingOrderId = orderId;
+    claimError = '';
+    try {
+      const response = await fetch(`/api/shop/orders/${orderId}/certificate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requested: true }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        claimError = body.message ?? 'Could not claim your certificate.';
+        return;
+      }
+      window.location.reload();
+    } catch {
+      claimError = 'Network error. Please try again.';
+    } finally {
+      claimingOrderId = null;
+    }
   }
 </script>
 
@@ -61,6 +93,27 @@
     <h1>My certificates</h1>
     <p>Proof of the things you earned through Beest. Certificates are issued only after you request one for an eligible fulfilled shop order.</p>
   </header>
+
+  {#if !data.eligible}
+    <section class="eligibility-card">
+      <h2>You are not eligible yet</h2>
+      <p>You have {data.fulfilledPipes} fulfilled Pipes. Earn more than 30 Pipes through fulfilled shop purchases to claim a certificate.</p>
+      <a class="button" href="/shop">Go buy something</a>
+    </section>
+  {:else if eligibleOrders.length}
+    <section class="eligibility-card">
+      <h2>Your certificate is ready to claim</h2>
+      <p>Choose a fulfilled order below to create your certificate.</p>
+      {#if claimError}<p class="claim-error">{claimError}</p>{/if}
+      <div class="claim-list">
+        {#each eligibleOrders as order (order.id)}
+          <button class="claim-button" type="button" onclick={() => claimCertificate(order.id)} disabled={claimingOrderId !== null}>
+            {claimingOrderId === order.id ? 'Claiming…' : `Claim ${order.itemName} certificate`}
+          </button>
+        {/each}
+      </div>
+    </section>
+  {/if}
 
   <section class="certificate-grid" aria-label="Your certificates">
     {#if certificates.length}
@@ -95,7 +148,7 @@
           </footer>
         </article>
       {/each}
-    {:else}
+    {:else if data.eligible}
       <div class="empty-state">
         <div class="empty-mark" aria-hidden="true">✦</div>
         <h2>No certificates yet</h2>
@@ -141,5 +194,12 @@
   button, .button { border: 2px solid #4b4840; border-radius: 3px; padding: 10px 12px; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; text-align: center; }
   button { flex: 1; } .secondary { background: transparent; color: #4b4840; } .primary, .button { background: #c48382; color: #fff6e6; box-shadow: 2px 2px 0 #4b4840; } button:hover, .button:hover { transform: translateY(-1px); filter: brightness(1.05); }
   .empty-state { max-width: 600px; padding: 44px 28px; text-align: center; } .empty-mark { color: #c48382; font-size: 36px; } .empty-state h2 { margin: 10px 0; } .empty-state p { color: #635a4e; margin: 0 auto 24px; max-width: 40ch; line-height: 1.5; }
+  .eligibility-card { max-width: 700px; margin-bottom: 28px; padding: 24px; background: #eee4d3; color: #38362f; border: 2px solid #c9ae77; box-shadow: 6px 7px 0 rgba(35,33,29,.28); }
+  .eligibility-card h2 { margin: 0 0 8px; font-size: 24px; }
+  .eligibility-card p { margin: 0 0 18px; line-height: 1.5; }
+  .claim-list { display: grid; gap: 10px; }
+  .claim-button { width: 100%; background: #c48382; color: #fff6e6; box-shadow: 2px 2px 0 #4b4840; }
+  .claim-button:disabled { opacity: .6; cursor: wait; }
+  .claim-error { color: #a3293a; font-weight: 700; }
   @media (max-width: 900px) { .sidebar { position:fixed; top:auto; width:100%; height:auto; bottom:0; background:#4b4840; border-top:1px solid rgba(230,244,254,.1); } .sidebar-panel { position:static; width:100%; height:auto; background:transparent; } .sidebar-content { padding:0; height:auto; overflow:visible; } .sidebar-brand,.teeth { display:none; } .sidebar-nav { flex-direction:row; justify-content:space-around; width:100%; padding:6px 4px; gap:0; } .sidebar-nav li { flex:1 1 0; min-width:0; display:flex; } .mobile-only-hide { display:none; } .nav-btn { flex-direction:column; justify-content:center; gap:4px; padding:10px 2px 12px; font-size:clamp(10px,2.6vw,13px); line-height:1; letter-spacing:.02em; border-width:2px; border-bottom-width:4px; white-space:nowrap; min-width:0; } .nav-icon { width:20px; height:20px; } .page { margin-left:0; padding:36px 18px 96px; } }
 </style>
