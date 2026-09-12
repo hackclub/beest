@@ -1919,6 +1919,7 @@
 		quantity: number;
 		pipesSpent: number;
 		status: string;
+		certificateRequested: boolean | null;
 		hcbCardGrantId: string | null;
 		siloGrantId: string | null;
 		isGrant: boolean;
@@ -3035,6 +3036,7 @@
 								<th>User</th>
 								<th>Qty</th>
 								<th>Pipes</th>
+								<th>Certificate</th>
 								<th>Status</th>
 								<th>Waiting</th>
 								<th>Actions</th>
@@ -3053,6 +3055,7 @@
 									</td>
 									<td>{order.quantity}</td>
 									<td>{order.pipesSpent}</td>
+									<td>{order.certificateRequested === true ? 'Requested' : order.certificateRequested === false ? 'Declined' : order.status === 'fulfilled' ? 'Awaiting reply' : '—'}</td>
 									<td><span class="status-badge" class:status-pending={order.status === 'pending'} class:status-fulfilled={order.status === 'fulfilled'} class:status-cancelled={order.status === 'cancelled'}>{order.status}</span></td>
 									<td>{order.pendingSince !== null ? formatPendingTime(order.pendingSince) : '—'}</td>
 									<td class="fulfillment-actions" onclick={(e) => e.stopPropagation()}>
@@ -3103,7 +3106,7 @@
 								</tr>
 								{#if isOpen}
 									<tr class="order-detail-row">
-										<td colspan="7">
+									<td colspan="8">
 											{#if detail === 'loading' || detail === undefined}
 												<div class="order-detail-loading">Loading order detail...</div>
 											{:else if detail === 'error'}
