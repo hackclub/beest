@@ -97,7 +97,7 @@
   {#if !data.eligible}
     <section class="eligibility-card">
       <h2>You are not eligible yet</h2>
-      <p>You have {data.fulfilledPipes} fulfilled Pipes. Buy and receive more than 30 Pipes worth of shop orders to get a certificate.</p>
+      <p>You have {data.fulfilledPipes} fulfilled Pipes. Buy and receive at least 30 Pipes worth of shop orders to get a certificate.</p>
       <a class="button" href="/shop">Go buy something</a>
     </section>
   {:else if claimableOrders.length}

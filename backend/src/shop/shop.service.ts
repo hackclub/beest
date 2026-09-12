@@ -540,7 +540,16 @@ export class ShopService {
 
     order.certificateRequested = requested;
     await this.orderRepo.save(order);
-    if (requested) await this.certificateService.generateCertificateForOrder(order.id);
+    if (requested) {
+      const certificate = await this.certificateService.generateCertificateForOrder(order.id);
+      if (!certificate) {
+        order.certificateRequested = null;
+        await this.orderRepo.save(order);
+        throw new BadRequestException(
+          'You need at least 30 fulfilled Pipes for this certificate type',
+        );
+      }
+    }
 
     return { success: true, certificateRequested: order.certificateRequested };
   }

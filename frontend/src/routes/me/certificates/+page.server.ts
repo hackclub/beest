@@ -21,5 +21,5 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
       0,
     );
 
-  return { certificates, orders, fulfilledPipes, eligible: fulfilledPipes > 30 };
+  return { certificates, orders, fulfilledPipes, eligible: fulfilledPipes >= 30 };
 };

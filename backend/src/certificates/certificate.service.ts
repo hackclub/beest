@@ -32,10 +32,12 @@ export class CertificateService {
 
   /**
    * Generate or update a certificate for an order.
-   * - For regular shop items: generates 1 certificate per fulfilled order when
-   *   that order cost more than 30 Pipes.
+   * - For regular shop items: aggregates all fulfilled non-grant orders for
+   *   the user and generates or updates 1 certificate when the total reaches
+   *   30 Pipes.
    * - For grant items: aggregates all fulfilled grant orders of the same item name
-   *   for the user. Only generates/updates a certificate if total aggregated pipes > 30.
+   *   for the user. Only generates/updates a certificate if total aggregated pipes
+   *   reaches 30.
    *   The grant value is calculated as $5 * total pipe number.
    */
   async generateCertificateForOrder(
@@ -97,10 +99,10 @@ export class CertificateService {
         0,
       );
 
-      // Certificates are awarded only after more than 30 Pipes have been spent.
-      if (totalPipes <= 30) {
+      // Certificates are awarded once at least 30 Pipes have been spent.
+      if (totalPipes < 30) {
         this.logger.debug(
-          `Skipping certificate generation for grant "${order.itemName}": total pipes (${totalPipes}) is not > 30`,
+          `Skipping certificate generation for grant "${order.itemName}": total pipes (${totalPipes}) is below 30`,
         );
         return null;
       }
@@ -207,35 +209,82 @@ export class CertificateService {
     }
 
     // --- Non-grant order certificate logic ---
-    if (order.pipesSpent <= 30) {
+    const userOrders = await this.orderRepo.find({
+      where: { userId: order.userId, status: 'fulfilled' },
+      relations: ['shopItem'],
+    });
+    const matchingNormalOrders = userOrders.filter(
+      (candidate) =>
+        !(
+          candidate.shopItem?.isGrant ||
+          candidate.hcbCardGrantId ||
+          candidate.siloGrantId ||
+          candidate.itemName.toLowerCase().includes('grant')
+        ),
+    );
+    const totalPipes = matchingNormalOrders.reduce(
+      (sum, candidate) => sum + candidate.pipesSpent,
+      0,
+    );
+
+    if (totalPipes < 30) {
       this.logger.debug(
-        `Skipping certificate generation for order ${order.id}: ${order.pipesSpent} Pipes is not > 30`,
+        `Skipping certificate generation for user ${order.userId}: ${totalPipes} Pipes is less than 30`,
       );
       return null;
     }
 
     const existingCertificate = await this.certificateRepo.findOne({
-      where: { orderId },
+      where: { userId: order.userId, isGrant: false },
     });
     if (existingCertificate) {
-      return existingCertificate;
+      const awardItem = [
+        ...new Set(matchingNormalOrders.map((candidate) => candidate.itemName.trim())),
+      ].join(', ');
+      const certificateText = this.formatCertificateText(
+        recipientName,
+        totalPipes,
+        awardItem,
+      );
+      const changed =
+        existingCertificate.recipientName !== recipientName ||
+        existingCertificate.approvedHours !== totalPipes ||
+        existingCertificate.awardItem !== awardItem ||
+        existingCertificate.certificateText !== certificateText;
+
+      if (!changed) return existingCertificate;
+
+      existingCertificate.recipientName = recipientName;
+      existingCertificate.approvedHours = totalPipes;
+      existingCertificate.awardItem = awardItem;
+      existingCertificate.certificateText = certificateText;
+      const updated = await this.certificateRepo.save(existingCertificate);
+      await this.auditLogService.log(
+        order.userId,
+        'certificate_updated',
+        `Certificate updated for ${awardItem}: ${totalPipes} Pipes`,
+      );
+      return updated;
     }
 
-    const approvedHours = order.pipesSpent;
+    const approvedHours = totalPipes;
+    const awardItem = [
+      ...new Set(matchingNormalOrders.map((candidate) => candidate.itemName.trim())),
+    ].join(', ');
     const certificateNumber = await this.generateCertificateNumber();
     const certificateText = this.formatCertificateText(
       recipientName,
       approvedHours,
-      order.itemName,
+      awardItem,
       false,
     );
 
     const certificate = this.certificateRepo.create({
       userId: order.userId,
-      orderId: order.id,
+      orderId: matchingNormalOrders[0]?.id ?? order.id,
       recipientName,
       approvedHours,
-      awardItem: order.itemName,
+      awardItem,
       isGrant: false,
       certificateNumber,
       certificateText,
