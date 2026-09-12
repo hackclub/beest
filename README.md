@@ -134,4 +134,26 @@ All endpoints live under the backend at `/api`. Auth-protected routes require a 
 
 ---
 
+## Certificates
+
+This repository includes a certificates feature used to generate, persist and verify participation/fulfilment certificates.
+
+- Generation: certificates are created server-side when an order is fulfilled (idempotent per order).
+- Storage: certificates are persisted in the database with a unique `certificate_number` (format `CERT-<YEAR>-<random-id>`), `recipient_name`, `approved_hours`, `award_item`, and `certificate_text`.
+- PDF: certificates are rendered server-side from HTML to PDF (Puppeteer) in landscape A4.
+
+Key files and routes:
+- Backend service: `backend/src/certificates/certificate.service.ts` (generation, HTML/PDF renderer, `syncCertificatesForUser`).
+- Backend controller: `backend/src/certificates/certificate.controller.ts` — public verify endpoint `GET /api/certificates/verify/:certificateNumber` and authenticated sync `POST /api/certificates/sync`.
+- Frontend verify page: `frontend/src/routes/verify/+page.svelte` and proxy `frontend/src/routes/api/certificates/verify/[certificateNumber]/+server.ts` (public lookup UI).
+- Preview template: `frontend/static/example-certificate.html` (visual template used for previewing the certificate design).
+
+How to use locally:
+- Fulfil an order via the backend `ShopService` flow to trigger certificate generation. Generation is idempotent (re-running for the same order will not create duplicates).
+- To backfill certificates for an existing user, sign in on the frontend; the site layout calls `POST /api/certificates/sync` to create any missing certificates for fulfilled orders.
+- Public verification: open the frontend verify page and enter a certificate number, or call the backend `GET /api/certificates/verify/:certificateNumber` directly.
+
+Optional: signature images
+- The certificate template and generator support swapping the stylized handwritten signature text for actual signature images. Provide image URLs and I can wire them into `example-certificate.html` and `backend/src/certificates/certificate.service.ts`.
+
 Made with &#60;3 by [euan](https://github.com/EDRipper) , give it a ⭐

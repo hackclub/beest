@@ -22,6 +22,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { RsvpService } from '../rsvp/rsvp.service';
 import { SlackNotifyService } from '../slack/slack-notify.service';
 import { AttendService } from '../attend/attend.service';
+import { CertificateService } from '../certificates/certificate.service';
 import {
   orderPendingDm,
   orderFulfilledDm,
@@ -64,6 +65,7 @@ export class ShopService {
     private readonly rsvpService: RsvpService,
     private readonly slackNotify: SlackNotifyService,
     private readonly attendService: AttendService,
+    private readonly certificateService: CertificateService,
     private readonly configService: ConfigService,
     private readonly hcaService: HcaService,
   ) {}
@@ -523,9 +525,24 @@ export class ShopService {
     const orders = await this.orderRepo.find({
       where: { userId },
       order: { createdAt: 'DESC' },
-      select: ['id', 'itemName', 'quantity', 'pipesSpent', 'status', 'createdAt'],
+      select: ['id', 'itemName', 'quantity', 'pipesSpent', 'status', 'certificateRequested', 'createdAt'],
     });
     return orders;
+  }
+
+  /** Save a buyer's response to the certificate prompt after fulfillment. */
+  async setCertificatePreference(orderId: string, userId: string, requested: boolean) {
+    const order = await this.orderRepo.findOne({ where: { id: orderId, userId } });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'fulfilled') {
+      throw new BadRequestException('A certificate can only be requested after fulfillment');
+    }
+
+    order.certificateRequested = requested;
+    await this.orderRepo.save(order);
+    if (requested) await this.certificateService.generateCertificateForOrder(order.id);
+
+    return { success: true, certificateRequested: order.certificateRequested };
   }
 
   /** Get fulfillment updates for a user */
@@ -577,6 +594,7 @@ export class ShopService {
         'order.status',
         'order.hcbCardGrantId',
         'order.siloGrantId',
+        'order.certificateRequested',
         'order.createdAt',
         'order.updatedAt',
         'user.id',
@@ -616,6 +634,7 @@ export class ShopService {
       status: o.status,
       hcbCardGrantId: o.hcbCardGrantId ?? null,
       siloGrantId: o.siloGrantId ?? null,
+      certificateRequested: o.certificateRequested,
       // Whether this order's item is a grant item — drives the grant options in
       // the fulfillment dashboard. False if the item was since deleted.
       isGrant: !!o.shopItem?.isGrant,
