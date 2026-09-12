@@ -6,6 +6,7 @@ export type TimelapseDTO = {
   id: string;
   name: string;
   playbackUrl: string;
+  pageUrl: string;
   thumbnailUrl: string | null;
   duration: number | null;
   createdAt: number | null;
@@ -97,6 +98,7 @@ export class LapseService {
         id,
         name: typeof t.name === 'string' ? t.name : '',
         playbackUrl,
+        pageUrl: this.timelapsePageUrl(id),
         thumbnailUrl: typeof t.thumbnailUrl === 'string' ? t.thumbnailUrl : null,
         duration: typeof t.duration === 'number' && Number.isFinite(t.duration) ? t.duration : null,
         createdAt: typeof t.createdAt === 'number' && Number.isFinite(t.createdAt) ? t.createdAt : null,

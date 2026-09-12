@@ -66,20 +66,6 @@ export class ShopController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('orders/:id/refund')
-  async refundOwnOrder(
-    @Req() req: Request,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
-    const userId = (req as any).user?.uid;
-    if (!userId) throw new BadRequestException('Not authenticated');
-    return this.shopService.refundOrder(id, {
-      requireUserId: userId,
-      requirePending: true,
-    });
-  }
-
-  @UseGuards(JwtAuthGuard)
   @Post('orders/:id/certificate')
   async setCertificatePreference(
     @Req() req: Request,
@@ -92,6 +78,20 @@ export class ShopController {
       throw new BadRequestException('requested must be a boolean');
     }
     return this.shopService.setCertificatePreference(id, userId, body.requested);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('orders/:id/refund')
+  async refundOwnOrder(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const userId = (req as any).user?.uid;
+    if (!userId) throw new BadRequestException('Not authenticated');
+    return this.shopService.refundOrder(id, {
+      requireUserId: userId,
+      requirePending: true,
+    });
   }
 
   @UseGuards(JwtAuthGuard)

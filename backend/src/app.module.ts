@@ -39,8 +39,8 @@ import { Event } from './entities/event.entity';
 import { FraudReview } from './entities/fraud-review.entity';
 import { HcbCredential } from './entities/hcb-credential.entity';
 import { LookoutSession } from './entities/lookout-session.entity';
-import { Certificate } from './entities/certificate.entity';
 import { AppSetting } from './entities/app-setting.entity';
+import { Certificate } from './entities/certificate.entity';
 import { HealthController } from './health.controller';
 
 @Module({

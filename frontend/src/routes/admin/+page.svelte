@@ -32,6 +32,9 @@
 		// Post-shutdown shipping reprieve; null when the user has never had one.
 		submissionExtensionUntil: string | null;
 		submissionExtensionActive: boolean;
+		// Indefinite full exemption from the post-program shutdown: create/ship/
+		// resubmit with no expiry, and skips the resubmit min-hours check too.
+		unrestrictedAccess: boolean;
 		pipes: number;
 		activeSessions: number;
 		projects: { id: string; name: string; status: string; projectType: string; createdAt: string }[];
@@ -392,6 +395,7 @@
 		text: string;
 		imageUrls: string[];
 		lookout: {
+			id: string;
 			status: string;
 			trackedSeconds: number | null;
 			videoUrl: string | null;
@@ -986,6 +990,19 @@
 		}
 	}
 
+	let pipesStats = $state<{ unspentPipes: number; costToFulfill: number } | null>(null);
+	let pipesStatsLoading = $state(false);
+
+	async function loadPipesStats() {
+		pipesStatsLoading = true;
+		try {
+			const res = await fetch('/api/admin/stats/pipes');
+			if (res.ok) pipesStats = await res.json();
+		} finally {
+			pipesStatsLoading = false;
+		}
+	}
+
 	// One-shot golden backfill for cool builders (Super Admin only).
 	let goldenBackfillBusy = $state(false);
 	let goldenBackfillResult = $state<{ coolBuilders: number; processed: number; skipped: number; projectsMarked: number; dmsSent: number } | null>(null);
@@ -1280,6 +1297,39 @@
 			} else {
 				const err = await res.json().catch(() => ({}));
 				alert(`Submission extension failed: ${err.message ?? res.statusText}`);
+			}
+		} finally {
+			actionLoading = '';
+		}
+	}
+
+	/**
+	 * Full, indefinite escape hatch from the post-program shutdown for one
+	 * builder: unlike the 2-week submission extension, this also reopens
+	 * brand-new project creation and skips the resubmit flow's minimum
+	 * 3-new-hours check, with no expiry. Use when hours tracking or timing is
+	 * known-bad but the work should still go through normal review instead of
+	 * a manual pipes adjustment.
+	 */
+	async function setUnrestrictedAccess(grant: boolean) {
+		if (!selectedUser) return;
+		const who = selectedUser.name ?? selectedUser.hcaSub;
+		const prompt = grant
+			? `Grant ${who} unrestricted access?\n\nThey'll be able to create new projects and ship/resubmit indefinitely, and their next resubmit will skip the "3+ new hackatime hours" check entirely. No expiry — revoke manually when done.`
+			: `Revoke ${who}'s unrestricted access?`;
+		if (!confirm(prompt)) return;
+		actionLoading = 'unrestricted-access';
+		try {
+			const res = await fetch(`/api/admin/users/${selectedUser.id}/unrestricted-access`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ grant })
+			});
+			if (res.ok) {
+				await selectUser(selectedUser);
+			} else {
+				const err = await res.json().catch(() => ({}));
+				alert(`Unrestricted access change failed: ${err.message ?? res.statusText}`);
 			}
 		} finally {
 			actionLoading = '';
@@ -1869,7 +1919,6 @@
 		quantity: number;
 		pipesSpent: number;
 		status: string;
-		certificateRequested: boolean | null;
 		hcbCardGrantId: string | null;
 		siloGrantId: string | null;
 		isGrant: boolean;
@@ -1983,6 +2032,46 @@
 			copiedKey = key;
 			setTimeout(() => { if (copiedKey === key) copiedKey = ''; }, 1200);
 		} catch { /* clipboard blocked */ }
+	}
+
+	let mirrorLoadingKey = $state('');
+
+	// Mirrors a Lookout session to a permanent cdn.hackclub.com URL (signed
+	// Lookout URLs expire) then copies that URL to the clipboard.
+	async function copyLookoutLink(key: string, sessionId: string) {
+		mirrorLoadingKey = key;
+		try {
+			const res = await fetch(`/api/admin/lookout-sessions/${sessionId}/mirror`, { method: 'POST' });
+			if (!res.ok) return;
+			const data = await res.json().catch(() => null);
+			if (typeof data?.url !== 'string') return;
+			await navigator.clipboard.writeText(data.url);
+			copiedKey = key;
+			setTimeout(() => { if (copiedKey === key) copiedKey = ''; }, 1200);
+		} catch {
+			// mirror or clipboard failed — nothing to fall back to
+		} finally {
+			mirrorLoadingKey = '';
+		}
+	}
+
+	let copyAllDevlogsLoading = $state(false);
+
+	async function copyAllDevlogs(projectId: string) {
+		copyAllDevlogsLoading = true;
+		try {
+			const res = await fetch(`/api/admin/projects/${projectId}/devlogs/export`);
+			if (!res.ok) return;
+			const data = await res.json().catch(() => null);
+			if (typeof data?.text !== 'string') return;
+			await navigator.clipboard.writeText(data.text);
+			copiedKey = 'devlogs-all';
+			setTimeout(() => { if (copiedKey === 'devlogs-all') copiedKey = ''; }, 1200);
+		} catch {
+			// export or clipboard failed — nothing to fall back to
+		} finally {
+			copyAllDevlogsLoading = false;
+		}
 	}
 
 	let fulfillmentItemOptions = $derived([...new Set(fulfillmentOrders.map(o => o.itemName))].sort());
@@ -2165,7 +2254,7 @@
 		if (activeTab === 'users') { loadUsers(); }
 		// Fulfillers see the charts/funnel only — the user-count cards and unreviewed
 		// hours need Super-Admin-only endpoints (/users, /stats/unreviewed-hours).
-		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); loadResubmissionPaused(); }
+		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); loadPipesStats(); loadResubmissionPaused(); }
 		if (activeTab === 'news') loadNews();
 		if (activeTab === 'events') { loadEvents(); loadUsers(); }
 		if (activeTab === 'projects') { loadProjects(); loadProjectHours(); }
@@ -2376,6 +2465,27 @@
 												</p>
 												<button class="btn btn-promote" onclick={() => setSubmissionExtension(true)} disabled={actionLoading !== ''}>
 													{actionLoading === 'submission-extension' ? 'Granting...' : 'Grant 2-Week Submission Extension'}
+												</button>
+											{/if}
+										</div>
+
+										<!-- Full, indefinite bypass of the post-program shutdown: unlike the
+										     extension above, this also reopens new-project creation and
+										     skips the resubmit min-hours check, with no expiry. -->
+										<div class="extension-action">
+											{#if userDetail.unrestrictedAccess}
+												<p class="extension-status active">
+													Unrestricted access — create/ship/resubmit, no min-hours check, no expiry
+												</p>
+												<button class="btn btn-ban" onclick={() => setUnrestrictedAccess(false)} disabled={actionLoading !== ''}>
+													{actionLoading === 'unrestricted-access' ? 'Revoking...' : 'Revoke Unrestricted Access'}
+												</button>
+											{:else}
+												<p class="extension-status">
+													Cannot create new projects; resubmits still require 3+ new hackatime hours since last approval.
+												</p>
+												<button class="btn btn-promote" onclick={() => setUnrestrictedAccess(true)} disabled={actionLoading !== ''}>
+													{actionLoading === 'unrestricted-access' ? 'Granting...' : 'Grant Unrestricted Access'}
 												</button>
 											{/if}
 										</div>
@@ -2598,6 +2708,30 @@
 								{/if}
 							</span>
 							<span class="stat-label">Predicted Approved</span>
+						</div>
+						<div class="stat-card" title="Total pipes currently sitting unspent in user wallets.">
+							<span class="stat-value">
+								{#if pipesStats}
+									{pipesStats.unspentPipes.toLocaleString()}
+								{:else if pipesStatsLoading}
+									…
+								{:else}
+									—
+								{/if}
+							</span>
+							<span class="stat-label">Unspent Pipes</span>
+						</div>
+						<div class="stat-card" title="Estimated pipes owed for all pending (unfulfilled) orders. Estimate — order prices can drift after purchase.">
+							<span class="stat-value">
+								{#if pipesStats}
+									{pipesStats.costToFulfill.toLocaleString()}
+								{:else if pipesStatsLoading}
+									…
+								{:else}
+									—
+								{/if}
+							</span>
+							<span class="stat-label">Cost to Fulfill (est.)</span>
 						</div>
 					{/if}
 				</div>
@@ -2901,7 +3035,6 @@
 								<th>User</th>
 								<th>Qty</th>
 								<th>Pipes</th>
-								<th>Certificate</th>
 								<th>Status</th>
 								<th>Waiting</th>
 								<th>Actions</th>
@@ -2920,7 +3053,6 @@
 									</td>
 									<td>{order.quantity}</td>
 									<td>{order.pipesSpent}</td>
-									<td>{order.certificateRequested === true ? 'Requested' : order.certificateRequested === false ? 'Declined' : order.status === 'fulfilled' ? 'Awaiting reply' : '—'}</td>
 									<td><span class="status-badge" class:status-pending={order.status === 'pending'} class:status-fulfilled={order.status === 'fulfilled'} class:status-cancelled={order.status === 'cancelled'}>{order.status}</span></td>
 									<td>{order.pendingSince !== null ? formatPendingTime(order.pendingSince) : '—'}</td>
 									<td class="fulfillment-actions" onclick={(e) => e.stopPropagation()}>
@@ -2971,7 +3103,7 @@
 								</tr>
 								{#if isOpen}
 									<tr class="order-detail-row">
-									<td colspan="8">
+										<td colspan="7">
 											{#if detail === 'loading' || detail === undefined}
 												<div class="order-detail-loading">Loading order detail...</div>
 											{:else if detail === 'error'}
@@ -3860,6 +3992,13 @@
 															{s.createdAt ? formatDate(s.createdAt) : 'recent'}
 															{#if s.status !== 'complete'} · {s.status}{/if}
 														</span>
+														{#if s.status === 'complete'}
+															<button type="button" class="copy-link-btn"
+																disabled={mirrorLoadingKey === `lookout-${s.id}`}
+																onclick={() => copyLookoutLink(`lookout-${s.id}`, s.id)}>
+																{copiedKey === `lookout-${s.id}` ? 'Copied!' : mirrorLoadingKey === `lookout-${s.id}` ? 'Copying...' : 'Copy link'}
+															</button>
+														{/if}
 													</div>
 												</div>
 											{/each}
@@ -3869,10 +4008,17 @@
 
 								{#if projectDevlogs.length > 0}
 									<hr class="proj-divider" />
-									<h4 class="reviews-heading">
-										Devlogs ({projectDevlogs.length})
-										{#if devlogApprovedHours > 0}<span class="devlog-approved-total"> · {Math.round(devlogApprovedHours * 10) / 10}h approved into project</span>{/if}
-									</h4>
+									<div class="devlogs-heading-row">
+										<h4 class="reviews-heading">
+											Devlogs ({projectDevlogs.length})
+											{#if devlogApprovedHours > 0}<span class="devlog-approved-total"> · {Math.round(devlogApprovedHours * 10) / 10}h approved into project</span>{/if}
+										</h4>
+										<button type="button" class="copy-link-btn"
+											disabled={copyAllDevlogsLoading}
+											onclick={() => selectedProject && copyAllDevlogs(selectedProject.id)}>
+											{copiedKey === 'devlogs-all' ? 'Copied!' : copyAllDevlogsLoading ? 'Copying...' : 'Copy all devlogs'}
+										</button>
+									</div>
 									<div class="devlogs-list">
 										{#each projectDevlogs as dl}
 											<div class="devlog-card">
@@ -3901,6 +4047,12 @@
 															<video controls preload="metadata" poster={dl.lookout.thumbnailUrl ?? undefined} src={dl.lookout.videoUrl}>
 																<track kind="captions" />
 															</video>
+															{@const lookoutId = dl.lookout.id}
+															<button type="button" class="copy-link-btn"
+																disabled={mirrorLoadingKey === `devlog-lookout-${lookoutId}`}
+																onclick={() => copyLookoutLink(`devlog-lookout-${lookoutId}`, lookoutId)}>
+																{copiedKey === `devlog-lookout-${lookoutId}` ? 'Copied!' : mirrorLoadingKey === `devlog-lookout-${lookoutId}` ? 'Copying...' : 'Copy link'}
+															</button>
 														{:else}
 															<span class="devlog-lookout-pending"> · timelapse not finished yet</span>
 														{/if}
@@ -6070,6 +6222,35 @@
 		margin-top: 0.35rem;
 		background: #000;
 		border-radius: 4px;
+	}
+
+	.copy-link-btn {
+		border: 1px solid rgba(147, 180, 205, 0.35);
+		background: rgba(147, 180, 205, 0.08);
+		color: #93b4cd;
+		padding: 0.28rem 0.65rem;
+		border-radius: 6px;
+		font: inherit;
+		font-size: 0.78rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		cursor: pointer;
+	}
+
+	.copy-link-btn:hover:not(:disabled) {
+		background: rgba(147, 180, 205, 0.16);
+	}
+
+	.copy-link-btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.devlogs-heading-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
 	}
 
 	.devlog-card-image-btn {

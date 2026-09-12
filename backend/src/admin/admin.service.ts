@@ -248,6 +248,7 @@ export class AdminService implements OnApplicationBootstrap {
       submissionExtensionActive: hasActiveSubmissionExtension(
         user.submissionExtensionUntil,
       ),
+      unrestrictedAccess: user.unrestrictedAccess ?? false,
       perms,
       projects,
       orders,
@@ -1008,6 +1009,38 @@ export class AdminService implements OnApplicationBootstrap {
       submissionExtensionUntil: until,
       submissionExtensionActive: hasActiveSubmissionExtension(until),
     };
+  }
+
+  /**
+   * Grant or revoke one builder's indefinite, full exemption from the
+   * post-program shutdown: unlike setSubmissionExtension (14-day window,
+   * shipping/resubmitting only), this also reopens brand-new project
+   * creation and skips the resubmit flow's minimum-new-hackatime-hours
+   * check, with no expiry. Reserve for cases where hours tracking or
+   * timing is known-bad but the work should still go through normal
+   * review rather than a manual pipes grant.
+   */
+  async setUnrestrictedAccess(
+    userId: string,
+    grant: boolean,
+    adminId?: string,
+  ): Promise<{ unrestrictedAccess: boolean }> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    user.unrestrictedAccess = grant;
+    await this.userRepo.save(user);
+
+    const identifier = user.name || user.slackId || user.hcaSub;
+    const label = grant
+      ? `Granted ${identifier} unrestricted access (create/ship/resubmit, no min-hours check, indefinite)`
+      : `Revoked ${identifier}'s unrestricted access`;
+    await this.auditLogService.log(userId, 'admin_unrestricted_access', label);
+    if (adminId) {
+      await this.auditLogService.log(adminId, 'admin_unrestricted_access', label);
+    }
+
+    return { unrestrictedAccess: grant };
   }
 
   // ── Projects ──
@@ -2573,6 +2606,32 @@ export class AdminService implements OnApplicationBootstrap {
       submittedProject: Number(submittedRaw?.c ?? 0),
       approvedProject: Number(approvedRaw?.c ?? 0),
       madeOrder: Number(orderRaw?.c ?? 0),
+    };
+  }
+
+  // Unspent pipes sitting in user wallets, plus an estimate of what's owed
+  // for pending orders. "Cost to fulfill" is an estimate because pipesSpent
+  // on an order is a snapshot of the price at purchase time, not a live
+  // fulfillment cost.
+  async getPipesEconomy(): Promise<{
+    unspentPipes: number;
+    costToFulfill: number;
+  }> {
+    const [walletRaw, pendingRaw] = await Promise.all([
+      this.userRepo
+        .createQueryBuilder('u')
+        .select('COALESCE(SUM(u.pipes), 0)', 'sum')
+        .getRawOne<{ sum: string }>(),
+      this.orderRepo
+        .createQueryBuilder('o')
+        .select('COALESCE(SUM(o.pipes_spent), 0)', 'sum')
+        .where('o.status = :status', { status: 'pending' })
+        .getRawOne<{ sum: string }>(),
+    ]);
+
+    return {
+      unspentPipes: Number(walletRaw?.sum ?? 0),
+      costToFulfill: Number(pendingRaw?.sum ?? 0),
     };
   }
 

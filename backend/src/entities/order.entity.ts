@@ -41,13 +41,12 @@ export class Order {
   @Column({ length: 20, default: 'pending' })
   status: string; // 'pending' | 'fulfilled' | 'cancelled'
 
+  @Column({ name: 'certificate_requested', type: 'boolean', nullable: true })
+  certificateRequested: boolean | null;
+
   // Optional free-text note the buyer leaves for fulfillers at checkout.
   @Column({ name: 'fulfillment_notes', type: 'varchar', length: 500, nullable: true })
   fulfillmentNotes: string | null;
-
-  // Null means the fulfilled-order certificate prompt has not been answered.
-  @Column({ name: 'certificate_requested', type: 'boolean', nullable: true, default: null })
-  certificateRequested: boolean | null;
 
   // External reference set by fulfillers (tracking ID, HCB grant URL, …).
   @Column({ type: 'varchar', length: 500, nullable: true })

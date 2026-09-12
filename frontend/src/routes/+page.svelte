@@ -46,8 +46,6 @@
     };
     updateTop();
     window.addEventListener('resize', updateTop);
-    const observer = new ResizeObserver(updateTop);
-    if (diagramEl) observer.observe(diagramEl);
 
     const hintTimer = setTimeout(() => { showScrollHint = true; }, 3000);
 

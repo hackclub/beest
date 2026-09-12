@@ -81,10 +81,16 @@ export class ProjectsService {
     hcaSub: string,
     impersonatorName?: string,
   ) {
-    // BEEST has ended — the create path is closed outright, with no per-user
-    // exception (an admin shipping extension covers shipping, not creation).
+    // BEEST has ended — the create path is closed outright, except for a
+    // builder an admin has granted indefinite unrestricted access.
     if (PROGRAM_CLOSED) {
-      throw new ForbiddenException(PROGRAM_CLOSED_CREATE_MESSAGE);
+      const creator = await this.userRepo.findOne({
+        where: { id: userId },
+        select: ['unrestrictedAccess'],
+      });
+      if (!creator?.unrestrictedAccess) {
+        throw new ForbiddenException(PROGRAM_CLOSED_CREATE_MESSAGE);
+      }
     }
 
     // --- required fields ---
@@ -742,9 +748,18 @@ export class ProjectsService {
     await this.requireSubmissionAllowed(userId, project);
     await this.requireShipEligibility(userId);
 
+    // Admin escape hatch: bypasses the minimum-new-hours confirmation and the
+    // server-side Hackatime delta check below, for cases where hours tracking
+    // is known-bad but the work itself should still go through normal review.
+    const submitter = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['unrestrictedAccess'],
+    });
+    const unrestricted = submitter?.unrestrictedAccess ?? false;
+
     // Validate inputs
     const cleanDesc = this.requireString(changeDescription, 'changeDescription', 500);
-    if (!minHoursConfirmed) {
+    if (!unrestricted && !minHoursConfirmed) {
       throw new BadRequestException('You must confirm at least 3 hours of work since the last ship');
     }
 
@@ -752,7 +767,7 @@ export class ProjectsService {
     const linkedNames = (project.hackatimeProjectName ?? []).filter((n) => !!n);
     const previousApprovedHours = project.overrideHours ?? 0;
     let hoursSnapshot: number | null = null;
-    if (linkedNames.length > 0) {
+    if (!unrestricted && linkedNames.length > 0) {
       await this.hackatimeService.verifyAccountOwnership(hcaSub);
       try {
         const { hours: currentHours } = await this.hackatimeService.getHoursForProjects(
@@ -992,8 +1007,9 @@ export class ProjectsService {
 
     const user = await this.userRepo.findOne({
       where: { id: userId },
-      select: ['submissionExtensionUntil'],
+      select: ['submissionExtensionUntil', 'unrestrictedAccess'],
     });
+    if (user?.unrestrictedAccess) return;
     if (hasActiveSubmissionExtension(user?.submissionExtensionUntil)) return;
 
     if (project.status === 'changes_needed') {
@@ -1012,17 +1028,21 @@ export class ProjectsService {
   async getSubmissionWindow(userId: string) {
     const user = await this.userRepo.findOne({
       where: { id: userId },
-      select: ['submissionExtensionUntil'],
+      select: ['submissionExtensionUntil', 'unrestrictedAccess'],
     });
     const extended = hasActiveSubmissionExtension(user?.submissionExtensionUntil);
+    const unrestricted = user?.unrestrictedAccess ?? false;
 
     return {
       programClosed: PROGRAM_CLOSED,
-      // No exception exists for creation — not even an extension reopens it.
-      canCreateProjects: !PROGRAM_CLOSED,
+      // Creation stays closed for everyone except an admin-granted
+      // unrestricted-access exemption — not even a submission extension
+      // reopens it.
+      canCreateProjects: !PROGRAM_CLOSED || unrestricted,
       // True when this user ships under the normal, pre-shutdown rules.
-      canShipFreely: !PROGRAM_CLOSED || extended,
+      canShipFreely: !PROGRAM_CLOSED || extended || unrestricted,
       extensionUntil: extended ? user!.submissionExtensionUntil : null,
+      unrestrictedAccess: unrestricted,
       changesGraceMs: CHANGES_NEEDED_GRACE_MS,
       createMessage: PROGRAM_CLOSED_CREATE_MESSAGE,
       shipMessage: PROGRAM_CLOSED_SHIP_MESSAGE,

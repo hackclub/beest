@@ -13,6 +13,7 @@ import { Project } from '../entities/project.entity';
 import { fetchWithTimeout } from '../fetch.util';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { LookoutService, LookoutSessionDTO } from '../lookout/lookout.service';
+import { LapseService } from '../lapse/lapse.service';
 import { CreateDevlogDto } from './create-devlog.dto';
 
 const CDN_UPLOAD_URL = 'https://cdn.hackclub.com/api/v4/upload';
@@ -44,6 +45,7 @@ export class DevlogsService {
     private configService: ConfigService,
     private auditLogService: AuditLogService,
     private lookoutService: LookoutService,
+    private lapseService: LapseService,
     private dataSource: DataSource,
     @InjectRepository(Devlog) private devlogRepo: Repository<Devlog>,
     @InjectRepository(Project) private projectRepo: Repository<Project>,
@@ -129,6 +131,70 @@ export class DevlogsService {
       approvedHours: d.approvedHours,
       createdAt: d.createdAt,
     }));
+  }
+
+  /**
+   * Plain-text export of every devlog on a project, for the admin "Copy all
+   * devlogs" button — reviews are text-only but need to cite dev log links.
+   * Each entry is title/timestamp/content, then a Media section listing the
+   * Lapse/Lookout link for that entry plus any screenshot CDN urls. Lookout
+   * videos are mirrored to cdn.hackclub.com on first export (see
+   * LookoutService.mirrorSessionToCdn) since Lookout's own links can expire.
+   * Project-level Lapse timelapses aren't attached to a specific devlog, so
+   * they're listed in their own trailing section instead.
+   */
+  async buildDevlogsExport(projectId: string): Promise<string> {
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId },
+      relations: ['user'],
+    });
+    if (!project) throw new NotFoundException('Project not found');
+
+    const rows = await this.devlogRepo.find({
+      where: { projectId },
+      order: { createdAt: 'ASC' },
+    });
+    const lookouts = await this.lookoutService.findForDevlogs(rows.map((d) => d.id));
+
+    const blocks: string[] = [];
+    for (const d of rows) {
+      const lines = [d.title, d.createdAt.toISOString(), '', d.text];
+
+      const mediaLines: string[] = [];
+      const lookout = lookouts.get(d.id) ?? null;
+      if (lookout) {
+        const mirrored =
+          lookout.status === 'complete'
+            ? await this.lookoutService.mirrorSessionToCdn(lookout.id)
+            : null;
+        const link = mirrored ?? lookout.videoUrl;
+        if (link) mediaLines.push(`Lookout: ${link}`);
+      }
+      (d.imageUrls ?? []).forEach((url, i) => {
+        mediaLines.push(`Screenshot ${i + 1}: ${url}`);
+      });
+
+      if (mediaLines.length > 0) {
+        lines.push('', 'Media:', ...mediaLines);
+      }
+      blocks.push(lines.join('\n'));
+    }
+
+    const email = project.user?.email ?? null;
+    const hackatimeNames = project.hackatimeProjectName ?? [];
+    const timelapses =
+      email && hackatimeNames.length
+        ? await this.lapseService.findForProject(email, hackatimeNames)
+        : [];
+    if (timelapses.length > 0) {
+      const lapseLines = timelapses.map(
+        (t) =>
+          `${t.name || 'Untitled'} (${t.hackatimeProject ?? 'unknown project'}): ${this.lapseService.timelapsePageUrl(t.id)}`,
+      );
+      blocks.push(['Timelapses (Lapse):', ...lapseLines].join('\n'));
+    }
+
+    return blocks.join('\n\n---\n\n');
   }
 
   async deleteOwn(userId: string, id: string) {

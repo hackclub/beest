@@ -29,8 +29,6 @@ export const AUDIT_ACTIONS = [
   'order_fulfilled',
   'order_refunded',
   'order_merged',
-  'certificate_generated',
-  'certificate_updated',
   'devlog_created',
   'devlog_deleted',
   'devlog_reviewed',
@@ -47,6 +45,9 @@ export const AUDIT_ACTIONS = [
   'admin_settings_change',
   'admin_identity_override',
   'admin_submission_extension',
+  'admin_unrestricted_access',
+  'certificate_generated',
+  'certificate_updated',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

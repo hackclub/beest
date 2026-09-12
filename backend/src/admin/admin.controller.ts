@@ -212,6 +212,24 @@ export class AdminController {
     return this.adminService.setSubmissionExtension(id, body.grant, adminId);
   }
 
+  // Full, indefinite escape hatch from the post-program shutdown for one
+  // builder: reopens new-project creation and ship/resubmit with no expiry,
+  // and skips the resubmit flow's minimum-new-hours gate. Super-Admin only —
+  // stronger than the 14-day submission extension, so it sits a tier above it.
+  @UseGuards(SuperAdminGuard)
+  @Patch('users/:id/unrestricted-access')
+  async setUnrestrictedAccess(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { grant?: boolean },
+    @Req() req: Request,
+  ) {
+    if (typeof body.grant !== 'boolean') {
+      throw new BadRequestException('grant (boolean) is required');
+    }
+    const adminId = (req as any).user?.uid;
+    return this.adminService.setUnrestrictedAccess(id, body.grant, adminId);
+  }
+
   @UseGuards(SuperAdminGuard)
   @Post('users/:id/impersonate')
   async impersonateUser(
@@ -341,6 +359,12 @@ export class AdminController {
   @Get('stats/unreviewed-hours')
   getUnreviewedHours() {
     return this.adminService.getUnreviewedHours();
+  }
+
+  @UseGuards(SuperAdminGuard)
+  @Get('stats/pipes')
+  getPipesStats() {
+    return this.adminService.getPipesEconomy();
   }
 
   // ── Settings ──
@@ -517,6 +541,13 @@ export class AdminController {
     return this.devlogsService.findByProject(id, isSuperAdmin);
   }
 
+  /** Plain-text export of every devlog on a project for the "Copy all devlogs" button. */
+  @UseGuards(ReviewerGuard)
+  @Get('projects/:id/devlogs/export')
+  async exportProjectDevlogs(@Param('id', ParseUUIDPipe) id: string) {
+    return { text: await this.devlogsService.buildDevlogsExport(id) };
+  }
+
   @UseGuards(ReviewerGuard)
   @Patch('devlogs/:id/review')
   reviewDevlog(
@@ -539,6 +570,15 @@ export class AdminController {
   @Get('projects/:id/lookout')
   getProjectLookout(@Param('id', ParseUUIDPipe) id: string) {
     return this.lookoutService.listForProjectReview(id);
+  }
+
+  /** Mirrors a Lookout session's video to cdn.hackclub.com for the "copy link" button — signed Lookout URLs expire, the cdn one doesn't. */
+  @UseGuards(ReviewerGuard)
+  @Post('lookout-sessions/:id/mirror')
+  async mirrorLookoutSession(@Param('id', ParseUUIDPipe) id: string) {
+    const url = await this.lookoutService.mirrorSessionToCdn(id);
+    if (!url) throw new BadRequestException('Timelapse not ready to mirror yet');
+    return { url };
   }
 
   @UseGuards(ReviewerGuard)
