@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Raw, Repository } from 'typeorm';
-import * as puppeteer from 'puppeteer';
+import type * as Puppeteer from 'puppeteer';
 import * as QRCode from 'qrcode';
 import { randomUUID } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
@@ -381,8 +381,9 @@ export class CertificateService {
   async generateCertificatePdf(certificate: Certificate): Promise<Buffer> {
     const html = await this.generateCertificateHtml(certificate);
 
-    let browser: puppeteer.Browser | null = null;
+    let browser: Puppeteer.Browser | null = null;
     try {
+      const puppeteer = await import('puppeteer');
       browser = await puppeteer.launch({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -413,8 +414,9 @@ export class CertificateService {
    */
   async generateCertificatePng(certificate: Certificate): Promise<Buffer> {
     const html = await this.generateCertificateHtml(certificate);
-    let browser: puppeteer.Browser | null = null;
+    let browser: Puppeteer.Browser | null = null;
     try {
+      const puppeteer = await import('puppeteer');
       browser = await puppeteer.launch({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
