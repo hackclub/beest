@@ -1517,12 +1517,31 @@
       const res = await fetch('/api/shop/orders');
       if (res.ok) {
         userOrders = await res.json();
-        certificatePromptOrder ??= userOrders.find(
-          (order) => order.status === 'fulfilled' && order.certificateRequested === null,
-        ) ?? null;
+        // Keep the prompt recoverable for older fulfilled orders too. A user
+        // may have loaded the page before the popup was mounted, so expose the
+        // same unanswered order again whenever orders are refreshed.
+        if (
+          !certificatePromptOrder ||
+          certificatePromptOrder.certificateRequested !== null ||
+          !userOrders.some((order) => order.id === certificatePromptOrder?.id)
+        ) {
+          certificatePromptOrder =
+            userOrders.find(
+              (order) =>
+                order.status === 'fulfilled' &&
+                order.certificateRequested === null,
+            ) ?? null;
+        }
       }
     } catch { /* silent */ }
     userOrdersLoading = false;
+  }
+
+  function openCertificatePrompt(order: UserOrderType) {
+    if (order.status === 'fulfilled' && order.certificateRequested !== true) {
+      certificatePromptError = '';
+      certificatePromptOrder = order;
+    }
   }
 
   async function answerCertificatePrompt(requested: boolean) {
@@ -2753,6 +2772,15 @@
                         <span class="my-orders-status cancelled">Cancelled</span>
                       {:else}
                         <span class="my-orders-status fulfilled">Fulfilled</span>
+                        {#if order.certificateRequested !== true}
+                          <button
+                            class="my-orders-certificate"
+                            type="button"
+                            onclick={() => openCertificatePrompt(order)}
+                          >
+                            Claim certificate
+                          </button>
+                        {/if}
                       {/if}
                     </div>
                   </li>
@@ -6805,6 +6833,25 @@
   .my-orders-refund:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .my-orders-certificate {
+    font-family: "Stone Breaker", "Courier New", monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    background: #ec3750;
+    border: 2px solid #1a1a1a;
+    box-shadow: 2px 2px 0 rgba(26, 26, 26, 0.45);
+    color: white;
+    cursor: pointer;
+    transition: transform 100ms ease, box-shadow 100ms ease;
+  }
+
+  .my-orders-certificate:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 3px 3px 0 rgba(26, 26, 26, 0.45);
   }
 
   .shop-card-skeleton {
