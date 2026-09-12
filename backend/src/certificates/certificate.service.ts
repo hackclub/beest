@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Raw, Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import type * as Puppeteer from 'puppeteer';
 import * as QRCode from 'qrcode';
 import { randomUUID } from 'crypto';
@@ -35,9 +35,9 @@ export class CertificateService {
    * - For regular shop items: aggregates all fulfilled non-grant orders for
    *   the user and generates or updates 1 certificate when the total reaches
    *   30 Pipes.
-   * - For grant items: aggregates all fulfilled grant orders of the same item name
-   *   for the user. Only generates/updates a certificate if total aggregated pipes
-   *   reaches 30.
+   * - For grant items: aggregates all fulfilled grant orders for the user,
+   *   regardless of grant type, into one certificate. Only generates/updates a
+   *   certificate if total aggregated pipes reaches 30.
    *   The grant value is calculated as $5 * total pipe number.
    */
   async generateCertificateForOrder(
@@ -74,7 +74,7 @@ export class CertificateService {
     );
 
     if (isGrantOrder) {
-      // Find all fulfilled grant orders for this user of the SAME grant item name
+      // All grant types share one aggregate certificate for this user.
       const userOrders = await this.orderRepo.find({
         where: { userId: order.userId, status: 'fulfilled' },
         relations: ['shopItem'],
@@ -87,17 +87,16 @@ export class CertificateService {
           o.siloGrantId ||
           o.itemName.toLowerCase().includes('grant')
         );
-        return (
-          oIsGrant &&
-          o.itemName.trim().toLowerCase() === order.itemName.trim().toLowerCase()
-        );
+        return oIsGrant;
       });
 
-      // Sum the total pipes spent for this grant item category
       const totalPipes = matchingGrantOrders.reduce(
         (sum, o) => sum + o.pipesSpent,
         0,
       );
+      const awardItem = [...new Set(
+        matchingGrantOrders.map((o) => o.itemName.trim()),
+      )].sort().join(', ');
 
       // Certificates are awarded once at least 30 Pipes have been spent.
       if (totalPipes < 30) {
@@ -110,17 +109,14 @@ export class CertificateService {
       // Grant value is $5 per pipe (5 * pipe no.)
       const grantValue = totalPipes * 5;
 
-      // Check if a grant certificate already exists for this user + grant item
-      let existingCert = await this.findGrantCertificate(
-        order.userId,
-        order.itemName,
-      );
+      // One grant certificate is maintained for each user.
+      let existingCert = await this.findGrantCertificate(order.userId);
 
       if (existingCert) {
         const certificateText = this.formatCertificateText(
           recipientName,
           totalPipes,
-          order.itemName,
+          awardItem,
           true,
           grantValue,
         );
@@ -131,6 +127,7 @@ export class CertificateService {
           existingCert.recipientName !== recipientName ||
           existingCert.approvedHours !== totalPipes ||
           existingCert.grantValue !== grantValue ||
+          existingCert.awardItem !== awardItem ||
           existingCert.certificateText !== certificateText;
 
         if (!changed) {
@@ -142,6 +139,7 @@ export class CertificateService {
         existingCert.recipientName = recipientName;
         existingCert.approvedHours = totalPipes;
         existingCert.grantValue = grantValue;
+        existingCert.awardItem = awardItem;
         existingCert.certificateText = certificateText;
 
         const updated = await this.certificateRepo.save(existingCert);
@@ -149,7 +147,7 @@ export class CertificateService {
         await this.auditLogService.log(
           order.userId,
           'certificate_updated',
-          `Grant certificate updated for ${order.itemName}: ${totalPipes} Pipes ($${grantValue})`,
+          `Grant certificate updated for ${awardItem}: ${totalPipes} Pipes ($${grantValue})`,
         );
 
         return updated;
@@ -160,7 +158,7 @@ export class CertificateService {
       const certificateText = this.formatCertificateText(
         recipientName,
         totalPipes,
-        order.itemName,
+        awardItem,
         true,
         grantValue,
       );
@@ -170,7 +168,7 @@ export class CertificateService {
         orderId: order.id,
         recipientName,
         approvedHours: totalPipes,
-        awardItem: order.itemName,
+        awardItem,
         grantValue,
         isGrant: true,
         certificateNumber,
@@ -188,10 +186,7 @@ export class CertificateService {
           error instanceof QueryFailedError &&
           (error as QueryFailedError & { code?: string }).code === '23505'
         ) {
-          const concurrentCertificate = await this.findGrantCertificate(
-            order.userId,
-            order.itemName,
-          );
+          const concurrentCertificate = await this.findGrantCertificate(order.userId);
           if (concurrentCertificate) {
             return concurrentCertificate;
           }
@@ -202,7 +197,7 @@ export class CertificateService {
       await this.auditLogService.log(
         order.userId,
         'certificate_generated',
-        `Grant certificate generated for ${order.itemName}: ${totalPipes} Pipes ($${grantValue})`,
+        `Grant certificate generated for ${awardItem}: ${totalPipes} Pipes ($${grantValue})`,
       );
 
       return saved;
@@ -337,22 +332,13 @@ export class CertificateService {
   }
 
   /**
-   * Grant certificates are unique per user and normalized award name in the
-   * database (see UQ_certificates_grant_user_award). Keep every lookup on the
-   * same normalization path so casing or surrounding whitespace cannot bypass
-   * the application-level idempotency check.
+   * Grant certificates are unique per user. The award item contains the
+   * normalized list of all grant types included in the aggregate.
    */
-  private findGrantCertificate(
-    userId: string,
-    awardItem: string,
-  ): Promise<Certificate | null> {
+  private findGrantCertificate(userId: string): Promise<Certificate | null> {
     return this.certificateRepo.findOne({
       where: {
         userId,
-        awardItem: Raw(
-          (column) => `lower(btrim(${column})) = lower(btrim(:awardItem))`,
-          { awardItem },
-        ),
         isGrant: true,
       },
     });

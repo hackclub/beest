@@ -12,7 +12,6 @@ jest.mock('puppeteer', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { FindOperator } from 'typeorm';
 import { CertificateService } from './certificate.service';
 import { Certificate } from '../entities/certificate.entity';
 import { Order } from '../entities/order.entity';
@@ -285,7 +284,7 @@ describe('CertificateService', () => {
       );
     });
 
-    it('keeps different grant types in separate certificates', async () => {
+    it('combines different grant types into one certificate', async () => {
       const hardwareOrder: Partial<Order> = {
         id: 'order-hardware',
         userId: 'user-uuid-1',
@@ -313,8 +312,10 @@ describe('CertificateService', () => {
 
       const cert = await service.generateCertificateForOrder(hardwareOrder.id!);
 
-      expect(cert).toBeNull();
-      expect(certificateRepo.save).not.toHaveBeenCalled();
+      expect(cert?.approvedHours).toBe(35);
+      expect(cert?.grantValue).toBe(175);
+      expect(cert?.awardItem).toBe('Hardware Grant, Travel Grant');
+      expect(certificateRepo.save).toHaveBeenCalled();
     });
 
     it('does not rewrite or audit an unchanged grant certificate during sync', async () => {
@@ -373,11 +374,7 @@ describe('CertificateService', () => {
       await service.generateCertificateForOrder(order.id!);
 
       const lookup = certificateRepo.findOne.mock.calls[0][0].where;
-      expect(lookup.awardItem).toBeInstanceOf(FindOperator);
-      expect(lookup.awardItem._type).toBe('raw');
-      expect(lookup.awardItem.objectLiteralParameters).toEqual({
-        awardItem: order.itemName,
-      });
+      expect(lookup).toEqual({ userId: order.userId, isGrant: true });
     });
   });
 
