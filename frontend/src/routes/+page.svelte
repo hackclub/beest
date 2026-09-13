@@ -304,7 +304,7 @@
   <div class="hero-overlay">
     <div class="hero-copy">
       <h1 class="hero-title"><img class="hero-logo" src="/images/beest-logo.webp" alt="Beest" fetchpriority="high" decoding="async" /></h1>
-      <div class="hero-credit">from Euan Ripper, ascpixi, and guac md</div>
+      <div class="hero-credit">from <a href="https://euans.life" target="_blank" rel="noreferrer">Euan Ripper</a>, ascpixi, and guac md</div>
       <p class="hero-subtitle">{subtitle}</p>
       <p class="hero-closed">PROGRAM CLOSED</p>
     </div>
@@ -1011,6 +1011,12 @@
     line-height: 1;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
     pointer-events: none;
+  }
+
+  .hero-credit a {
+    color: inherit;
+    text-decoration: underline;
+    pointer-events: auto;
   }
 
   .hero-subtitle {
