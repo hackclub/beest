@@ -80,6 +80,21 @@ export class ShopController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('orders/:id/certificate')
+  async setCertificatePreference(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { requested?: boolean },
+  ) {
+    const userId = (req as any).user?.uid;
+    if (!userId) throw new BadRequestException('Not authenticated');
+    if (typeof body?.requested !== 'boolean') {
+      throw new BadRequestException('requested must be a boolean');
+    }
+    return this.shopService.setCertificatePreference(id, userId, body.requested);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('fulfillment')
   async getFulfillmentUpdates(@Req() req: Request) {
     const userId = (req as any).user?.uid;
