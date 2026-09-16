@@ -12,7 +12,6 @@
         order.status === 'fulfilled' && order.certificateRequested !== true,
     ),
   );
-  const claimableOrder = $derived(claimableOrders[0] ?? null);
 
   const navItems = [
     { label: 'Projects', href: '/projects', mobile: true, icon: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>' },
@@ -101,15 +100,17 @@
       <p>You have {data.fulfilledPipes} fulfilled Pipes. Buy and receive at least 30 Pipes worth of shop orders to get a certificate.</p>
       <a class="button" href="/shop">Go buy something</a>
     </section>
-  {:else if claimableOrder}
+  {:else if claimableOrders.length}
     <section class="eligibility-card">
       <h2>Your certificate is ready to claim</h2>
       <p>You have {data.fulfilledPipes} fulfilled Pipes. Claim a certificate from one of your fulfilled orders.</p>
       {#if claimError}<p class="claim-error">{claimError}</p>{/if}
       <div class="claim-list">
-        <button class="claim-button" type="button" onclick={() => claimCertificate(claimableOrder.id)} disabled={claimingOrderId !== null}>
-          {claimingOrderId === claimableOrder.id ? 'Claiming…' : 'Claim certificate'}
-        </button>
+        {#each claimableOrders as order (order.id)}
+          <button class="claim-button" type="button" onclick={() => claimCertificate(order.id)} disabled={claimingOrderId !== null}>
+            {claimingOrderId === order.id ? 'Claiming…' : `Claim ${order.itemName} certificate`}
+          </button>
+        {/each}
       </div>
     </section>
   {/if}

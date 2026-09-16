@@ -3521,10 +3521,13 @@
 												<span class="claim-status claim-status--other">
 													Claimed by {selectedProject.claimedByReviewerName ?? 'another reviewer'}
 												</span>
+												<button class="btn-claim btn-claim--override" onclick={() => claimProject(selectedProject.id)}>
+													Claim Anyway
+												</button>
 											{:else}
 												<span class="claim-status claim-status--free">Unclaimed</span>
 												<button class="btn-claim" onclick={() => claimProject(selectedProject.id)}>
-													Claim
+													Claim Project
 												</button>
 											{/if}
 										</div>
@@ -5284,6 +5287,11 @@
 		font-family: inherit;
 	}
 	.btn-claim:hover { background: rgba(139, 92, 246, 0.3); }
+	.btn-claim--override {
+		border-color: #f59e0b;
+		background: rgba(245, 158, 11, 0.1);
+		color: #f59e0b;
+	}
 	.btn-release-claim {
 		padding: 7px 16px;
 		border-radius: 6px;
