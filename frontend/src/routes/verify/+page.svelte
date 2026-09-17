@@ -19,11 +19,11 @@
     if (!number) return;
 
     certificateNumber = number;
-    void verifyCertificate();
+    void verifyCertificate(number);
   });
 
-  async function verifyCertificate() {
-    const key = certificateNumber.trim();
+  async function verifyCertificate(value = certificateNumber) {
+    const key = value.trim();
     if (!key) {
       error = 'Enter a certificate number to verify it.';
       result = null;

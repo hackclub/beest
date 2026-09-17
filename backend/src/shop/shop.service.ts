@@ -537,6 +537,15 @@ export class ShopService {
     if (order.status !== 'fulfilled') {
       throw new BadRequestException('A certificate can only be requested after fulfillment');
     }
+    if (order.certificateRequested !== null) {
+      if (order.certificateRequested === requested) {
+        return {
+          success: true,
+          certificateRequested: order.certificateRequested,
+        };
+      }
+      throw new BadRequestException('The certificate choice has already been recorded');
+    }
 
     order.certificateRequested = requested;
     await this.orderRepo.save(order);
@@ -800,6 +809,17 @@ export class ShopService {
           isGrant,
         }),
       );
+
+      if (order.certificateRequested) {
+        await this.certificateService
+          .generateCertificateForOrder(order.id)
+          .catch((e) => {
+            this.logger.error(
+              `Failed to generate certificate for order ${order.id}:`,
+              e,
+            );
+          });
+      }
 
       return { success: true };
     });

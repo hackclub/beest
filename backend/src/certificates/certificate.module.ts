@@ -6,11 +6,13 @@ import { User } from '../entities/user.entity';
 import { CertificateService } from './certificate.service';
 import { CertificateController } from './certificate.controller';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Certificate, Order, User]),
     AuditLogModule,
+    AuthModule,
   ],
   controllers: [CertificateController],
   providers: [CertificateService],

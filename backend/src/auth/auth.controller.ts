@@ -32,6 +32,15 @@ export class AuthController {
     return this.authService.startAuth(body.email);
   }
 
+  @Post('dev-login')
+  async devLogin(@Body() body: { email?: string }) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Dev login not available in production');
+    }
+    const email = body.email || 'mrketanartist13@gmail.com';
+    return this.authService.devLogin(email);
+  }
+
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('handle-callback')
   async handleCallback(

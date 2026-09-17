@@ -13,6 +13,10 @@ import { Order } from './order.entity';
 
 @Entity('certificates')
 @Index('UQ_certificates_order_id', ['orderId'], { unique: true })
+@Index('UQ_certificates_normal_user', ['userId'], {
+  unique: true,
+  where: '"is_grant" = false',
+})
 export class Certificate {
   @PrimaryGeneratedColumn('uuid')
   id: string;
