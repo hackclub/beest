@@ -954,6 +954,7 @@ export class AdminService implements OnApplicationBootstrap {
     preview: boolean;
     eligible: number;
     dmsSent: number;
+    bannedSkipped?: number;
   }> {
     if (options.preview) {
       this.logger.log('Shop-closing preview requested — DMing Euan only');
@@ -977,25 +978,43 @@ export class AdminService implements OnApplicationBootstrap {
     this.logger.log('Shop-closing broadcast starting: querying users with unspent Pipes');
     const users = await this.userRepo.find({
       where: { pipes: MoreThan(0), shopClosingNotifiedAt: IsNull() },
-      select: { id: true, name: true, slackId: true, hcaSub: true, pipes: true },
+      select: { id: true, name: true, email: true, slackId: true, hcaSub: true, pipes: true },
     });
     this.logger.log(`Shop-closing broadcast: ${users.length} eligible user(s) not yet notified`);
 
     let dmsSent = 0;
+    let bannedSkipped = 0;
     for (const user of users) {
+      const identifier = user.name || user.slackId || user.hcaSub;
+
+      // Banned status lives in Airtable, not the local DB — same lookup the
+      // banned-user queue sweep uses (see sweepBannedUsersQueuedProjects). On
+      // an Airtable hiccup, skip this user for now rather than risk DMing a
+      // banned account; shopClosingNotifiedAt is left unset so the next run
+      // retries them.
+      let perms: string | null;
+      try {
+        perms = await this.rsvpService.getPerms(user.email);
+      } catch {
+        this.logger.warn(`Shop-closing: perms lookup failed for user ${user.id}, will retry next run`);
+        continue;
+      }
+      if (perms === 'Banned') {
+        bannedSkipped++;
+        this.logger.log(`Shop-closing: skipping banned user ${user.id} (${identifier})`);
+        continue;
+      }
+
       const dm = shopClosingDm({ pipes: user.pipes, closesAt: SHOP_CLOSES_AT });
       const sent = await this.slackNotify.dm(user.slackId, dm.text, dm.blocks);
       if (sent) {
         dmsSent++;
       } else {
-        this.logger.warn(
-          `Shop-closing DM not delivered to user ${user.id} (${user.name || user.slackId || user.hcaSub})`,
-        );
+        this.logger.warn(`Shop-closing DM not delivered to user ${user.id} (${identifier})`);
       }
 
       await this.userRepo.update(user.id, { shopClosingNotifiedAt: new Date() });
 
-      const identifier = user.name || user.slackId || user.hcaSub;
       const label = `Sent shop-closing notice to ${identifier} (${user.pipes} Pipes)${sent ? '' : ' — DM not delivered'}`;
       await this.auditLogService.log(user.id, 'admin_shop_closing_notice', label);
       if (adminId) {
@@ -1004,10 +1023,10 @@ export class AdminService implements OnApplicationBootstrap {
     }
 
     this.logger.log(
-      `Shop-closing broadcast complete: ${dmsSent}/${users.length} DM(s) delivered`,
+      `Shop-closing broadcast complete: ${dmsSent}/${users.length} DM(s) delivered, ${bannedSkipped} banned user(s) skipped`,
     );
 
-    return { preview: false, eligible: users.length, dmsSent };
+    return { preview: false, eligible: users.length, dmsSent, bannedSkipped };
   }
 
   // joe.fraud web base (its UI host, not the API). Overridable for staging.

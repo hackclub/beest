@@ -1033,7 +1033,7 @@
 	let shopClosingPreviewResult = $state<{ eligible: number; dmsSent: number } | null>(null);
 	let shopClosingPreviewError = $state<string | null>(null);
 	let shopClosingBusy = $state(false);
-	let shopClosingResult = $state<{ eligible: number; dmsSent: number } | null>(null);
+	let shopClosingResult = $state<{ eligible: number; dmsSent: number; bannedSkipped?: number } | null>(null);
 	let shopClosingError = $state<string | null>(null);
 
 	async function callNotifyShopClosing(preview: boolean) {
@@ -2860,7 +2860,8 @@
 						{#if shopClosingResult}
 							<p class="golden-backfill-result">
 								Done — {shopClosingResult.dmsSent} DM{shopClosingResult.dmsSent === 1 ? '' : 's'} sent
-								of {shopClosingResult.eligible} eligible user{shopClosingResult.eligible === 1 ? '' : 's'}.
+								of {shopClosingResult.eligible} eligible user{shopClosingResult.eligible === 1 ? '' : 's'}
+								({shopClosingResult.bannedSkipped ?? 0} banned skipped).
 							</p>
 						{/if}
 						{#if shopClosingError}
