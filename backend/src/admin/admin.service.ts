@@ -42,6 +42,7 @@ import {
   SUBMISSION_EXTENSION_MS,
   hasActiveSubmissionExtension,
   SHOP_CLOSES_AT,
+  EUAN_SLACK_ID,
 } from '../program-closure.util';
 
 const VALID_PERMS = [
@@ -935,25 +936,62 @@ export class AdminService implements OnApplicationBootstrap {
     };
   }
 
-  // One-shot broadcast: DM every user with an unspent Pipes balance that the
-  // shop closes soon (SHOP_CLOSES_AT), so nobody's Pipes go to waste unnoticed.
+  // Broadcast: DM every user with an unspent Pipes balance that the shop
+  // closes soon (SHOP_CLOSES_AT), so nobody's Pipes go to waste unnoticed.
   // Marks each user as notified regardless of DM delivery (e.g. no slackId),
   // so a re-run only reaches users who earned/spent Pipes since the last run
   // rather than re-DMing everyone.
-  async notifyShopClosing(adminId?: string): Promise<{
+  //
+  // `preview: true` sends the exact same DM to EUAN_SLACK_ID only, using his
+  // own Pipes balance as the sample count — a dry run so the message can be
+  // eyeballed in Slack before the real broadcast goes out to everyone. It
+  // does not touch shopClosingNotifiedAt, so it never affects who the real
+  // run reaches.
+  async notifyShopClosing(
+    adminId?: string,
+    options: { preview?: boolean } = {},
+  ): Promise<{
+    preview: boolean;
     eligible: number;
     dmsSent: number;
   }> {
+    if (options.preview) {
+      this.logger.log('Shop-closing preview requested — DMing Euan only');
+      const euan = await this.userRepo.findOne({
+        where: { slackId: EUAN_SLACK_ID },
+        select: { pipes: true },
+      });
+      const dm = shopClosingDm({ pipes: euan?.pipes ?? 0, closesAt: SHOP_CLOSES_AT });
+      const sent = await this.slackNotify.dm(EUAN_SLACK_ID, dm.text, dm.blocks);
+      this.logger.log(`Shop-closing preview DM ${sent ? 'delivered' : 'FAILED to send'} to ${EUAN_SLACK_ID}`);
+      if (adminId) {
+        await this.auditLogService.log(
+          adminId,
+          'admin_shop_closing_notice',
+          `Sent shop-closing preview DM to Euan${sent ? '' : ' — DM not delivered'}`,
+        );
+      }
+      return { preview: true, eligible: 1, dmsSent: sent ? 1 : 0 };
+    }
+
+    this.logger.log('Shop-closing broadcast starting: querying users with unspent Pipes');
     const users = await this.userRepo.find({
       where: { pipes: MoreThan(0), shopClosingNotifiedAt: IsNull() },
       select: { id: true, name: true, slackId: true, hcaSub: true, pipes: true },
     });
+    this.logger.log(`Shop-closing broadcast: ${users.length} eligible user(s) not yet notified`);
 
     let dmsSent = 0;
     for (const user of users) {
       const dm = shopClosingDm({ pipes: user.pipes, closesAt: SHOP_CLOSES_AT });
       const sent = await this.slackNotify.dm(user.slackId, dm.text, dm.blocks);
-      if (sent) dmsSent++;
+      if (sent) {
+        dmsSent++;
+      } else {
+        this.logger.warn(
+          `Shop-closing DM not delivered to user ${user.id} (${user.name || user.slackId || user.hcaSub})`,
+        );
+      }
 
       await this.userRepo.update(user.id, { shopClosingNotifiedAt: new Date() });
 
@@ -965,7 +1003,11 @@ export class AdminService implements OnApplicationBootstrap {
       }
     }
 
-    return { eligible: users.length, dmsSent };
+    this.logger.log(
+      `Shop-closing broadcast complete: ${dmsSent}/${users.length} DM(s) delivered`,
+    );
+
+    return { preview: false, eligible: users.length, dmsSent };
   }
 
   // joe.fraud web base (its UI host, not the API). Overridable for staging.

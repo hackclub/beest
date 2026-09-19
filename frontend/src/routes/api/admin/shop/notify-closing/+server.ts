@@ -4,9 +4,11 @@ import type { RequestHandler } from './$types';
 
 const BACKEND_URL = env.BACKEND_URL ?? 'http://localhost:3001';
 
-export const POST: RequestHandler = async ({ cookies }) => {
+export const POST: RequestHandler = async ({ cookies, request }) => {
+	const body = await request.json().catch(() => ({}));
 	return proxyWithRefresh(cookies, `${BACKEND_URL}/api/admin/shop/notify-closing`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' }
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
 	});
 };

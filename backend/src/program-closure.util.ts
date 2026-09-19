@@ -41,6 +41,14 @@ export const SUBMISSION_EXTENSION_MS =
  */
 export const SHOP_CLOSES_AT = new Date('2026-09-23T00:00:00Z');
 
+/**
+ * Euan's Slack user ID. Used as the fixed preview recipient for the
+ * "notify shop closing" admin action — the first button press DMs only him so
+ * he can see the exact rendered message before it goes out to every user with
+ * an unspent Pipes balance.
+ */
+export const EUAN_SLACK_ID = 'U06T30DNB3L';
+
 export const PROGRAM_CLOSED_CREATE_MESSAGE =
   'BEEST has ended — new projects can no longer be created.';
 

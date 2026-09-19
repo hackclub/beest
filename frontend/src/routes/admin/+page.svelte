@@ -1025,24 +1025,61 @@
 		}
 	}
 
-	// One-shot "shop is closing" broadcast DM to every user with unspent Pipes
-	// (Super Admin only). Safe to re-run — already-notified users are skipped.
+	// "Shop is closing" broadcast DM to every user with unspent Pipes (Super
+	// Admin only). Two-step: step 1 DMs only Euan so the exact rendered message
+	// can be checked in Slack; step 2 (only unlocked after a preview send)
+	// broadcasts for real. Safe to re-run — already-notified users are skipped.
+	let shopClosingPreviewBusy = $state(false);
+	let shopClosingPreviewResult = $state<{ eligible: number; dmsSent: number } | null>(null);
+	let shopClosingPreviewError = $state<string | null>(null);
 	let shopClosingBusy = $state(false);
 	let shopClosingResult = $state<{ eligible: number; dmsSent: number } | null>(null);
 	let shopClosingError = $state<string | null>(null);
+
+	async function callNotifyShopClosing(preview: boolean) {
+		const res = await fetch('/api/admin/shop/notify-closing', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ preview })
+		});
+		const j = await res.json().catch(() => ({}));
+		if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
+		return j;
+	}
+
+	async function sendShopClosingPreview() {
+		if (shopClosingPreviewBusy) return;
+		console.log('[shop-closing] sending preview DM to Euan');
+		shopClosingPreviewBusy = true;
+		shopClosingPreviewError = null;
+		try {
+			const j = await callNotifyShopClosing(true);
+			console.log('[shop-closing] preview result', j);
+			shopClosingPreviewResult = j;
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error('[shop-closing] preview failed', msg);
+			shopClosingPreviewError = msg;
+		} finally {
+			shopClosingPreviewBusy = false;
+		}
+	}
+
 	async function notifyShopClosing() {
 		if (shopClosingBusy) return;
 		if (!confirm('DM every user with unspent Pipes that the shop is closing soon? Already-notified users are skipped.')) return;
+		console.log('[shop-closing] sending broadcast to all users with unspent Pipes');
 		shopClosingBusy = true;
 		shopClosingError = null;
 		shopClosingResult = null;
 		try {
-			const res = await fetch('/api/admin/shop/notify-closing', { method: 'POST' });
-			const j = await res.json().catch(() => ({}));
-			if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
+			const j = await callNotifyShopClosing(false);
+			console.log('[shop-closing] broadcast result', j);
 			shopClosingResult = j;
 		} catch (e) {
-			shopClosingError = e instanceof Error ? e.message : String(e);
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error('[shop-closing] broadcast failed', msg);
+			shopClosingError = msg;
 		} finally {
 			shopClosingBusy = false;
 		}
@@ -2804,10 +2841,22 @@
 						<div class="golden-backfill-copy">
 							<h3>Notify shop closing</h3>
 							<p>DMs every user with an unspent Pipes balance that the shop is closing for good, so they know to spend before it's gone. Already-notified users are skipped, so it's safe to re-run for anyone new.</p>
+							<p>Step 1 sends the exact DM to Euan only so you can check it in Slack. Step 2 (unlocked after that) sends it to everyone.</p>
 						</div>
-						<button class="golden-backfill-btn" onclick={notifyShopClosing} disabled={shopClosingBusy}>
-							{shopClosingBusy ? 'Notifying…' : 'Notify shop closing'}
+						<button class="golden-backfill-btn" onclick={sendShopClosingPreview} disabled={shopClosingPreviewBusy}>
+							{shopClosingPreviewBusy ? 'Sending preview…' : 'Send preview to Euan'}
 						</button>
+						{#if shopClosingPreviewResult}
+							<p class="golden-backfill-result">
+								Preview {shopClosingPreviewResult.dmsSent ? 'sent' : 'FAILED to send'} to Euan.
+							</p>
+							<button class="golden-backfill-btn" onclick={notifyShopClosing} disabled={shopClosingBusy}>
+								{shopClosingBusy ? 'Notifying…' : 'Looks good — send to everyone'}
+							</button>
+						{/if}
+						{#if shopClosingPreviewError}
+							<p class="golden-backfill-error">{shopClosingPreviewError}</p>
+						{/if}
 						{#if shopClosingResult}
 							<p class="golden-backfill-result">
 								Done — {shopClosingResult.dmsSent} DM{shopClosingResult.dmsSent === 1 ? '' : 's'} sent

@@ -674,12 +674,13 @@ export class AdminController {
 
   // Bulk-DM every user with an unspent Pipes balance that the shop is closing
   // soon. Safe to re-run: users already notified are skipped (see
-  // AdminService.notifyShopClosing).
+  // AdminService.notifyShopClosing). `preview: true` sends the same DM to
+  // Euan only, as a sanity check before the real broadcast.
   @UseGuards(SuperAdminGuard)
   @Post('shop/notify-closing')
-  async notifyShopClosing(@Req() req: Request) {
+  async notifyShopClosing(@Req() req: Request, @Body() body: { preview?: boolean }) {
     const adminId = (req as any).user?.uid;
-    return this.adminService.notifyShopClosing(adminId);
+    return this.adminService.notifyShopClosing(adminId, { preview: !!body?.preview });
   }
 
   // ── Fraud review ──
