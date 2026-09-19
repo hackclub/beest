@@ -359,13 +359,13 @@ export function shopClosingDm(input: { pipes: number; closesAt: Date }): DmMessa
     year: 'numeric',
   });
   return {
-    text: `The Pipes shop closes ${dateLabel} — spend your ${input.pipes} Pipes first`,
+    text: `The Beest shop closes ${dateLabel} — spend your ${input.pipes} Pipes first`,
     blocks: [
       {
         type: 'header',
         text: {
           type: 'plain_text',
-          text: ':pipe: The Pipes shop is closing soon',
+          text: ':pipe: The Beest shop is closing soon',
           emoji: true,
         },
       },
@@ -373,7 +373,7 @@ export function shopClosingDm(input: { pipes: number; closesAt: Date }): DmMessa
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `You have *${input.pipes} Pipes* unspent. The shop closes on *${dateLabel}* and won't reopen, so spend them before then or they'll go to waste.`,
+          text: `You have *${input.pipes} Pipes* unspent. The Beest shop closes on *${dateLabel}* and won't reopen, so spend them before then or they'll go to waste.`,
         },
       },
       {
