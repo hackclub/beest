@@ -33,6 +33,14 @@ export const SUBMISSION_EXTENSION_DAYS = 14;
 export const SUBMISSION_EXTENSION_MS =
   SUBMISSION_EXTENSION_DAYS * 24 * 60 * 60 * 1000;
 
+/**
+ * Date the Pipes shop stops accepting orders. Referenced by the admin-triggered
+ * "shop is closing" DM (AdminService.notifyShopClosing) so the deadline shown
+ * to builders can't drift between runs. Bump this (and re-run the notify
+ * button) if the closure date ever changes.
+ */
+export const SHOP_CLOSES_AT = new Date('2026-09-23T00:00:00Z');
+
 export const PROGRAM_CLOSED_CREATE_MESSAGE =
   'BEEST has ended — new projects can no longer be created.';
 

@@ -1025,6 +1025,29 @@
 		}
 	}
 
+	// One-shot "shop is closing" broadcast DM to every user with unspent Pipes
+	// (Super Admin only). Safe to re-run — already-notified users are skipped.
+	let shopClosingBusy = $state(false);
+	let shopClosingResult = $state<{ eligible: number; dmsSent: number } | null>(null);
+	let shopClosingError = $state<string | null>(null);
+	async function notifyShopClosing() {
+		if (shopClosingBusy) return;
+		if (!confirm('DM every user with unspent Pipes that the shop is closing soon? Already-notified users are skipped.')) return;
+		shopClosingBusy = true;
+		shopClosingError = null;
+		shopClosingResult = null;
+		try {
+			const res = await fetch('/api/admin/shop/notify-closing', { method: 'POST' });
+			const j = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
+			shopClosingResult = j;
+		} catch (e) {
+			shopClosingError = e instanceof Error ? e.message : String(e);
+		} finally {
+			shopClosingBusy = false;
+		}
+	}
+
 	// Pausing resubmission stops changes-needed builders from re-shipping into
 	// the queue (used to clear a backlog). The changes-needed DM also gets a
 	// callout while this is on — see backend reviewChangesNeededDm.
@@ -2775,6 +2798,24 @@
 						{/if}
 						{#if goldenBackfillError}
 							<p class="golden-backfill-error">{goldenBackfillError}</p>
+						{/if}
+					</div>
+					<div class="golden-backfill">
+						<div class="golden-backfill-copy">
+							<h3>Notify shop closing</h3>
+							<p>DMs every user with an unspent Pipes balance that the shop is closing for good, so they know to spend before it's gone. Already-notified users are skipped, so it's safe to re-run for anyone new.</p>
+						</div>
+						<button class="golden-backfill-btn" onclick={notifyShopClosing} disabled={shopClosingBusy}>
+							{shopClosingBusy ? 'Notifying…' : 'Notify shop closing'}
+						</button>
+						{#if shopClosingResult}
+							<p class="golden-backfill-result">
+								Done — {shopClosingResult.dmsSent} DM{shopClosingResult.dmsSent === 1 ? '' : 's'} sent
+								of {shopClosingResult.eligible} eligible user{shopClosingResult.eligible === 1 ? '' : 's'}.
+							</p>
+						{/if}
+						{#if shopClosingError}
+							<p class="golden-backfill-error">{shopClosingError}</p>
 						{/if}
 					</div>
 				{/if}

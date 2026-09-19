@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
+import { In, IsNull, MoreThan, Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { Session } from '../entities/session.entity';
 import { Project } from '../entities/project.entity';
@@ -32,6 +32,7 @@ import {
   reviewChangesNeededDm,
   reviewRejectedDm,
   goldenBackfillDm,
+  shopClosingDm,
 } from '../slack/slack-notify.templates';
 import { ShopService } from '../shop/shop.service';
 import { getFileHoursForProject } from '../hackatime/hackatime-file-breakdown';
@@ -40,6 +41,7 @@ import {
   SUBMISSION_EXTENSION_DAYS,
   SUBMISSION_EXTENSION_MS,
   hasActiveSubmissionExtension,
+  SHOP_CLOSES_AT,
 } from '../program-closure.util';
 
 const VALID_PERMS = [
@@ -931,6 +933,39 @@ export class AdminService implements OnApplicationBootstrap {
       projectsMarked,
       dmsSent,
     };
+  }
+
+  // One-shot broadcast: DM every user with an unspent Pipes balance that the
+  // shop closes soon (SHOP_CLOSES_AT), so nobody's Pipes go to waste unnoticed.
+  // Marks each user as notified regardless of DM delivery (e.g. no slackId),
+  // so a re-run only reaches users who earned/spent Pipes since the last run
+  // rather than re-DMing everyone.
+  async notifyShopClosing(adminId?: string): Promise<{
+    eligible: number;
+    dmsSent: number;
+  }> {
+    const users = await this.userRepo.find({
+      where: { pipes: MoreThan(0), shopClosingNotifiedAt: IsNull() },
+      select: { id: true, name: true, slackId: true, hcaSub: true, pipes: true },
+    });
+
+    let dmsSent = 0;
+    for (const user of users) {
+      const dm = shopClosingDm({ pipes: user.pipes, closesAt: SHOP_CLOSES_AT });
+      const sent = await this.slackNotify.dm(user.slackId, dm.text, dm.blocks);
+      if (sent) dmsSent++;
+
+      await this.userRepo.update(user.id, { shopClosingNotifiedAt: new Date() });
+
+      const identifier = user.name || user.slackId || user.hcaSub;
+      const label = `Sent shop-closing notice to ${identifier} (${user.pipes} Pipes)${sent ? '' : ' — DM not delivered'}`;
+      await this.auditLogService.log(user.id, 'admin_shop_closing_notice', label);
+      if (adminId) {
+        await this.auditLogService.log(adminId, 'admin_shop_closing_notice', label);
+      }
+    }
+
+    return { eligible: users.length, dmsSent };
   }
 
   // joe.fraud web base (its UI host, not the API). Overridable for staging.

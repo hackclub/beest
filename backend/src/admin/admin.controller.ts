@@ -672,6 +672,16 @@ export class AdminController {
     return this.adminService.backfillGoldenForCoolBuilders(adminId);
   }
 
+  // Bulk-DM every user with an unspent Pipes balance that the shop is closing
+  // soon. Safe to re-run: users already notified are skipped (see
+  // AdminService.notifyShopClosing).
+  @UseGuards(SuperAdminGuard)
+  @Post('shop/notify-closing')
+  async notifyShopClosing(@Req() req: Request) {
+    const adminId = (req as any).user?.uid;
+    return this.adminService.notifyShopClosing(adminId);
+  }
+
   // ── Fraud review ──
   // A fraud-clearance pass over every shipped project, independent of the
   // functional review pipeline. A Fraud Reviewer either marks a project "not

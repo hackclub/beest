@@ -350,6 +350,46 @@ export function goldenBackfillDm(): DmMessage {
   };
 }
 
+// Bulk-sent to every builder with an unspent Pipes balance ahead of the shop
+// closing for good, so nobody's Pipes go to waste unnoticed.
+export function shopClosingDm(input: { pipes: number; closesAt: Date }): DmMessage {
+  const dateLabel = input.closesAt.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  return {
+    text: `The Pipes shop closes ${dateLabel} — spend your ${input.pipes} Pipes first`,
+    blocks: [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: ':pipe: The Pipes shop is closing soon',
+          emoji: true,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `You have *${input.pipes} Pipes* unspent. The shop closes on *${dateLabel}* and won't reopen, so spend them before then or they'll go to waste.`,
+        },
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Go to the shop' },
+            url: 'https://beest.hackclub.com/shop',
+          },
+        ],
+      },
+    ],
+  };
+}
+
 export function fraudClearedDm(input: {
   projectName: string;
   projectLink: string | null;
