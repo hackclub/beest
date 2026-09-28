@@ -1003,6 +1003,22 @@
 		}
 	}
 
+	// Per-user breakdown behind the Unspent Pipes total: who holds pipes, how
+	// many, and whether they're banned.
+	type PipesHolder = { id: string; name: string | null; slackId: string | null; email: string | null; pipes: number; banned: boolean };
+	let pipesHolders = $state<PipesHolder[] | null>(null);
+	let pipesHoldersLoading = $state(false);
+
+	async function loadPipesHolders() {
+		pipesHoldersLoading = true;
+		try {
+			const res = await fetch('/api/admin/stats/pipes/holders');
+			if (res.ok) pipesHolders = await res.json();
+		} finally {
+			pipesHoldersLoading = false;
+		}
+	}
+
 	// One-shot golden backfill for cool builders (Super Admin only).
 	let goldenBackfillBusy = $state(false);
 	let goldenBackfillResult = $state<{ coolBuilders: number; processed: number; skipped: number; projectsMarked: number; dmsSent: number } | null>(null);
@@ -2344,7 +2360,7 @@
 		if (activeTab === 'users') { loadUsers(); }
 		// Fulfillers see the charts/funnel only — the user-count cards and unreviewed
 		// hours need Super-Admin-only endpoints (/users, /stats/unreviewed-hours).
-		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); loadPipesStats(); loadResubmissionPaused(); }
+		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); loadPipesStats(); loadPipesHolders(); loadResubmissionPaused(); }
 		if (activeTab === 'news') loadNews();
 		if (activeTab === 'events') { loadEvents(); loadUsers(); }
 		if (activeTab === 'projects') { loadProjects(); loadProjectHours(); }
@@ -2831,6 +2847,57 @@
 				</div>
 				<UserFunnel />
 				{#if isSuperAdmin}
+					<div class="pipes-holders">
+						<div class="pipes-holders-head">
+							<h3>Pipes holders</h3>
+							{#if pipesHolders}
+								<span class="pipes-holders-sub">
+									{pipesHolders.length} user{pipesHolders.length === 1 ? '' : 's'} with unspent pipes,
+									{pipesHolders.filter((h) => h.banned).length} banned
+								</span>
+							{/if}
+						</div>
+						{#if pipesHoldersLoading && !pipesHolders}
+							<p class="pipes-holders-empty">Loading…</p>
+						{:else if pipesHolders && pipesHolders.length > 0}
+							<div class="pipes-holders-scroll">
+								<table class="pipes-holders-table">
+									<thead>
+										<tr>
+											<th>User</th>
+											<th class="pipes-holders-num">Pipes</th>
+											<th>Status</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each pipesHolders as h (h.id)}
+											<tr class:pipes-holders-banned={h.banned}>
+												<td>
+													{#if h.slackId}
+														<a href={`https://hackclub.slack.com/team/${h.slackId}`} target="_blank" rel="noopener noreferrer">
+															{h.name || h.email || h.slackId}
+														</a>
+													{:else}
+														{h.name || h.email || '(unknown)'}
+													{/if}
+												</td>
+												<td class="pipes-holders-num">{h.pipes.toLocaleString()}</td>
+												<td>
+													{#if h.banned}
+														<span class="pipes-holders-badge">Banned</span>
+													{:else}
+														—
+													{/if}
+												</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{:else}
+							<p class="pipes-holders-empty">No users with unspent pipes.</p>
+						{/if}
+					</div>
 					<div class="golden-backfill" class:golden-backfill-danger={resubmissionPaused}>
 						<div class="golden-backfill-copy">
 							<h3>Resubmission {resubmissionPaused ? 'paused' : 'open'}</h3>
@@ -4492,6 +4559,77 @@
 		margin-bottom: 1rem;
 	}
 
+	.pipes-holders {
+		margin-top: 1.5rem;
+		padding: 1rem 1.25rem;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.03);
+	}
+	.pipes-holders-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+		flex-wrap: wrap;
+		margin-bottom: 0.75rem;
+	}
+	.pipes-holders-head h3 {
+		margin: 0;
+		font-size: 1rem;
+	}
+	.pipes-holders-sub {
+		font-size: 0.8rem;
+		opacity: 0.7;
+	}
+	.pipes-holders-empty {
+		margin: 0;
+		font-size: 0.85rem;
+		opacity: 0.7;
+	}
+	.pipes-holders-scroll {
+		max-height: 420px;
+		overflow-y: auto;
+	}
+	.pipes-holders-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.85rem;
+	}
+	.pipes-holders-table th,
+	.pipes-holders-table td {
+		text-align: left;
+		padding: 0.4rem 0.6rem;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.pipes-holders-table thead th {
+		position: sticky;
+		top: 0;
+		background: #1e1e1e;
+		font-weight: 600;
+		opacity: 0.85;
+	}
+	.pipes-holders-num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.pipes-holders-table a {
+		color: inherit;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.pipes-holders-banned td {
+		opacity: 0.65;
+	}
+	.pipes-holders-badge {
+		display: inline-block;
+		padding: 0.1rem 0.45rem;
+		border-radius: 6px;
+		background: rgba(224, 102, 102, 0.18);
+		color: #e06666;
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
 	.golden-backfill {
 		margin-top: 1.5rem;
 		padding: 1rem 1.25rem;
