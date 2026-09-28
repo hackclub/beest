@@ -683,6 +683,17 @@ export class AdminController {
     return this.adminService.notifyShopClosing(adminId, { preview: !!body?.preview });
   }
 
+  // One-time sync that stamps the `Loops - beestHasPipes` date field for every
+  // user with unspent Pipes, which fires the shop-closing email via Loops. This
+  // is the email counterpart to the Slack DM above; the two are independent.
+  // Idempotent — already-stamped users are skipped, so it's safe to re-run.
+  @UseGuards(SuperAdminGuard)
+  @Post('shop/sync-closing-email')
+  async syncShopClosingEmail(@Req() req: Request) {
+    const adminId = (req as any).user?.uid;
+    return this.adminService.syncShopClosingEmail(adminId);
+  }
+
   // ── Fraud review ──
   // A fraud-clearance pass over every shipped project, independent of the
   // functional review pipeline. A Fraud Reviewer either marks a project "not
