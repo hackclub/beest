@@ -367,6 +367,14 @@ export class AdminController {
     return this.adminService.getPipesEconomy();
   }
 
+  // Per-user breakdown behind the Unspent Pipes total: who holds pipes, how
+  // many, and whether they're banned. Powers the stats-page pipes table.
+  @UseGuards(SuperAdminGuard)
+  @Get('stats/pipes/holders')
+  getPipesHolders() {
+    return this.adminService.getPipesHolders();
+  }
+
   // ── Settings ──
   // Global operational toggles. Visible to any reviewer (so the review UI can
   // warn them), flippable only by a Super Admin.

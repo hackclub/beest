@@ -2731,6 +2731,39 @@ export class AdminService implements OnApplicationBootstrap {
     };
   }
 
+  // Per-user breakdown behind the "Unspent Pipes" total: every user holding a
+  // positive balance, sorted highest-first, with their banned flag resolved
+  // from Airtable (one bulk getAllPerms sweep, not a lookup per row). Drives
+  // the pipes-holders table on the admin stats page and mirrors exactly who
+  // the shop-closing DM/email targets.
+  async getPipesHolders(): Promise<
+    Array<{
+      id: string;
+      name: string | null;
+      slackId: string | null;
+      email: string | null;
+      pipes: number;
+      banned: boolean;
+    }>
+  > {
+    const [users, permsMap] = await Promise.all([
+      this.userRepo.find({
+        where: { pipes: MoreThan(0) },
+        select: { id: true, name: true, slackId: true, email: true, pipes: true },
+        order: { pipes: 'DESC' },
+      }),
+      this.rsvpService.getAllPerms(),
+    ]);
+    return users.map((u) => ({
+      id: u.id,
+      name: u.name ?? null,
+      slackId: u.slackId ?? null,
+      email: u.email ?? null,
+      pipes: u.pipes,
+      banned: (u.email ? permsMap.get(u.email.toLowerCase()) : null) === 'Banned',
+    }));
+  }
+
   // ── News CRUD ──
 
   async listNews(): Promise<NewsItem[]> {
