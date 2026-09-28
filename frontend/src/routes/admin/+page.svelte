@@ -1065,6 +1065,36 @@
 		}
 	}
 
+	// One-time sync that fires the shop-closing EMAIL via Loops (separate from
+	// the Slack DM above). Stamps the `Loops - beestHasPipes` date field for
+	// every user with unspent Pipes; Loops sends the email off that field.
+	// Idempotent — already-stamped users are skipped, so it's safe to re-run.
+	let shopClosingEmailBusy = $state(false);
+	let shopClosingEmailResult = $state<{ eligible: number; synced: number; bannedSkipped: number } | null>(null);
+	let shopClosingEmailError = $state<string | null>(null);
+
+	async function syncShopClosingEmail() {
+		if (shopClosingEmailBusy) return;
+		if (!confirm('Sync the shop-closing email to every user with unspent Pipes? Loops sends the email; already-synced users are skipped.')) return;
+		shopClosingEmailBusy = true;
+		shopClosingEmailError = null;
+		shopClosingEmailResult = null;
+		try {
+			const res = await fetch('/api/admin/shop/sync-closing-email', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: '{}'
+			});
+			const j = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
+			shopClosingEmailResult = j;
+		} catch (e) {
+			shopClosingEmailError = e instanceof Error ? e.message : String(e);
+		} finally {
+			shopClosingEmailBusy = false;
+		}
+	}
+
 	async function notifyShopClosing() {
 		if (shopClosingBusy) return;
 		if (!confirm('DM every user with unspent Pipes that the shop is closing soon? Already-notified users are skipped.')) return;
@@ -2866,6 +2896,24 @@
 						{/if}
 						{#if shopClosingError}
 							<p class="golden-backfill-error">{shopClosingError}</p>
+						{/if}
+					</div>
+					<div class="golden-backfill">
+						<div class="golden-backfill-copy">
+							<h3>Sync shop-closing email</h3>
+							<p>Stamps the <code>Loops - beestHasPipes</code> date field for every user with an unspent Pipes balance, which fires the shop-closing email through Loops. This is the email version of the DM above — the two are independent. Already-synced users are skipped, so it's safe to re-run for anyone new.</p>
+						</div>
+						<button class="golden-backfill-btn" onclick={syncShopClosingEmail} disabled={shopClosingEmailBusy}>
+							{shopClosingEmailBusy ? 'Syncing…' : 'Sync shop-closing email'}
+						</button>
+						{#if shopClosingEmailResult}
+							<p class="golden-backfill-result">
+								Done — stamped {shopClosingEmailResult.synced} new user{shopClosingEmailResult.synced === 1 ? '' : 's'}
+								of {shopClosingEmailResult.eligible} eligible ({shopClosingEmailResult.bannedSkipped} banned skipped).
+							</p>
+						{/if}
+						{#if shopClosingEmailError}
+							<p class="golden-backfill-error">{shopClosingEmailError}</p>
 						{/if}
 					</div>
 				{/if}

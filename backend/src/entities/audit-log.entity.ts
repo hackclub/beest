@@ -49,6 +49,7 @@ export const AUDIT_ACTIONS = [
   'admin_submission_extension',
   'admin_unrestricted_access',
   'admin_shop_closing_notice',
+  'admin_shop_closing_email_sync',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

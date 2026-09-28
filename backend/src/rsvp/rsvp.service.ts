@@ -259,9 +259,13 @@ export class RsvpService {
 
   /**
    * Sets a date field in Airtable for Loops sync, only if not already set.
-   * Fire-and-forget — logs errors but never throws.
+   * Fire-and-forget — logs errors but never throws. Returns true only when it
+   * actually stamped the field this call (false if the record was missing, the
+   * field was already set, or the request failed), so callers that want an
+   * accurate "newly synced" count can await it. Existing fire-and-forget
+   * callers ignore the return and are unaffected.
    */
-  async updateDateField(rawEmail: string, fieldName: string): Promise<void> {
+  async updateDateField(rawEmail: string, fieldName: string): Promise<boolean> {
     try {
       const email = this.sanitizeEmail(rawEmail);
       const searchParams = new URLSearchParams({
@@ -273,14 +277,14 @@ export class RsvpService {
       const lookupRes = await fetchWithTimeout(`${this.baseUrl}?${searchParams}`, {
         headers: { Authorization: `Bearer ${this.airtableApiKey}` },
       });
-      if (!lookupRes.ok) return;
+      if (!lookupRes.ok) return false;
 
       const data = await lookupRes.json();
       const record = data.records?.[0];
-      if (!record) return;
+      if (!record) return false;
 
       // Skip if the field already has a value
-      if (record.fields?.[fieldName]) return;
+      if (record.fields?.[fieldName]) return false;
 
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
       const res = await fetchWithTimeout(`${this.baseUrl}/${record.id}`, {
@@ -295,9 +299,12 @@ export class RsvpService {
       if (!res.ok) {
         const text = await res.text();
         console.error(`Airtable updateDateField(${fieldName}) error:`, res.status, text);
+        return false;
       }
+      return true;
     } catch (err) {
       console.error(`Airtable updateDateField(${fieldName}) failed:`, err);
+      return false;
     }
   }
 

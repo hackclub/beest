@@ -1029,6 +1029,65 @@ export class AdminService implements OnApplicationBootstrap {
     return { preview: false, eligible: users.length, dmsSent, bannedSkipped };
   }
 
+  // One-time sync that fires the shop-closing EMAIL (not the Slack DM above)
+  // via Loops. Loops watches the `Loops - beestHasPipes` date field on each
+  // user's RSVP record and sends the email when it flips from empty to set, so
+  // beest's only job here is to stamp that field for everyone who still has
+  // unspent Pipes. The email copy itself lives in Loops, not in this repo.
+  //
+  // Idempotent and safe to re-run: rsvpService.updateDateField skips any record
+  // whose field is already set, so a second run only reaches users who earned
+  // Pipes (and got an RSVP record) since the last run. This is deliberately
+  // independent of shopClosingNotifiedAt — the DM broadcast and the email are
+  // separate channels and shouldn't gate each other.
+  async syncShopClosingEmail(
+    adminId?: string,
+  ): Promise<{ eligible: number; synced: number; bannedSkipped: number }> {
+    this.logger.log('Shop-closing email sync starting: querying users with unspent Pipes');
+    const users = await this.userRepo.find({
+      where: { pipes: MoreThan(0) },
+      select: { id: true, name: true, email: true, slackId: true, hcaSub: true, pipes: true },
+    });
+    this.logger.log(`Shop-closing email sync: ${users.length} user(s) with unspent Pipes`);
+
+    let synced = 0;
+    let bannedSkipped = 0;
+    for (const user of users) {
+      const identifier = user.name || user.slackId || user.hcaSub;
+      if (!user.email) continue;
+
+      // Banned status lives in Airtable — same lookup the DM broadcast uses. On
+      // an Airtable hiccup, skip for now; nothing is stamped, so the next run
+      // retries this user.
+      let perms: string | null;
+      try {
+        perms = await this.rsvpService.getPerms(user.email);
+      } catch {
+        this.logger.warn(`Shop-closing email sync: perms lookup failed for user ${user.id}, will retry next run`);
+        continue;
+      }
+      if (perms === 'Banned') {
+        bannedSkipped++;
+        continue;
+      }
+
+      const stamped = await this.rsvpService.updateDateField(user.email, 'Loops - beestHasPipes');
+      if (stamped) {
+        synced++;
+        const label = `Synced shop-closing email (Loops - beestHasPipes) for ${identifier} (${user.pipes} Pipes)`;
+        await this.auditLogService.log(user.id, 'admin_shop_closing_email_sync', label);
+        if (adminId) {
+          await this.auditLogService.log(adminId, 'admin_shop_closing_email_sync', label);
+        }
+      }
+    }
+
+    this.logger.log(
+      `Shop-closing email sync complete: ${synced} newly stamped of ${users.length} eligible, ${bannedSkipped} banned skipped`,
+    );
+    return { eligible: users.length, synced, bannedSkipped };
+  }
+
   // joe.fraud web base (its UI host, not the API). Overridable for staging.
   private joeWebBase(): string {
     return (
