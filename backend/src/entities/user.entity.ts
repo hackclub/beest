@@ -122,6 +122,12 @@ export class User {
   @Column({ type: 'boolean', name: 'unrestricted_access', default: false })
   unrestrictedAccess: boolean;
 
+  // Set once the "shop is closing" broadcast DM has been sent to this user, so
+  // the admin-triggered bulk notify (AdminService.notifyShopClosing) can be
+  // re-run safely without double-DMing anyone it already reached.
+  @Column({ type: 'timestamptz', name: 'shop_closing_notified_at', nullable: true })
+  shopClosingNotifiedAt: Date | null;
+
   @Column({ nullable: true, name: 'utm_source' })
   utmSource: string;
 

@@ -367,6 +367,14 @@ export class AdminController {
     return this.adminService.getPipesEconomy();
   }
 
+  // Per-user breakdown behind the Unspent Pipes total: who holds pipes, how
+  // many, and whether they're banned. Powers the stats-page pipes table.
+  @UseGuards(SuperAdminGuard)
+  @Get('stats/pipes/holders')
+  getPipesHolders() {
+    return this.adminService.getPipesHolders();
+  }
+
   // ── Settings ──
   // Global operational toggles. Visible to any reviewer (so the review UI can
   // warn them), flippable only by a Super Admin.
@@ -670,6 +678,28 @@ export class AdminController {
   async backfillGoldenForCoolBuilders(@Req() req: Request) {
     const adminId = (req as any).user?.uid;
     return this.adminService.backfillGoldenForCoolBuilders(adminId);
+  }
+
+  // Bulk-DM every user with an unspent Pipes balance that the shop is closing
+  // soon. Safe to re-run: users already notified are skipped (see
+  // AdminService.notifyShopClosing). `preview: true` sends the same DM to
+  // Euan only, as a sanity check before the real broadcast.
+  @UseGuards(SuperAdminGuard)
+  @Post('shop/notify-closing')
+  async notifyShopClosing(@Req() req: Request, @Body() body: { preview?: boolean }) {
+    const adminId = (req as any).user?.uid;
+    return this.adminService.notifyShopClosing(adminId, { preview: !!body?.preview });
+  }
+
+  // One-time sync that stamps the `Loops - beestHasPipes` date field for every
+  // user with unspent Pipes, which fires the shop-closing email via Loops. This
+  // is the email counterpart to the Slack DM above; the two are independent.
+  // Idempotent — already-stamped users are skipped, so it's safe to re-run.
+  @UseGuards(SuperAdminGuard)
+  @Post('shop/sync-closing-email')
+  async syncShopClosingEmail(@Req() req: Request) {
+    const adminId = (req as any).user?.uid;
+    return this.adminService.syncShopClosingEmail(adminId);
   }
 
   // ── Fraud review ──

@@ -1003,6 +1003,22 @@
 		}
 	}
 
+	// Per-user breakdown behind the Unspent Pipes total: who holds pipes, how
+	// many, and whether they're banned.
+	type PipesHolder = { id: string; name: string | null; slackId: string | null; email: string | null; pipes: number; banned: boolean };
+	let pipesHolders = $state<PipesHolder[] | null>(null);
+	let pipesHoldersLoading = $state(false);
+
+	async function loadPipesHolders() {
+		pipesHoldersLoading = true;
+		try {
+			const res = await fetch('/api/admin/stats/pipes/holders');
+			if (res.ok) pipesHolders = await res.json();
+		} finally {
+			pipesHoldersLoading = false;
+		}
+	}
+
 	// One-shot golden backfill for cool builders (Super Admin only).
 	let goldenBackfillBusy = $state(false);
 	let goldenBackfillResult = $state<{ coolBuilders: number; processed: number; skipped: number; projectsMarked: number; dmsSent: number } | null>(null);
@@ -1022,6 +1038,96 @@
 			goldenBackfillError = e instanceof Error ? e.message : String(e);
 		} finally {
 			goldenBackfillBusy = false;
+		}
+	}
+
+	// "Shop is closing" broadcast DM to every user with unspent Pipes (Super
+	// Admin only). Two-step: step 1 DMs only Euan so the exact rendered message
+	// can be checked in Slack; step 2 (only unlocked after a preview send)
+	// broadcasts for real. Safe to re-run — already-notified users are skipped.
+	let shopClosingPreviewBusy = $state(false);
+	let shopClosingPreviewResult = $state<{ eligible: number; dmsSent: number } | null>(null);
+	let shopClosingPreviewError = $state<string | null>(null);
+	let shopClosingBusy = $state(false);
+	let shopClosingResult = $state<{ eligible: number; dmsSent: number; bannedSkipped?: number } | null>(null);
+	let shopClosingError = $state<string | null>(null);
+
+	async function callNotifyShopClosing(preview: boolean) {
+		const res = await fetch('/api/admin/shop/notify-closing', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ preview })
+		});
+		const j = await res.json().catch(() => ({}));
+		if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
+		return j;
+	}
+
+	async function sendShopClosingPreview() {
+		if (shopClosingPreviewBusy) return;
+		console.log('[shop-closing] sending preview DM to Euan');
+		shopClosingPreviewBusy = true;
+		shopClosingPreviewError = null;
+		try {
+			const j = await callNotifyShopClosing(true);
+			console.log('[shop-closing] preview result', j);
+			shopClosingPreviewResult = j;
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error('[shop-closing] preview failed', msg);
+			shopClosingPreviewError = msg;
+		} finally {
+			shopClosingPreviewBusy = false;
+		}
+	}
+
+	// One-time sync that fires the shop-closing EMAIL via Loops (separate from
+	// the Slack DM above). Stamps the `Loops - beestHasPipes` date field for
+	// every user with unspent Pipes; Loops sends the email off that field.
+	// Idempotent — already-stamped users are skipped, so it's safe to re-run.
+	let shopClosingEmailBusy = $state(false);
+	let shopClosingEmailResult = $state<{ eligible: number; synced: number; bannedSkipped: number } | null>(null);
+	let shopClosingEmailError = $state<string | null>(null);
+
+	async function syncShopClosingEmail() {
+		if (shopClosingEmailBusy) return;
+		if (!confirm('Sync the shop-closing email to every user with unspent Pipes? Loops sends the email; already-synced users are skipped.')) return;
+		shopClosingEmailBusy = true;
+		shopClosingEmailError = null;
+		shopClosingEmailResult = null;
+		try {
+			const res = await fetch('/api/admin/shop/sync-closing-email', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: '{}'
+			});
+			const j = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
+			shopClosingEmailResult = j;
+		} catch (e) {
+			shopClosingEmailError = e instanceof Error ? e.message : String(e);
+		} finally {
+			shopClosingEmailBusy = false;
+		}
+	}
+
+	async function notifyShopClosing() {
+		if (shopClosingBusy) return;
+		if (!confirm('DM every user with unspent Pipes that the shop is closing soon? Already-notified users are skipped.')) return;
+		console.log('[shop-closing] sending broadcast to all users with unspent Pipes');
+		shopClosingBusy = true;
+		shopClosingError = null;
+		shopClosingResult = null;
+		try {
+			const j = await callNotifyShopClosing(false);
+			console.log('[shop-closing] broadcast result', j);
+			shopClosingResult = j;
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error('[shop-closing] broadcast failed', msg);
+			shopClosingError = msg;
+		} finally {
+			shopClosingBusy = false;
 		}
 	}
 
@@ -2254,7 +2360,7 @@
 		if (activeTab === 'users') { loadUsers(); }
 		// Fulfillers see the charts/funnel only — the user-count cards and unreviewed
 		// hours need Super-Admin-only endpoints (/users, /stats/unreviewed-hours).
-		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); loadPipesStats(); loadResubmissionPaused(); }
+		if (activeTab === 'stats' && isSuperAdmin) { loadUsers(); loadUnreviewedHours(); loadPipesStats(); loadPipesHolders(); loadResubmissionPaused(); }
 		if (activeTab === 'news') loadNews();
 		if (activeTab === 'events') { loadEvents(); loadUsers(); }
 		if (activeTab === 'projects') { loadProjects(); loadProjectHours(); }
@@ -2741,6 +2847,57 @@
 				</div>
 				<UserFunnel />
 				{#if isSuperAdmin}
+					<div class="pipes-holders">
+						<div class="pipes-holders-head">
+							<h3>Pipes holders</h3>
+							{#if pipesHolders}
+								<span class="pipes-holders-sub">
+									{pipesHolders.length} user{pipesHolders.length === 1 ? '' : 's'} with unspent pipes,
+									{pipesHolders.filter((h) => h.banned).length} banned
+								</span>
+							{/if}
+						</div>
+						{#if pipesHoldersLoading && !pipesHolders}
+							<p class="pipes-holders-empty">Loading…</p>
+						{:else if pipesHolders && pipesHolders.length > 0}
+							<div class="pipes-holders-scroll">
+								<table class="pipes-holders-table">
+									<thead>
+										<tr>
+											<th>User</th>
+											<th class="pipes-holders-num">Pipes</th>
+											<th>Status</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each pipesHolders as h (h.id)}
+											<tr class:pipes-holders-banned={h.banned}>
+												<td>
+													{#if h.slackId}
+														<a href={`https://hackclub.slack.com/team/${h.slackId}`} target="_blank" rel="noopener noreferrer">
+															{h.name || h.email || h.slackId}
+														</a>
+													{:else}
+														{h.name || h.email || '(unknown)'}
+													{/if}
+												</td>
+												<td class="pipes-holders-num">{h.pipes.toLocaleString()}</td>
+												<td>
+													{#if h.banned}
+														<span class="pipes-holders-badge">Banned</span>
+													{:else}
+														—
+													{/if}
+												</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{:else}
+							<p class="pipes-holders-empty">No users with unspent pipes.</p>
+						{/if}
+					</div>
 					<div class="golden-backfill" class:golden-backfill-danger={resubmissionPaused}>
 						<div class="golden-backfill-copy">
 							<h3>Resubmission {resubmissionPaused ? 'paused' : 'open'}</h3>
@@ -2775,6 +2932,55 @@
 						{/if}
 						{#if goldenBackfillError}
 							<p class="golden-backfill-error">{goldenBackfillError}</p>
+						{/if}
+					</div>
+					<div class="golden-backfill">
+						<div class="golden-backfill-copy">
+							<h3>Notify shop closing</h3>
+							<p>DMs every user with an unspent Pipes balance that the shop is closing for good, so they know to spend before it's gone. Already-notified users are skipped, so it's safe to re-run for anyone new.</p>
+							<p>Step 1 sends the exact DM to Euan only so you can check it in Slack. Step 2 (unlocked after that) sends it to everyone.</p>
+						</div>
+						<button class="golden-backfill-btn" onclick={sendShopClosingPreview} disabled={shopClosingPreviewBusy}>
+							{shopClosingPreviewBusy ? 'Sending preview…' : 'Send preview to Euan'}
+						</button>
+						{#if shopClosingPreviewResult}
+							<p class="golden-backfill-result">
+								Preview {shopClosingPreviewResult.dmsSent ? 'sent' : 'FAILED to send'} to Euan.
+							</p>
+							<button class="golden-backfill-btn" onclick={notifyShopClosing} disabled={shopClosingBusy}>
+								{shopClosingBusy ? 'Notifying…' : 'Looks good — send to everyone'}
+							</button>
+						{/if}
+						{#if shopClosingPreviewError}
+							<p class="golden-backfill-error">{shopClosingPreviewError}</p>
+						{/if}
+						{#if shopClosingResult}
+							<p class="golden-backfill-result">
+								Done — {shopClosingResult.dmsSent} DM{shopClosingResult.dmsSent === 1 ? '' : 's'} sent
+								of {shopClosingResult.eligible} eligible user{shopClosingResult.eligible === 1 ? '' : 's'}
+								({shopClosingResult.bannedSkipped ?? 0} banned skipped).
+							</p>
+						{/if}
+						{#if shopClosingError}
+							<p class="golden-backfill-error">{shopClosingError}</p>
+						{/if}
+					</div>
+					<div class="golden-backfill">
+						<div class="golden-backfill-copy">
+							<h3>Sync shop-closing email</h3>
+							<p>Stamps the <code>Loops - beestHasPipes</code> date field for every user with an unspent Pipes balance, which fires the shop-closing email through Loops. This is the email version of the DM above — the two are independent. Already-synced users are skipped, so it's safe to re-run for anyone new.</p>
+						</div>
+						<button class="golden-backfill-btn" onclick={syncShopClosingEmail} disabled={shopClosingEmailBusy}>
+							{shopClosingEmailBusy ? 'Syncing…' : 'Sync shop-closing email'}
+						</button>
+						{#if shopClosingEmailResult}
+							<p class="golden-backfill-result">
+								Done — stamped {shopClosingEmailResult.synced} new user{shopClosingEmailResult.synced === 1 ? '' : 's'}
+								of {shopClosingEmailResult.eligible} eligible ({shopClosingEmailResult.bannedSkipped} banned skipped).
+							</p>
+						{/if}
+						{#if shopClosingEmailError}
+							<p class="golden-backfill-error">{shopClosingEmailError}</p>
 						{/if}
 					</div>
 				{/if}
@@ -3521,10 +3727,13 @@
 												<span class="claim-status claim-status--other">
 													Claimed by {selectedProject.claimedByReviewerName ?? 'another reviewer'}
 												</span>
+												<button class="btn-claim btn-claim--override" onclick={() => claimProject(selectedProject.id)}>
+													Claim Anyway
+												</button>
 											{:else}
 												<span class="claim-status claim-status--free">Unclaimed</span>
 												<button class="btn-claim" onclick={() => claimProject(selectedProject.id)}>
-													Claim
+													Claim Project
 												</button>
 											{/if}
 										</div>
@@ -4350,6 +4559,77 @@
 		margin-bottom: 1rem;
 	}
 
+	.pipes-holders {
+		margin-top: 1.5rem;
+		padding: 1rem 1.25rem;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.03);
+	}
+	.pipes-holders-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+		flex-wrap: wrap;
+		margin-bottom: 0.75rem;
+	}
+	.pipes-holders-head h3 {
+		margin: 0;
+		font-size: 1rem;
+	}
+	.pipes-holders-sub {
+		font-size: 0.8rem;
+		opacity: 0.7;
+	}
+	.pipes-holders-empty {
+		margin: 0;
+		font-size: 0.85rem;
+		opacity: 0.7;
+	}
+	.pipes-holders-scroll {
+		max-height: 420px;
+		overflow-y: auto;
+	}
+	.pipes-holders-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.85rem;
+	}
+	.pipes-holders-table th,
+	.pipes-holders-table td {
+		text-align: left;
+		padding: 0.4rem 0.6rem;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	}
+	.pipes-holders-table thead th {
+		position: sticky;
+		top: 0;
+		background: #1e1e1e;
+		font-weight: 600;
+		opacity: 0.85;
+	}
+	.pipes-holders-num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.pipes-holders-table a {
+		color: inherit;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.pipes-holders-banned td {
+		opacity: 0.65;
+	}
+	.pipes-holders-badge {
+		display: inline-block;
+		padding: 0.1rem 0.45rem;
+		border-radius: 6px;
+		background: rgba(224, 102, 102, 0.18);
+		color: #e06666;
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
 	.golden-backfill {
 		margin-top: 1.5rem;
 		padding: 1rem 1.25rem;
@@ -5284,6 +5564,11 @@
 		font-family: inherit;
 	}
 	.btn-claim:hover { background: rgba(139, 92, 246, 0.3); }
+	.btn-claim--override {
+		border-color: #f59e0b;
+		background: rgba(245, 158, 11, 0.1);
+		color: #f59e0b;
+	}
 	.btn-release-claim {
 		padding: 7px 16px;
 		border-radius: 6px;
