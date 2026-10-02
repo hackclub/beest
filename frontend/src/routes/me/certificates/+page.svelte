@@ -9,7 +9,7 @@
   const claimableOrders = $derived(
     orders.filter(
       (order: { status: string; certificateRequested: boolean | null }) =>
-        order.status === 'fulfilled' && order.certificateRequested !== true,
+        order.status === 'fulfilled' && order.certificateRequested === null,
     ),
   );
 

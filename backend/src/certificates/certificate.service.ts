@@ -285,12 +285,28 @@ export class CertificateService {
       certificateText,
     });
 
-    const saved = await this.certificateRepo.save(certificate);
+    let saved: Certificate;
+    try {
+      saved = await this.certificateRepo.save(certificate);
+    } catch (error) {
+      if (
+        error instanceof QueryFailedError &&
+        (error as QueryFailedError & { code?: string }).code === '23505'
+      ) {
+        const concurrentCertificate = await this.certificateRepo.findOne({
+          where: { userId: order.userId, isGrant: false },
+        });
+        if (concurrentCertificate) {
+          return concurrentCertificate;
+        }
+      }
+      throw error;
+    }
 
     await this.auditLogService.log(
       order.userId,
       'certificate_generated',
-      `Certificate generated for order ${order.id}: ${order.itemName}`,
+      `Certificate generated for ${awardItem}: ${approvedHours} Pipes`,
     );
 
     return saved;
@@ -372,6 +388,7 @@ export class CertificateService {
       browser = await puppeteer.launch({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        executablePath: this.getBrowserExecutablePath(),
       });
 
       const page = await browser.newPage();
@@ -381,6 +398,7 @@ export class CertificateService {
         format: 'A4',
         margin: { top: 0, right: 0, bottom: 0, left: 0 },
         landscape: true,
+        printBackground: true,
       });
 
       return Buffer.from(pdf);
@@ -405,6 +423,7 @@ export class CertificateService {
       browser = await puppeteer.launch({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        executablePath: this.getBrowserExecutablePath(),
       });
 
       const page = await browser.newPage();
@@ -706,36 +725,19 @@ export class CertificateService {
     const templatePath = resolve(process.cwd(), 'example-certificate.html');
 
     if (existsSync(templatePath)) {
-      const assetPackBackgroundPath = resolve(
-        process.cwd(),
-        '..',
-        'asset pack',
-        'hero-without-layer6.webp',
-      );
       const fallbackBackgroundPath = resolve(
         process.cwd(),
         'certificate-background-v2.png',
       );
-      const backgroundPath = existsSync(assetPackBackgroundPath)
-        ? assetPackBackgroundPath
-        : fallbackBackgroundPath;
-      const stoneBreakerPath = resolve(process.cwd(), 'stone-breaker.woff2');
+      const backgroundPath = fallbackBackgroundPath;
+      const stoneBreakerPath = resolve(process.cwd(), 'certificate-font.woff2');
       const recognitionLogosPath = resolve(
         process.cwd(),
         'certificate-recognition-logos.png',
       );
-      const gearIconPath = resolve(
-        process.cwd(),
-        '..',
-        'asset pack',
-        'gear-icon.svg',
-      );
-      const beestLogoPath = resolve(
-        process.cwd(),
-        '..',
-        'asset pack',
-        'beest-logo.webp',
-      );
+      const gearIconPath = resolve(process.cwd(), 'certificate-gear.svg');
+      const hackClubFlagPath = resolve(process.cwd(), 'certificate-flag.svg');
+      const beestLogoPath = resolve(process.cwd(), 'certificate-beest-logo.webp');
       const background = existsSync(backgroundPath)
         ? `data:${backgroundPath.endsWith('.webp') ? 'image/webp' : 'image/png'};base64,${readFileSync(backgroundPath).toString('base64')}`
         : '';
@@ -748,6 +750,9 @@ export class CertificateService {
       const gearIcon = existsSync(gearIconPath)
         ? `data:image/svg+xml;base64,${readFileSync(gearIconPath).toString('base64')}`
         : '';
+      const hackClubFlag = existsSync(hackClubFlagPath)
+        ? `data:image/svg+xml;base64,${readFileSync(hackClubFlagPath).toString('base64')}`
+        : '';
       const beestLogo = existsSync(beestLogoPath)
         ? `data:image/webp;base64,${readFileSync(beestLogoPath).toString('base64')}`
         : '';
@@ -758,6 +763,7 @@ export class CertificateService {
         .replaceAll('{{CERTNO}}', number)
         .replaceAll('{{BACKGROUND}}', background)
         .replaceAll('{{GEAR_ICON}}', gearIcon)
+        .replaceAll('{{HACK_CLUB_FLAG}}', hackClubFlag)
         .replaceAll('{{BEEST_LOGO}}', beestLogo)
         .replaceAll('{{STONE_BREAKER_FONT}}', stoneBreakerFont)
         .replaceAll('{{RECOGNITION_LOGOS}}', recognitionLogos)
@@ -794,6 +800,31 @@ body{min-height:100vh;display:flex;align-items:center;justify-content:center;pad
     } catch {
       return `https://beest.hackclub.com/verify?certificate=${encodeURIComponent(certificateNumber)}`;
     }
+  }
+
+  private getBrowserExecutablePath(): string | undefined {
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        return process.env.PUPPETEER_EXECUTABLE_PATH;
+      }
+
+      const candidates = [
+        process.env.LOCALAPPDATA &&
+          resolve(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        process.env.PROGRAMFILES &&
+          resolve(process.env.PROGRAMFILES, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        process.env['PROGRAMFILES(X86)'] &&
+          resolve(
+            process.env['PROGRAMFILES(X86)'],
+            'Google',
+            'Chrome',
+            'Application',
+            'chrome.exe',
+          ),
+      ];
+
+      return candidates.find((candidate): candidate is string =>
+        Boolean(candidate && existsSync(candidate)),
+      );
   }
 
   private escapeHtml(value: string): string {

@@ -11,7 +11,8 @@ import { AuthModule } from '../auth/auth.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Certificate, Order, User]),
-    AuditLogModule,AuthModule,
+    AuditLogModule,
+    AuthModule,
   ],
   controllers: [CertificateController],
   providers: [CertificateService],

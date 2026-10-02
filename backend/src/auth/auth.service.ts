@@ -9,6 +9,7 @@ import { countryFromHcaUserinfo } from '../country.util';
 import { RsvpService } from '../rsvp/rsvp.service';
 import { User } from '../entities/user.entity';
 import { Session } from '../entities/session.entity';
+import { Order } from '../entities/order.entity';
 
 const ALLOWED_REDIRECTS = new Set(['/home', '/tutorial']);
 
@@ -236,6 +237,77 @@ export class AuthService {
     return { token, refreshToken, redirectTo };
   }
 
+  async devLogin(email: string) {
+    const devHcaSub = `dev:${email}`;
+    let user = await this.userRepo.findOne({ where: { hcaSub: devHcaSub } });
+    const orderRepo = this.userRepo.manager.getRepository(Order);
+
+    if (!user) {
+      user = this.userRepo.create({
+        hcaSub: devHcaSub,
+        email,
+        name: 'Ketan Gupta',
+        nickname: 'Ketan',
+        pipes: 32,
+        hasAddress: true,
+        hasBirthdate: true,
+      });
+      user = await this.userRepo.save(user);
+
+      const dummyOrder = orderRepo.create({
+        userId: user.id,
+        itemName: 'Hardware Grant',
+        quantity: 1,
+        pipesSpent: 32,
+        status: 'fulfilled',
+        certificateRequested: null,
+      });
+      await orderRepo.save(dummyOrder);
+    } else {
+      // Ensure existing user has at least 32 pipes and a fulfilled order
+      if (user.pipes < 32) {
+        user.pipes = 32;
+        await this.userRepo.save(user);
+      }
+      const orders = await orderRepo.find({ where: { userId: user.id } });
+      if (process.env.NODE_ENV === 'development') {
+        for (const order of orders) {
+          if (order.itemName === 'Prototype Hardware Pack') {
+            order.itemName = 'Hardware Grant';
+            order.certificateRequested = true;
+            await orderRepo.save(order);
+          }
+        }
+      }
+      if (!orders.some((o) => o.status === 'fulfilled')) {
+        const dummyOrder = orderRepo.create({
+          userId: user.id,
+          itemName: 'Hardware Grant',
+          quantity: 1,
+          pipesSpent: 32,
+          status: 'fulfilled',
+          certificateRequested: null,
+        });
+        await orderRepo.save(dummyOrder);
+      }
+    }
+
+    const refreshToken = await this.createSession(user.id);
+    const token = this.jwtService.sign({
+      sub: user.id,
+      uid: user.id,
+      email: user.email,
+      name: user.name,
+      nickname: user.nickname,
+      slack_id: 'U_DEV_KETAN',
+      has_address: user.hasAddress,
+      has_birthdate: user.hasBirthdate,
+      gender: user.gender,
+    });
+
+    return { token, refreshToken, redirectTo: '/home' };
+  }
+
   /**
    * Validates a refresh token and issues a new (short-lived) JWT.
    *
@@ -411,7 +483,9 @@ export class AuthService {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new Error('User not found');
 
-    await this.rsvpService.setIntent(user.email, intent);
+    if (process.env.NODE_ENV !== 'development') {
+      await this.rsvpService.setIntent(user.email, intent);
+    }
 
     user.intent = intent;
     await this.userRepo.save(user);
