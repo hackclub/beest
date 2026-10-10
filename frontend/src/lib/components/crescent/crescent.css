@@ -1,0 +1,133 @@
+/* Crescent's own look, for the few places BEEST points at it (CrescentCta,
+   MoveToCrescent): its two faces, the plate its landing frames things in and
+   the landing's violet button, copied from crescent.hackclub.com's
+   theme.css, landing.css and ceremony.css so they read as Crescent's and not
+   as an imitation. Global on purpose, so the two components share one copy;
+   every class is prefixed `crescent-`. */
+
+@font-face {
+	font-family: 'Crescent Young Serif';
+	src: url('/fonts/YoungSerif.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+
+/* Crescent sets National Park at 700 or 800 only, never regular. */
+@font-face {
+	font-family: 'Crescent National Park';
+	src: url('/fonts/NationalPark.woff2') format('woff2');
+	font-weight: 700 800;
+	font-style: normal;
+	font-display: swap;
+}
+
+/* Both BEEST pages run saturate(1.5) over their content; this gives it back,
+   the way BEEST's own sticker cards do, so Crescent's colours arrive as they are. */
+.crescent-true-colour {
+	filter: saturate(0.667);
+}
+
+/* The landing's plate (a project's frame there), opaque here because BEEST's
+   brown under a see-through night reads as mud, with a scatter of its stars. */
+.crescent-plate {
+	position: relative;
+	background:
+		radial-gradient(1.5px 1.5px at 8% 22%, #ecdec3 60%, transparent 70%),
+		radial-gradient(1px 1px at 19% 78%, #f9c1ef 60%, transparent 70%),
+		radial-gradient(1.5px 1.5px at 41% 14%, #ecdec3 60%, transparent 70%),
+		radial-gradient(1px 1px at 57% 86%, #ecdec3 60%, transparent 70%),
+		radial-gradient(2px 2px at 71% 30%, #f9c1ef 55%, transparent 70%),
+		radial-gradient(1px 1px at 88% 72%, #ecdec3 60%, transparent 70%),
+		radial-gradient(1.5px 1.5px at 96% 16%, #ecdec3 60%, transparent 70%),
+		radial-gradient(120% 180% at 12% 0%, #3d1f7c 0%, #2f1668 28%, #190c3e 62%, #0e0b21 100%);
+	border: 2px solid rgba(236, 222, 195, 0.16);
+	border-radius: 16px;
+	box-shadow: 0 14px 32px rgba(0, 0, 0, 0.45);
+	color: #ecdec3;
+	font-family: 'Crescent National Park', system-ui, sans-serif;
+	font-weight: 700;
+	letter-spacing: -0.01em;
+	text-align: left;
+}
+
+.crescent-display {
+	margin: 0;
+	font-family: 'Crescent Young Serif', Georgia, serif;
+	font-weight: 400;
+	line-height: 1.15;
+	letter-spacing: -0.01em;
+	color: #ecdec3;
+}
+
+.crescent-display em {
+	color: #ee6462;
+	font-style: normal;
+}
+
+.crescent-body {
+	margin: 0;
+	font-family: 'Crescent National Park', system-ui, sans-serif;
+	font-weight: 700;
+	line-height: 1.35;
+	color: rgba(236, 222, 195, 0.72);
+}
+
+/* The landing's button (.btn.btn-landing.is-small). */
+.crescent-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 13px 24px;
+	background: #6632b5;
+	border: 2px solid transparent;
+	border-radius: 8px;
+	box-shadow: 0 4px 2px rgba(0, 0, 0, 0.16);
+	color: #ecdec3;
+	font-family: 'Crescent National Park', system-ui, sans-serif;
+	font-size: 19px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	line-height: 1;
+	text-decoration: none;
+	white-space: nowrap;
+	cursor: pointer;
+	transition:
+		transform 0.08s ease,
+		opacity 0.16s ease;
+}
+
+.crescent-button svg {
+	width: 20px;
+	height: 20px;
+}
+
+.crescent-button:hover:not(:disabled) {
+	transform: scale(1.04);
+}
+
+.crescent-button:active:not(:disabled) {
+	transform: scale(0.97);
+}
+
+.crescent-button:disabled {
+	opacity: 0.5;
+	cursor: wait;
+}
+
+.crescent-button:focus-visible {
+	outline: 3px solid #d574d1;
+	outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.crescent-button {
+		transition: none;
+	}
+
+	.crescent-button:hover:not(:disabled),
+	.crescent-button:active:not(:disabled) {
+		transform: none;
+	}
+}

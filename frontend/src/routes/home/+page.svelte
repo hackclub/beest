@@ -7495,8 +7495,9 @@
     margin: 4px 0 24px;
   }
 
+  /* The summary above already leaves 40px; the strip takes the same below it. */
   .move-slot {
-    margin-top: 18px;
+    margin-bottom: 22px;
   }
 
   .projects-box {
