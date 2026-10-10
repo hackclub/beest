@@ -9,6 +9,9 @@ import {
   Req,
   UseGuards,
   UnauthorizedException,
+  NotFoundException,
+  ParseUUIDPipe,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
@@ -18,9 +21,16 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { HackatimeService } from '../hackatime/hackatime.service';
 import { Project } from '../entities/project.entity';
 import { ProjectReview } from '../entities/project-review.entity';
+import { User } from '../entities/user.entity';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './create-project.dto';
 import { UpdateProjectDto } from './update-project.dto';
+import {
+  DEFAULT_CRESCENT_URL,
+  crescentTransferClaims,
+  crescentTransferUrl,
+  signCrescentTransfer,
+} from '../crescent/crescent-transfer';
 
 @Controller('api/projects')
 export class ProjectsController {
@@ -29,6 +39,7 @@ export class ProjectsController {
     private readonly hackatimeService: HackatimeService,
     @InjectRepository(Project) private readonly projectRepo: Repository<Project>,
     @InjectRepository(ProjectReview) private readonly reviewRepo: Repository<ProjectReview>,
+    @InjectRepository(User) private readonly userRepo: Repository<User>,
   ) {}
 
   /**
@@ -241,6 +252,34 @@ export class ProjectsController {
 
     await this.projectsService.delete(id, user.uid, user.impersonator_name);
     return { deleted: true };
+  }
+
+  /**
+   * "Move to Crescent": a signed link that brings this project's fields over to
+   * Crescent (see crescent/crescent-transfer.ts). Owner only. Works whatever the
+   * project's status, since BEEST has ended and every project may move on.
+   */
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/crescent-transfer')
+  async crescentTransfer(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: Request) {
+    const userId = (req as any).user?.uid;
+    if (!userId) throw new UnauthorizedException('No user identity');
+
+    const secret = process.env.CRESCENT_TRANSFER_SECRET;
+    if (!secret) throw new ServiceUnavailableException('Moving projects to Crescent is not set up yet');
+
+    const project = await this.projectRepo.findOne({ where: { id, userId } });
+    if (!project) throw new NotFoundException('Project not found');
+
+    // The Hack Club Auth id from the row, never the JWT's `sub`: not every
+    // token BEEST signs carries it there (the dev login puts the user id in
+    // `sub`), and Crescent hands the project only to the account it names.
+    const owner = await this.userRepo.findOne({ where: { id: userId }, select: ['id', 'hcaSub'] });
+    if (!owner?.hcaSub) throw new UnauthorizedException('No user identity');
+
+    const token = signCrescentTransfer(crescentTransferClaims(project, owner.hcaSub), secret);
+    return { url: crescentTransferUrl(token, process.env.CRESCENT_URL || DEFAULT_CRESCENT_URL) };
   }
 
   @Throttle({ default: { limit: 30, ttl: 60000 } })
