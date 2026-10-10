@@ -19,6 +19,8 @@
   import { page } from '$app/state';
   import confetti from 'canvas-confetti';
   import { formatLocal } from '$lib/utils/formatDate';
+  import CrescentCta from '$lib/components/crescent/CrescentCta.svelte';
+  import MoveToCrescent from '$lib/components/crescent/MoveToCrescent.svelte';
 
   // Portal action: moves a node to document.body so its position:fixed
   // escapes any ancestor containing-block (.main has filter: saturate which
@@ -1895,6 +1897,10 @@
           </div>
         </div>
 
+        <div class="move-slot">
+          <MoveToCrescent projectId={editingProject.id} name={editingProject.name} />
+        </div>
+
         {#if editingProjectReviews.length > 0}
           <div class="review-feedback-list">
             <h3 class="review-feedback-heading">Review history</h3>
@@ -1995,6 +2001,10 @@
       <div class="form-header">
         <button class="form-cancel" onclick={resetForm}>&times;</button>
       </div>
+
+      {#if editingProject}
+        <MoveToCrescent projectId={editingProject.id} name={editingProject.name} />
+      {/if}
 
       {#if editingProject && editingProjectReviews.length > 0}
         <div class="review-feedback-list">
@@ -2505,6 +2515,10 @@
             <span>30</span>
             <span>40</span>
           </div>
+        </div>
+
+        <div class="crescent-cta-slot">
+          <CrescentCta />
         </div>
 
         <div class="projects-box" class:has-projects={projects.length > 0} style:--cols={projectCols}>
@@ -7475,6 +7489,14 @@
 
   .key-swatch.unshipped {
     background: #c48382;
+  }
+
+  .crescent-cta-slot {
+    margin: 4px 0 24px;
+  }
+
+  .move-slot {
+    margin-top: 18px;
   }
 
   .projects-box {

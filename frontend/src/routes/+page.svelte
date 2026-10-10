@@ -14,6 +14,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import CrescentCta from '$lib/components/crescent/CrescentCta.svelte';
 
   let { data } = $props();
   const authenticated = data.authenticated;
@@ -309,6 +310,7 @@
       <p class="hero-closed">PROGRAM CLOSED</p>
     </div>
     <div class="hero-signup" aria-label="Sign Up">
+      <CrescentCta variant="hero" />
       <p class="signup-note">&#10003; Signing up puts you on our email list, you can remove yourself <a href="https://email-tools.hackclub.com/" target="_blank" rel="noreferrer">here</a>.</p>
       {#if authenticated}
         <div class="signup-form">
