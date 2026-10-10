@@ -14,18 +14,14 @@
 
 <div class="cta-wrap crescent-true-colour {variant}">
 	<aside class="cta crescent-plate" aria-label="Crescent">
-		<!-- Not on the landing card: the words and the button set its height,
-		     and the wordmark sat in the middle of it with sky above and below. -->
-		{#if variant === 'banner'}
-			<img
-				class="cta-logo"
-				src="/images/crescent/logo.webp"
-				alt="Crescent"
-				width="480"
-				height="237"
-				decoding="async"
-			/>
-		{/if}
+		<img
+			class="cta-logo"
+			src="/images/crescent/logo.webp"
+			alt="Crescent"
+			width="480"
+			height="237"
+			decoding="async"
+		/>
 		<div class="cta-copy">
 			<p class="cta-title crescent-display">Pick a card... <em>any card!</em></p>
 			<p class="cta-lead crescent-body">
@@ -81,10 +77,12 @@
 		font-size: 16px;
 	}
 
-	/* Hero: wider than the sign-up column it sits in, growing to the left over
-	   the ground, with the button under the words and no logo. */
+	/* Hero: a little wider than the sign-up column it sits in, growing to the
+	   left over the ground, stacked: the logo on top, then the words, then the
+	   button. Beside the words, the logo sat in the middle of a card taller
+	   than itself with sky above and below it. */
 	.cta-wrap.hero {
-		--cta-width: clamp(440px, 44vw, 640px);
+		--cta-width: clamp(400px, 36vw, 520px);
 		width: var(--cta-width);
 		margin: 0 0 26px calc(100% - var(--cta-width));
 		rotate: 0.8deg;
@@ -92,8 +90,12 @@
 
 	.hero .cta {
 		grid-template-columns: minmax(0, 1fr);
-		row-gap: 14px;
-		padding: 18px 22px;
+		row-gap: 12px;
+		padding: 18px 22px 20px;
+	}
+
+	.hero .cta-logo {
+		width: 128px;
 	}
 
 	.hero .cta-go {
