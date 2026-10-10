@@ -1,4 +1,4 @@
-/* Crescent's own look, for the few places BEEST points at it (CrescentCta,
+/* Crescent's own look, for the few places Beest points at it (CrescentCta,
    MoveToCrescent): its two faces, the plate its landing frames things in and
    the landing's violet button, copied from crescent.hackclub.com's
    theme.css, landing.css and ceremony.css so they read as Crescent's and not
@@ -22,13 +22,13 @@
 	font-display: swap;
 }
 
-/* Both BEEST pages run saturate(1.5) over their content; this gives it back,
-   the way BEEST's own sticker cards do, so Crescent's colours arrive as they are. */
+/* Both Beest pages run saturate(1.5) over their content; this gives it back,
+   the way Beest's own sticker cards do, so Crescent's colours arrive as they are. */
 .crescent-true-colour {
 	filter: saturate(0.667);
 }
 
-/* The landing's plate (a project's frame there), opaque here because BEEST's
+/* The landing's plate (a project's frame there), opaque here because Beest's
    brown under a see-through night reads as mud, with a scatter of its stars. */
 .crescent-plate {
 	position: relative;

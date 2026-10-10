@@ -4,7 +4,7 @@
 	// One press and the project is on its way to Crescent: the backend signs a
 	// snapshot of it (backend/src/crescent/crescent-transfer.ts) and Crescent
 	// picks it up, asks for a card, and makes the same project there. Only the
-	// project's own fields go; pipes, reviews and orders stay on BEEST.
+	// project's own fields go; pipes, reviews and orders stay on Beest.
 	let { projectId, name }: { projectId: string; name: string } = $props();
 
 	let phase = $state<'idle' | 'going' | 'error'>('idle');

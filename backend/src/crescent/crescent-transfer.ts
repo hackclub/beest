@@ -1,7 +1,7 @@
 import { createHmac } from 'crypto';
 import type { Project } from '../entities/project.entity';
 
-// "Move to Crescent": BEEST hands a project to Crescent, Hack Club's next
+// "Move to Crescent": Beest hands a project to Crescent, another Hack Club
 // YSWS program, as a signed snapshot in a link. Crescent checks the signature
 // (its Beest::Transfer), lets the builder pick a card and makes the same
 // project there, applied only to the Crescent account with the same Hack Club
@@ -72,7 +72,7 @@ export function crescentTransferClaims(
       screenshotUrl: project.screenshot1Url,
       hackatimeProjects: project.hackatimeProjectName ?? [],
       status: project.status,
-      // Hours BEEST credited pipes for (the same rule as the hours bar). Crescent
+      // Hours Beest credited pipes for (the same rule as the hours bar). Crescent
       // shows them to its reviewers only, so the same time is not paid twice.
       approvedHours:
         (project.pipesGranted ?? 0) > 0 ? (project.overrideHours ?? 0) : 0,

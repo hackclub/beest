@@ -257,7 +257,7 @@ export class ProjectsController {
   /**
    * "Move to Crescent": a signed link that brings this project's fields over to
    * Crescent (see crescent/crescent-transfer.ts). Owner only. Works whatever the
-   * project's status, since BEEST has ended and every project may move on.
+   * project's status, since Beest has ended and every project may move on.
    */
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @UseGuards(JwtAuthGuard)
@@ -273,7 +273,7 @@ export class ProjectsController {
     if (!project) throw new NotFoundException('Project not found');
 
     // The Hack Club Auth id from the row, never the JWT's `sub`: not every
-    // token BEEST signs carries it there (the dev login puts the user id in
+    // token Beest signs carries it there (the dev login puts the user id in
     // `sub`), and Crescent hands the project only to the account it names.
     const owner = await this.userRepo.findOne({ where: { id: userId }, select: ['id', 'hcaSub'] });
     if (!owner?.hcaSub) throw new UnauthorizedException('No user identity');

@@ -2,9 +2,10 @@
 	import './crescent.css';
 	import { CRESCENT_URL } from './crescent';
 
-	// BEEST has ended; Crescent is Hack Club's next YSWS. This is the nudge
-	// over there, in Crescent's own plate, faces and button (crescent.css),
-	// pinned onto the page at a slight tilt like BEEST's own stuck-on parts.
+	// Beest has ended, and Crescent is made by the same people. This is the
+	// nudge over there, in Crescent's own plate, faces and button
+	// (crescent.css), pinned onto the page at a slight tilt like Beest's own
+	// stuck-on parts.
 	//
 	// `banner` is the strip on the platform; `hero` is the card in the landing
 	// page's hero, over the sign-up box and wider than it.
@@ -12,7 +13,7 @@
 </script>
 
 <div class="cta-wrap crescent-true-colour {variant}">
-	<aside class="cta crescent-plate" aria-label="Crescent, Hack Club's next program">
+	<aside class="cta crescent-plate" aria-label="Crescent">
 		<img
 			class="cta-logo"
 			src="/images/crescent/logo.webp"
@@ -22,14 +23,10 @@
 			decoding="async"
 		/>
 		<div class="cta-copy">
-			<p class="cta-title crescent-display">BEEST is over. <em>Crescent is on.</em></p>
+			<p class="cta-title crescent-display">Pick a card... <em>any card!</em></p>
 			<p class="cta-lead crescent-body">
-				{#if variant === 'hero'}
-					Hack Club's next YSWS: pick a card every week, build it, keep the loot.
-				{:else}
-					Hack Club's next YSWS is live: pick a card every week, build it, keep the loot. Your BEEST
-					projects can come along. Open one and press <strong>Move to Crescent</strong>.
-				{/if}
+				From the creators of Beest, in Crescent, you get 4 different project ideas each week, and
+				get boosts for making them! We'd love to see you there!
 			</p>
 		</div>
 		<a class="cta-go crescent-button" href={CRESCENT_URL} target="_blank" rel="noopener">
@@ -78,11 +75,6 @@
 
 	.cta-lead {
 		font-size: 16px;
-	}
-
-	.cta-lead strong {
-		color: #ecdec3;
-		font-weight: 800;
 	}
 
 	/* Hero: wider than the sign-up column it sits in, growing to the left over
