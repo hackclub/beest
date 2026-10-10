@@ -1,11 +1,11 @@
 <script lang="ts">
 	import './crescent.css';
-	import { CRESCENT_URL } from './crescent';
+	import { CRESCENT_AD_URL } from './crescent';
 
 	// Beest has ended, and Crescent is made by the same people. This is the
 	// nudge over there, in Crescent's own plate, faces and button
-	// (crescent.css), pinned onto the page at a slight tilt like Beest's own
-	// stuck-on parts.
+	// (crescent.css). The landing's card is pinned on at a slight tilt like
+	// Beest's own stuck-on parts there; the platform's banner sits straight.
 	//
 	// `banner` is the strip on the platform, with a button; `hero` is the card
 	// in the landing page's hero, over the sign-up box and wider than it, and
@@ -33,13 +33,13 @@
 
 <div class="cta-wrap crescent-true-colour {variant}">
 	{#if variant === 'hero'}
-		<a class="cta crescent-plate" href={CRESCENT_URL} target="_blank" rel="noopener">
+		<a class="cta crescent-plate" href={CRESCENT_AD_URL} target="_blank" rel="noopener">
 			{@render copy()}
 		</a>
 	{:else}
 		<aside class="cta crescent-plate" aria-label="Crescent">
 			{@render copy()}
-			<a class="cta-go crescent-button" href={CRESCENT_URL} target="_blank" rel="noopener">
+			<a class="cta-go crescent-button" href={CRESCENT_AD_URL} target="_blank" rel="noopener">
 				Go to Crescent
 				<svg
 					viewBox="0 0 24 24"
@@ -56,10 +56,6 @@
 </div>
 
 <style>
-	.cta-wrap {
-		rotate: -0.5deg;
-	}
-
 	.cta {
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr) auto;
