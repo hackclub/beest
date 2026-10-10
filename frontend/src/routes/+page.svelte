@@ -876,11 +876,14 @@
     margin-bottom: calc(-1 * (var(--closed-size) + 10px));
   }
 
-  /* bare sign-up: email + button docked to the right of the wordmark */
+  /* bare sign-up: email + button docked to the right of the wordmark, with
+     the Crescent card above it; the pair sits a little lower than the
+     wordmark's baseline so the card clears the beest's feet */
   .hero-signup {
     pointer-events: auto;
     position: relative;
     flex: 0 0 clamp(320px, 32vw, 440px);
+    translate: 0 48px;
   }
 
   /* the input and button are each tilted a touch and the button laps over the
@@ -2428,6 +2431,7 @@
 
     .hero-signup {
       flex: 0 1 auto;
+      translate: none;
       align-self: center;
       width: 100%;
       max-width: 420px;
