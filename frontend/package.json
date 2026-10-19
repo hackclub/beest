@@ -39,7 +39,7 @@
 		"d3-scale": "^4.0.2",
 		"d3-time": "^3.1.0",
 		"d3-time-format": "^4.1.0",
-		"layerchart": "^1.0.13",
+		"layerchart": "^2.8.1",
 		"uplot": "^1.6.32"
 	}
 }
